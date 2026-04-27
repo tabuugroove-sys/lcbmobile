@@ -27,10 +27,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install ffmpeg + fonts
+      - name: Install ffmpeg + fonts + ImageMagick
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core imagemagick
+          # moviepy 1.x TextClip shells out to ImageMagick; Ubuntu's default
+          # security policy blocks @path reads which makes TextClip(method="caption") fail.
+          sudo sed -i 's|<policy domain="path" rights="none" pattern="@\*"/>||' /etc/ImageMagick-6/policy.xml || true
 
       - uses: actions/setup-python@v5
         with:
