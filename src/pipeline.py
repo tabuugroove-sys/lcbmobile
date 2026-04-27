@@ -65,14 +65,14 @@ def run(
 
     if not fresh:
         notify(
-            f"ℹ️ Nada novo neste run\\.\nfetched=`{report.fetched}` new=`0` limit=`{limit}`"
+            f"ℹ️ Nada novo neste run.\nfetched={report.fetched} new=0 limit={limit}"
         )
         return report
 
     publishers = build_publishers(only_publishers)
     log.info("Active publishers: %s", [p.name for p in publishers])
     if not publishers:
-        notify("⚠️ Nenhum publisher configurado\\.")
+        notify("⚠️ Nenhum publisher configurado.")
         return report
 
     for item in fresh:
