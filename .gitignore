@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets / env
+.env
+.env.local
+*.secret
+client_secret*.json
+youtube_token.json
+tiktok_token.json
+instagram_token.json
+twitter_token.json
+
+# Generated content
+data/
+out/
+*.db
+*.sqlite
+*.sqlite3
+assets/generated/
+*.mp4
+*.wav
+*.mp3
+*.png
+!assets/template.png
+!assets/logo.png
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store

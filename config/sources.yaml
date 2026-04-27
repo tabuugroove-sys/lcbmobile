@@ -1,0 +1,58 @@
+# Brazilian celebrity / fofoca / DJ-scene sources.
+# RSS first; HTML scrapers can be added per-source if needed.
+sources:
+  - id: quem
+    name: Quem Acontece
+    type: rss
+    url: https://revistaquem.globo.com/rss/quem/feed.xml
+    category: celebridades
+    weight: 1.0
+
+  - id: ego
+    name: Ego (G1 Pop & Arte)
+    type: rss
+    url: https://g1.globo.com/rss/g1/pop-arte/
+    category: celebridades
+    weight: 0.9
+
+  - id: extra_famosos
+    name: Extra - Famosos
+    type: rss
+    url: https://extra.globo.com/rss/famosos.xml
+    category: fofoca
+    weight: 1.0
+
+  - id: otvfoco
+    name: TV Foco
+    type: rss
+    url: https://www.otvfoco.com.br/feed/
+    category: televisao
+    weight: 0.8
+
+  - id: hugogloss
+    name: Hugo Gloss
+    type: rss
+    url: https://www.hugogloss.uol.com.br/feed/
+    category: fofoca
+    weight: 1.0
+
+  - id: leodias
+    name: Leo Dias (Metropoles)
+    type: rss
+    url: https://www.metropoles.com/colunas/leo-dias/feed
+    category: fofoca
+    weight: 1.0
+
+  - id: housemag
+    name: House Mag
+    type: rss
+    url: https://www.housemag.com.br/feed/
+    category: dj
+    weight: 1.0
+
+  - id: mixmagbr
+    name: Mixmag Brasil
+    type: rss
+    url: https://mixmag.com.br/feed
+    category: dj
+    weight: 0.9

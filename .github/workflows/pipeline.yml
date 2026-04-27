@@ -1,0 +1,97 @@
+name: Autopost pipeline
+
+on:
+  schedule:
+    # Every 3 hours, on the hour. GitHub cron is UTC.
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Render only, do not publish"
+        required: false
+        default: "false"
+      limit:
+        description: "Max items per run"
+        required: false
+        default: "3"
+
+concurrency:
+  group: autopost
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg + fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore state DB
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: lcb-state-${{ github.run_id }}
+          restore-keys: |
+            lcb-state-
+
+      - name: Materialize secret files
+        run: |
+          mkdir -p secrets
+          if [ -n "${YOUTUBE_CLIENT_SECRET}" ]; then
+            echo "$YOUTUBE_CLIENT_SECRET" > client_secret.json
+          fi
+          if [ -n "${YOUTUBE_TOKEN}" ]; then
+            echo "$YOUTUBE_TOKEN" > youtube_token.json
+          fi
+        env:
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+
+      - name: Run pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+          CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
+          CONTENT_LANG: pt-BR
+          DB_PATH: data/state.db
+          OUTPUT_DIR: out
+          MAX_ITEMS_PER_RUN: ${{ inputs.limit || '3' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+
+          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_PUBLIC_BASE_URL: ${{ vars.INSTAGRAM_PUBLIC_BASE_URL }}
+
+          TIKTOK_ACCESS_TOKEN: ${{ secrets.TIKTOK_ACCESS_TOKEN }}
+          TIKTOK_OPEN_ID: ${{ secrets.TIKTOK_OPEN_ID }}
+
+          TWITTER_CONSUMER_KEY: ${{ secrets.TWITTER_CONSUMER_KEY }}
+          TWITTER_CONSUMER_SECRET: ${{ secrets.TWITTER_CONSUMER_SECRET }}
+          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_SECRET: ${{ secrets.TWITTER_ACCESS_SECRET }}
+
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: |
+          python -m scripts.run_pipeline -v
+
+      - name: Upload generated assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcb-out-${{ github.run_id }}
+          path: out
+          if-no-files-found: ignore
+          retention-days: 7
