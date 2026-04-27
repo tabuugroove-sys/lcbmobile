@@ -21,7 +21,7 @@ on:
       limit:
         description: "Max items per run"
         required: false
-                default: "1"
+        default: "1"
 
 concurrency:
   group: autopost
