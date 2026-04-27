@@ -74,6 +74,16 @@ class Settings:
     telegram_channel_id: str
 
 
+def _str(name: str, default: str = "") -> str:
+    """Read an env var and strip surrounding whitespace.
+
+    Mobile copy/paste of GitHub secrets often leaves a trailing newline
+    that turns valid API keys into 401s.
+    """
+    raw = os.getenv(name)
+    return (raw if raw is not None else default).strip()
+
+
 def load_settings() -> Settings:
     db_path = Path(os.getenv("DB_PATH", "data/state.db"))
     output_dir = Path(os.getenv("OUTPUT_DIR", "out"))
@@ -85,42 +95,40 @@ def load_settings() -> Settings:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     return Settings(
-        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-        anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-        channel_name=os.getenv("CHANNEL_NAME", "LCB Mobile"),
-        channel_handle=os.getenv("CHANNEL_HANDLE", "@lcbmobile"),
-        content_lang=os.getenv("CONTENT_LANG", "pt-BR"),
-        timezone=os.getenv("TIMEZONE", "America/Sao_Paulo"),
+        anthropic_api_key=_str("ANTHROPIC_API_KEY"),
+        anthropic_model=_str("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+        channel_name=_str("CHANNEL_NAME", "LCB Mobile"),
+        channel_handle=_str("CHANNEL_HANDLE", "@lcbmobile"),
+        content_lang=_str("CONTENT_LANG", "pt-BR"),
+        timezone=_str("TIMEZONE", "America/Sao_Paulo"),
         db_path=db_path,
         output_dir=output_dir,
         max_items_per_run=_int(os.getenv("MAX_ITEMS_PER_RUN"), 3),
         dry_run=_bool(os.getenv("DRY_RUN"), False),
-        tts_provider=os.getenv("TTS_PROVIDER", "gtts").strip().lower(),
-        elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", ""),
-        elevenlabs_voice_id=os.getenv(
-            "ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"
-        ),
-        elevenlabs_model=os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2"),
+        tts_provider=_str("TTS_PROVIDER", "gtts").lower(),
+        elevenlabs_api_key=_str("ELEVENLABS_API_KEY"),
+        elevenlabs_voice_id=_str("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
+        elevenlabs_model=_str("ELEVENLABS_MODEL", "eleven_multilingual_v2"),
         elevenlabs_stability=_float(os.getenv("ELEVENLABS_STABILITY"), 0.45),
         elevenlabs_similarity=_float(os.getenv("ELEVENLABS_SIMILARITY"), 0.8),
         elevenlabs_style=_float(os.getenv("ELEVENLABS_STYLE"), 0.35),
         youtube_client_secret_file=Path(
-            os.getenv("YOUTUBE_CLIENT_SECRET_FILE", "client_secret.json")
+            _str("YOUTUBE_CLIENT_SECRET_FILE", "client_secret.json")
         ),
-        youtube_token_file=Path(os.getenv("YOUTUBE_TOKEN_FILE", "youtube_token.json")),
-        youtube_category_id=os.getenv("YOUTUBE_CATEGORY_ID", "24"),
-        instagram_user_id=os.getenv("INSTAGRAM_USER_ID", ""),
-        instagram_access_token=os.getenv("INSTAGRAM_ACCESS_TOKEN", ""),
-        instagram_public_base_url=os.getenv("INSTAGRAM_PUBLIC_BASE_URL", ""),
-        tiktok_access_token=os.getenv("TIKTOK_ACCESS_TOKEN", ""),
-        tiktok_open_id=os.getenv("TIKTOK_OPEN_ID", ""),
-        twitter_consumer_key=os.getenv("TWITTER_CONSUMER_KEY", ""),
-        twitter_consumer_secret=os.getenv("TWITTER_CONSUMER_SECRET", ""),
-        twitter_access_token=os.getenv("TWITTER_ACCESS_TOKEN", ""),
-        twitter_access_secret=os.getenv("TWITTER_ACCESS_SECRET", ""),
-        twitter_bearer_token=os.getenv("TWITTER_BEARER_TOKEN", ""),
-        telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
-        telegram_channel_id=os.getenv("TELEGRAM_CHANNEL_ID", ""),
+        youtube_token_file=Path(_str("YOUTUBE_TOKEN_FILE", "youtube_token.json")),
+        youtube_category_id=_str("YOUTUBE_CATEGORY_ID", "24"),
+        instagram_user_id=_str("INSTAGRAM_USER_ID"),
+        instagram_access_token=_str("INSTAGRAM_ACCESS_TOKEN"),
+        instagram_public_base_url=_str("INSTAGRAM_PUBLIC_BASE_URL"),
+        tiktok_access_token=_str("TIKTOK_ACCESS_TOKEN"),
+        tiktok_open_id=_str("TIKTOK_OPEN_ID"),
+        twitter_consumer_key=_str("TWITTER_CONSUMER_KEY"),
+        twitter_consumer_secret=_str("TWITTER_CONSUMER_SECRET"),
+        twitter_access_token=_str("TWITTER_ACCESS_TOKEN"),
+        twitter_access_secret=_str("TWITTER_ACCESS_SECRET"),
+        twitter_bearer_token=_str("TWITTER_BEARER_TOKEN"),
+        telegram_bot_token=_str("TELEGRAM_BOT_TOKEN"),
+        telegram_channel_id=_str("TELEGRAM_CHANNEL_ID"),
     )
 
 
