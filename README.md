@@ -45,9 +45,23 @@ acrescenta YouTube/IG/TikTok depois, sem perder nada do que já foi postado.
    uma fofoca fresca cai no seu canal. Depois disso o cron principal
    ("Autopost pipeline") posta sozinho a cada 3 horas.
 
-> Quando sentar num desktop, é só ligar o resto: YouTube precisa de OAuth pelo
-> navegador (uma vez), Instagram exige conta Business + URL pública pro `.mp4`,
-> TikTok depende de aprovação no TikTok for Developers.
+## ☁️ YouTube + Instagram + TikTok pelo celular (via Make.com)
+
+YouTube/IG/TikTok não têm OAuth direto no celular, mas você pode usar o
+**Make.com** (free tier) como intermediário — ele já é aprovado por
+todas as plataformas. Login uma vez no app deles, copia uma URL de
+webhook, cola num secret. Pronto.
+
+1. Cria conta no `make.com`, faz cenário **Webhook → YouTube** (e
+   IG/TikTok no mesmo cenário). Passo-a-passo com prints mentais em
+   [`docs/MAKE_SETUP.md`](docs/MAKE_SETUP.md).
+2. Adiciona o secret `WEBHOOK_URL` no GitHub.
+3. Torna o repo **público** (necessário pro Make baixar o `.mp4` direto
+   do GitHub Release que o pipeline cria).
+4. *Actions → "Cloud publish (Telegram + Make.com)" → Run workflow*.
+
+Esse mesmo workflow já está no cron de 3h, então depois do primeiro tap
+roda sozinho.
 
 ## Setup local
 

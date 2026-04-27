@@ -1,0 +1,74 @@
+name: Cloud publish (Telegram + Make.com)
+
+# Zero-input workflow: posts to Telegram directly AND fires a webhook to
+# Make.com / Zapier (which then uploads to YouTube, Instagram Reels, TikTok).
+# Designed to be triggered with a single tap from the GitHub mobile app.
+#
+# Required Secrets:
+#   ANTHROPIC_API_KEY
+#   TELEGRAM_BOT_TOKEN
+#   TELEGRAM_CHANNEL_ID
+#   WEBHOOK_URL                 (Make.com webhook URL)
+# Optional Secrets:
+#   ELEVENLABS_API_KEY
+#   WEBHOOK_AUTH_HEADER         (if your webhook expects auth)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */3 * * *"
+
+concurrency:
+  group: cloud-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # webhook publisher creates GitHub Releases for the .mp4
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg + fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore state DB
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: lcb-state-${{ github.run_id }}
+          restore-keys: |
+            lcb-state-
+
+      - name: Run pipeline (telegram + webhook)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+          CONTENT_LANG: pt-BR
+          DB_PATH: data/state.db
+          OUTPUT_DIR: out
+          MAX_ITEMS_PER_RUN: ${{ vars.MAX_ITEMS_PER_RUN || '2' }}
+
+          TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' }}
+
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_AUTH_HEADER: ${{ secrets.WEBHOOK_AUTH_HEADER }}
+          WEBHOOK_TARGETS: ${{ vars.WEBHOOK_TARGETS || 'youtube,instagram,tiktok' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m scripts.run_pipeline -v --only telegram --only webhook

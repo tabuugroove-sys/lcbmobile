@@ -8,6 +8,7 @@ from .instagram import InstagramPublisher
 from .telegram import TelegramPublisher
 from .tiktok import TikTokPublisher
 from .twitter import TwitterPublisher
+from .webhook import WebhookPublisher
 from .youtube import YouTubePublisher
 
 log = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ ALL_PUBLISHERS: list[Publisher] = [
     TikTokPublisher(),
     TwitterPublisher(),
     TelegramPublisher(),
+    WebhookPublisher(),
 ]
 
 
