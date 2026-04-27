@@ -9,7 +9,7 @@ on:
       platforms:
         description: "Comma-separated platforms (telegram,youtube,instagram,tiktok,twitter). Empty = all configured."
         required: false
-        default: "telegram"
+        default: "telegram,youtube"
       dry_run:
         description: "Render only, do not publish"
         required: false
