@@ -5,6 +5,16 @@ name: Telegram only (one tap)
 # to your Telegram channel and nothing else.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - claude/create-news-feed-yMBpb
+      - main
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "config/**"
+      - "requirements.txt"
+      - ".github/workflows/telegram-only.yml"
 
 concurrency:
   group: telegram-only
