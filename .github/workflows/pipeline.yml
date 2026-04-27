@@ -2,8 +2,8 @@ name: Autopost pipeline
 
 on:
   schedule:
-    # Every 3 hours, on the hour. GitHub cron is UTC.
-    - cron: "0 */3 * * *"
+        # 3x daily: 09:00, 14:00, 19:00 BRT (12:00, 17:00, 22:00 UTC)
+            - cron: "0 12,17,22 * * *"
   workflow_dispatch:
     inputs:
       platforms:
@@ -21,7 +21,7 @@ on:
       limit:
         description: "Max items per run"
         required: false
-        default: "3"
+                default: "1"
 
 concurrency:
   group: autopost
