@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .config import ROOT, settings
 from .models import GeneratedAssets, NewsItem, RewrittenPost
+from .notify import notify, notify_error, notify_summary
 from .processor import rewrite
 from .publisher import build_publishers, PublishResult
 from .scraper import collect_news, load_sources
@@ -43,7 +44,13 @@ def run(
     sources = load_sources(sources_path)
     log.info("Loaded %d sources", len(sources))
 
-    items = collect_news(sources)
+    try:
+        items = collect_news(sources)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("RSS scrape failed")
+        notify_error("scrape", exc)
+        raise
+
     report = RunReport(fetched=len(items))
 
     fresh: list[NewsItem] = []
@@ -56,17 +63,24 @@ def run(
     report.new = len(fresh)
     log.info("Fetched=%d new=%d (limit=%d)", report.fetched, report.new, limit)
 
+    if not fresh:
+        notify(
+            f"ℹ️ Nada novo neste run\\.\nfetched=`{report.fetched}` new=`0` limit=`{limit}`"
+        )
+        return report
+
     publishers = build_publishers(only_publishers)
     log.info("Active publishers: %s", [p.name for p in publishers])
+    if not publishers:
+        notify("⚠️ Nenhum publisher configurado\\.")
+        return report
 
     for item in fresh:
-        store.mark_seen(
-            item.fingerprint(), item.source_id, item.url, item.title
-        )
         try:
             post: RewrittenPost = rewrite(item)
         except Exception as exc:  # noqa: BLE001
             log.exception("Rewrite failed for %s", item.url)
+            notify_error("rewrite", exc, context=item.url)
             continue
 
         try:
@@ -75,6 +89,7 @@ def run(
             )
         except Exception as exc:  # noqa: BLE001
             log.exception("Video render failed for %s", item.url)
+            notify_error("render", exc, context=item.url)
             continue
 
         report.processed += 1
@@ -84,6 +99,7 @@ def run(
             log.info("DRY_RUN=1, skipping publish for %s", item.url)
             continue
 
+        any_ok = False
         for pub in publishers:
             if store.already_published(item.fingerprint(), pub.name):
                 continue
@@ -96,6 +112,14 @@ def run(
                 "ok" if result.ok else "error",
                 error=result.error,
             )
+            if result.ok:
+                any_ok = True
+            else:
+                notify_error(
+                    f"publish:{pub.name}",
+                    Exception(result.error or "unknown error"),
+                    context=item.url,
+                )
             log.info(
                 "[%s] %s -> %s",
                 pub.name,
@@ -103,4 +127,12 @@ def run(
                 result.remote_id or result.error,
             )
 
+        # Mark seen only after the item was actually distributed - keeps
+        # failed items in the retry queue across runs.
+        if any_ok:
+            store.mark_seen(
+                item.fingerprint(), item.source_id, item.url, item.title
+            )
+
+    notify_summary(report)
     return report

@@ -38,9 +38,18 @@ def main(limit: int | None, only_publishers: tuple[str, ...], dry_run: bool, ver
     click.echo(
         f"fetched={report.fetched} new={report.new} processed={report.processed}"
     )
+    any_failure = False
     for result in report.publish_results:
         marker = "OK" if result.ok else "FAIL"
         click.echo(f"  [{marker}] {result.platform} -> {result.remote_id or result.error}")
+        if not result.ok:
+            any_failure = True
+
+    # Make the GitHub job turn red when the run produced no publications.
+    if report.new and not report.publish_results:
+        sys.exit(2)
+    if any_failure:
+        sys.exit(3)
 
 
 if __name__ == "__main__":
