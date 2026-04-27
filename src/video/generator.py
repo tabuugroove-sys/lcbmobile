@@ -142,7 +142,13 @@ def build_short(
         audio_path = _tts(post.script_voiceover, lang, base / "voice.mp3")
 
         audio = AudioFileClip(str(audio_path))
-        duration = max(8.0, min(60.0, audio.duration + 0.4))
+        # Stay strictly within the audio file: moviepy 1.x raises IOError if
+        # the composite duration runs even a hair past the actual audio frames.
+        # We trim 0.05s off the reported duration as a safety margin against
+        # mp3 frame-boundary off-by-ones.
+        safe_audio_duration = max(0.5, audio.duration - 0.05)
+        audio = audio.set_duration(safe_audio_duration)
+        duration = max(8.0, min(60.0, safe_audio_duration))
 
         bg_clip = ImageClip(str(bg_path)).set_duration(duration)
         # Subtle Ken-Burns zoom for life.
