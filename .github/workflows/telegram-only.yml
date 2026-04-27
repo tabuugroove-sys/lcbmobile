@@ -1,0 +1,59 @@
+name: Telegram only (one tap)
+
+# Zero-input workflow for the simplest mobile start: open GitHub mobile,
+# Actions tab, "Run workflow" button - one tap, posts the next fresh fofoca
+# to your Telegram channel and nothing else.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: telegram-only
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg + fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore state DB
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: lcb-state-${{ github.run_id }}
+          restore-keys: |
+            lcb-state-
+
+      - name: Healthcheck Telegram bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: python -m scripts.check_telegram
+
+      - name: Run pipeline (Telegram only)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+          CONTENT_LANG: pt-BR
+          DB_PATH: data/state.db
+          OUTPUT_DIR: out
+          MAX_ITEMS_PER_RUN: "1"
+          TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: python -m scripts.run_pipeline -v --only telegram --limit 1

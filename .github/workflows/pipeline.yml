@@ -6,10 +6,18 @@ on:
     - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
+      platforms:
+        description: "Comma-separated platforms (telegram,youtube,instagram,tiktok,twitter). Empty = all configured."
+        required: false
+        default: "telegram"
       dry_run:
         description: "Render only, do not publish"
         required: false
+        type: choice
         default: "false"
+        options:
+          - "false"
+          - "true"
       limit:
         description: "Max items per run"
         required: false
@@ -84,8 +92,21 @@ jobs:
 
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+
+          TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' }}
+          ELEVENLABS_MODEL: ${{ vars.ELEVENLABS_MODEL || 'eleven_multilingual_v2' }}
+
+          PLATFORMS: ${{ inputs.platforms }}
         run: |
-          python -m scripts.run_pipeline -v
+          ARGS="-v"
+          if [ -n "${PLATFORMS}" ]; then
+            for p in $(echo "${PLATFORMS}" | tr ',' ' '); do
+              ARGS="$ARGS --only $p"
+            done
+          fi
+          python -m scripts.run_pipeline $ARGS
 
       - name: Upload generated assets
         if: always()

@@ -9,13 +9,45 @@ verticais (1080×1920) e publica em todos os canais com tráfego orgânico.
 RSS (Quem, Ego, Extra, TV Foco, Hugo Gloss, Léo Dias, House Mag, Mixmag BR)
         │
         ▼
-[ scraper ] → [ AI rewriter (Claude, pt-BR) ] → [ video (moviepy + gTTS) ]
+[ scraper ] → [ AI rewriter (Claude, pt-BR) ] → [ video (moviepy + ElevenLabs/gTTS) ]
                                                           │
                   ┌────────────┬──────────────┬───────────┼──────────────┐
                   ▼            ▼              ▼           ▼              ▼
               YouTube     Instagram        TikTok       X / Twitter   Telegram
               Shorts        Reels       Content API     v2 + media      Bot
 ```
+
+## 🚀 Início rápido pelo celular (Telegram, ~30 min)
+
+Tudo daqui pode ser feito apenas pelo celular. Quando estiver rodando, você
+acrescenta YouTube/IG/TikTok depois, sem perder nada do que já foi postado.
+
+1. **Bot do Telegram** — abra `@BotFather` no app, mande `/newbot`, escolha um
+   nome, copie o token (`123456:ABC...`).
+2. **Canal do Telegram** — crie um canal público, abra **Administradores →
+   Adicionar admin**, busque pelo nome do bot e dê permissão de
+   *Postar mensagens*.
+3. **Anthropic** — em `console.anthropic.com` (navegador do celular), gere uma
+   API key (`sk-ant-...`).
+4. **(Opcional) ElevenLabs** — em `elevenlabs.io`, copie a API key. Pegue um
+   `voice_id` em pt-BR na biblioteca de vozes para áudio premium. Sem isso o
+   pipeline cai automaticamente no gTTS (gratuito).
+5. **Fork ou clone deste repo** no GitHub pelo celular.
+6. **Secrets** — no app GitHub: *Settings → Secrets and variables → Actions →
+   New repository secret*. Adicione:
+   - `ANTHROPIC_API_KEY` = `sk-ant-...`
+   - `TELEGRAM_BOT_TOKEN` = token do @BotFather
+   - `TELEGRAM_CHANNEL_ID` = `@nome_do_canal` (ou o `-100...` numérico)
+   - `ELEVENLABS_API_KEY` = (opcional)
+7. **(Opcional) Variables** — no mesmo lugar, aba *Variables*: `ELEVENLABS_VOICE_ID`
+   com o id da voz pt-BR escolhida.
+8. **Rode** — *Actions → "Telegram only (one tap)" → Run workflow*. Em ~3 min
+   uma fofoca fresca cai no seu canal. Depois disso o cron principal
+   ("Autopost pipeline") posta sozinho a cada 3 horas.
+
+> Quando sentar num desktop, é só ligar o resto: YouTube precisa de OAuth pelo
+> navegador (uma vez), Instagram exige conta Business + URL pública pro `.mp4`,
+> TikTok depende de aprovação no TikTok for Developers.
 
 ## Setup local
 
