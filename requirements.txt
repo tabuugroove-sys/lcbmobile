@@ -8,6 +8,7 @@ python-dotenv>=1.0.1
 pydantic>=2.7.0
 moviepy>=1.0.3
 gTTS>=2.5.0
+elevenlabs>=1.5.0
 Pillow>=10.3.0
 google-api-python-client>=2.130.0
 google-auth-oauthlib>=1.2.0

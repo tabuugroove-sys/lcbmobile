@@ -2,10 +2,11 @@
 
 - Background = blurred Ken-Burns-zoomed source image (or solid color fallback).
 - Overlay = bold on-screen text chunks rotating with the narration.
-- Audio = gTTS narration of the script_voiceover (pt-BR).
+- Audio = narration of the script_voiceover (pt-BR), provider-selectable
+  (ElevenLabs premium or gTTS fallback - see src/video/tts.py).
 
 Designed to run in a stock Python container without GPU. Requires `ffmpeg`
-available on PATH (moviepy + gTTS handle the rest).
+available on PATH.
 """
 from __future__ import annotations
 
@@ -15,7 +16,6 @@ import tempfile
 from pathlib import Path
 
 import httpx
-from gtts import gTTS
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from moviepy.editor import (
     AudioFileClip,
@@ -27,6 +27,7 @@ from moviepy.editor import (
 )
 
 from ..models import GeneratedAssets, NewsItem, RewrittenPost
+from .tts import TTSProvider, get_tts_provider
 
 log = logging.getLogger(__name__)
 
@@ -98,9 +99,9 @@ def _make_background(image_path: Path | None, out_path: Path) -> Path:
 
 
 def _tts(text: str, lang: str, dest: Path) -> Path:
-    tts = gTTS(text=text, lang=lang.split("-")[0] or "pt", tld="com.br", slow=False)
-    tts.save(dest)
-    return dest
+    provider = get_tts_provider()
+    log.info("TTS provider: %s", provider.name)
+    return provider.synthesize(text, dest, lang=lang)
 
 
 def _text_clip(text: str, duration: float, font: str | None) -> CompositeVideoClip:

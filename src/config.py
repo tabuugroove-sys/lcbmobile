@@ -25,6 +25,13 @@ def _int(value: str | None, default: int) -> int:
         return default
 
 
+def _float(value: str | None, default: float) -> float:
+    try:
+        return float(value) if value else default
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class Settings:
     anthropic_api_key: str
@@ -37,6 +44,14 @@ class Settings:
     output_dir: Path
     max_items_per_run: int
     dry_run: bool
+
+    tts_provider: str
+    elevenlabs_api_key: str
+    elevenlabs_voice_id: str
+    elevenlabs_model: str
+    elevenlabs_stability: float
+    elevenlabs_similarity: float
+    elevenlabs_style: float
 
     youtube_client_secret_file: Path
     youtube_token_file: Path
@@ -80,6 +95,15 @@ def load_settings() -> Settings:
         output_dir=output_dir,
         max_items_per_run=_int(os.getenv("MAX_ITEMS_PER_RUN"), 3),
         dry_run=_bool(os.getenv("DRY_RUN"), False),
+        tts_provider=os.getenv("TTS_PROVIDER", "gtts").strip().lower(),
+        elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", ""),
+        elevenlabs_voice_id=os.getenv(
+            "ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"
+        ),
+        elevenlabs_model=os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2"),
+        elevenlabs_stability=_float(os.getenv("ELEVENLABS_STABILITY"), 0.45),
+        elevenlabs_similarity=_float(os.getenv("ELEVENLABS_SIMILARITY"), 0.8),
+        elevenlabs_style=_float(os.getenv("ELEVENLABS_STYLE"), 0.35),
         youtube_client_secret_file=Path(
             os.getenv("YOUTUBE_CLIENT_SECRET_FILE", "client_secret.json")
         ),
