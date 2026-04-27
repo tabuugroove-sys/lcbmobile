@@ -108,7 +108,7 @@ def load_settings() -> Settings:
 
     return Settings(
         anthropic_api_key=_str("ANTHROPIC_API_KEY"),
-        anthropic_model=_str("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+        anthropic_model=_str("ANTHROPIC_MODEL", "claude-haiku-4-5"),
         channel_name=_str("CHANNEL_NAME", "LCB Mobile"),
         channel_handle=_str("CHANNEL_HANDLE", "@lcbmobile"),
         content_lang=_str("CONTENT_LANG", "pt-BR"),
