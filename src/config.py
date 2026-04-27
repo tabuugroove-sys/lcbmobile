@@ -74,14 +74,26 @@ class Settings:
     telegram_channel_id: str
 
 
+_INVISIBLE = "".join(
+    chr(c)
+    for c in (0x00A0, 0x200B, 0x200C, 0x200D, 0x2028, 0x2029, 0x202F, 0xFEFF)
+)
+
+
 def _str(name: str, default: str = "") -> str:
-    """Read an env var and strip surrounding whitespace.
+    """Read an env var and aggressively clean it.
 
     Mobile copy/paste of GitHub secrets often leaves a trailing newline
-    that turns valid API keys into 401s.
+    OR an invisible unicode character (zero-width space, NBSP, BOM...)
+    that turns valid API keys into 401s. Standard .strip() doesn't help
+    against U+200B and friends, so we filter them explicitly and then
+    drop the leftover surrounding ASCII whitespace.
     """
     raw = os.getenv(name)
-    return (raw if raw is not None else default).strip()
+    value = raw if raw is not None else default
+    for ch in _INVISIBLE:
+        value = value.replace(ch, "")
+    return value.strip()
 
 
 def load_settings() -> Settings:

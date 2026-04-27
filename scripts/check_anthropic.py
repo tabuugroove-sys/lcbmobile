@@ -10,11 +10,25 @@ import os
 import sys
 
 
-def _short(s: str, n: int = 6) -> str:
-    s = (s or "").strip()
-    if len(s) <= 2 * n:
-        return f"len={len(s)}"
-    return f"{s[:n]}...{s[-n:]} (len={len(s)})"
+def _short(s: str) -> str:
+    """Return a non-secret fingerprint of the key for verification.
+
+    Includes:
+      - the raw byte length BEFORE cleaning (so we can spot stray whitespace),
+      - the byte length AFTER cleaning,
+      - sha256[:10] of the cleaned value (enough to compare against the
+        known-good key without exposing the key itself).
+    """
+    import hashlib
+
+    raw = s or ""
+    # Mirror the cleaning the SDK call uses below.
+    cleaned = raw
+    for ch in (" ", "​", "‌", "‍", " ", " ", " ", "﻿"):
+        cleaned = cleaned.replace(ch, "")
+    cleaned = cleaned.strip()
+    digest = hashlib.sha256(cleaned.encode()).hexdigest()[:10]
+    return f"raw_len={len(raw)} clean_len={len(cleaned)} sha256={digest}"
 
 
 async def _notify(text: str) -> None:
@@ -31,14 +45,20 @@ async def _notify(text: str) -> None:
 
 
 def main() -> int:
-    key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+    raw = os.getenv("ANTHROPIC_API_KEY") or ""
+    fp = _short(raw)
+    # Use the same cleaner as the rest of the pipeline.
+    key = raw
+    for ch in (" ", "​", "‌", "‍", " ", " ", " ", "﻿"):
+        key = key.replace(ch, "")
+    key = key.strip()
     model = (os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-4-6").strip()
     if not key:
         print("[anthropic] ANTHROPIC_API_KEY is empty", file=sys.stderr)
-        asyncio.run(_notify("❌ Anthropic key vazia (segredo ANTHROPIC_API_KEY)."))
+        asyncio.run(_notify(f"❌ Anthropic key vazia. {fp}"))
         return 2
 
-    print(f"[anthropic] checking key {_short(key)} on model {model}")
+    print(f"[anthropic] checking key {fp} on model {model}")
 
     try:
         from anthropic import Anthropic, APIStatusError, AuthenticationError
@@ -54,9 +74,10 @@ def main() -> int:
         return 0
     except AuthenticationError as exc:
         msg = (
-            f"❌ Anthropic 401 (chave inválida). "
-            f"Recrie em console.anthropic.com → Settings → API Keys e atualize "
-            f"o secret ANTHROPIC_API_KEY no GitHub.\n\n{exc}"
+            f"❌ Anthropic 401 (chave inválida).\n"
+            f"key fingerprint: {fp}\n"
+            f"Se isso não bate com a chave que você acredita ter colado, o "
+            f"segredo no GitHub está com outro valor.\n\n{exc}"
         )
         print(f"[anthropic] {msg}", file=sys.stderr)
         asyncio.run(_notify(msg))
