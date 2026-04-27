@@ -194,9 +194,13 @@ def build_short(
             logger=None,
         )
 
-        # Thumbnail = first frame.
+        # Thumbnail = first frame (RGBA->RGB for JPEG compat).
         thumb_path = base / "thumb.jpg"
-        composite.save_frame(str(thumb_path), t=0.3)
+        frame = composite.get_frame(0.3)
+        thumb_img = Image.fromarray(frame)
+        if thumb_img.mode != "RGB":
+            thumb_img = thumb_img.convert("RGB")
+        thumb_img.save(str(thumb_path), "JPEG", quality=88)
 
     return GeneratedAssets(
         video_path=str(video_path),
