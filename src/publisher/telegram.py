@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import html as html_mod
 import logging
 
 from telegram import Bot
@@ -12,12 +13,6 @@ from ..models import GeneratedAssets, RewrittenPost
 from .base import PublishResult
 
 log = logging.getLogger(__name__)
-
-
-def _escape_md(text: str) -> str:
-    for ch in r"_*[]()~`>#+-=|{}.!\\":
-        text = text.replace(ch, f"\\{ch}")
-    return text
 
 
 class TelegramPublisher:
@@ -37,18 +32,19 @@ class TelegramPublisher:
         self, post: RewrittenPost, assets: GeneratedAssets
     ) -> PublishResult:
         bot = Bot(token=settings.telegram_bot_token)
+        esc = html_mod.escape
         caption = (
-            f"*{_escape_md(post.headline)}*\n\n"
-            f"{_escape_md(post.long_caption)}\n\n"
-            f"[Fonte]({post.source_url})\n\n"
-            + " ".join(f"\\#{_escape_md(tag)}" for tag in post.hashtags)
+            f"<b>{esc(post.headline)}</b>\n\n"
+            f"{esc(post.long_caption)}\n\n"
+            f'<a href="{esc(post.source_url)}">Fonte</a>\n\n'
+            + " ".join(f"#{esc(tag)}" for tag in post.hashtags)
         )[:1020]
         with open(assets.video_path, "rb") as fh:
             msg = await bot.send_video(
                 chat_id=settings.telegram_channel_id,
                 video=fh,
                 caption=caption,
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=ParseMode.HTML,
                 supports_streaming=True,
             )
         return PublishResult(platform=self.name, ok=True, remote_id=str(msg.message_id))
