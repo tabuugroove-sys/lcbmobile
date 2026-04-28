@@ -79,7 +79,7 @@ jobs:
           CONTENT_LANG: pt-BR
           DB_PATH: data/state.db
           OUTPUT_DIR: out
-          MAX_ITEMS_PER_RUN: ${{ inputs.limit || '3' }}
+          MAX_ITEMS_PER_RUN: ${{ inputs.limit || '1' }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
 
           INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
