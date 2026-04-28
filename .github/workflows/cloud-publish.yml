@@ -14,8 +14,6 @@ name: Cloud publish (Telegram + Make.com)
 #   WEBHOOK_AUTH_HEADER         (if your webhook expects auth)
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 */3 * * *"
 
 concurrency:
   group: cloud-publish
