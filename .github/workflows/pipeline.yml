@@ -2,8 +2,8 @@ name: Autopost pipeline
 
 on:
   schedule:
-        # 3x daily: 09:00, 14:00, 19:00 BRT (12:00, 17:00, 22:00 UTC)
-            - cron: "0 12,17,22 * * *"
+    # 3x daily: 09:13, 14:13, 19:13 BRT (12:13, 17:13, 22:13 UTC)
+    - cron: "13 12,17,22 * * *"
   workflow_dispatch:
     inputs:
       platforms:
