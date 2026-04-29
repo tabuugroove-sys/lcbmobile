@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .config import ROOT, settings
 from .models import GeneratedAssets, NewsItem, RewrittenPost
-from .notify import notify, notify_error, notify_summary
+from .notify import notify, notify_error, notify_summary, notify_youtube_published
 from .processor import rewrite
 from .publisher import build_publishers, PublishResult
 from .scraper import collect_news, load_sources
@@ -114,6 +114,8 @@ def run(
             )
             if result.ok:
                 any_ok = True
+                if pub.name == "youtube" and result.url:
+                    notify_youtube_published(post.headline, result.url)
             else:
                 notify_error(
                     f"publish:{pub.name}",

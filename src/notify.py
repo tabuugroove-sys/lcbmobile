@@ -32,6 +32,23 @@ async def _send(text: str) -> None:
         log.warning("Failed to push status to Telegram: %s", exc)
 
 
+async def _send_direct(chat: str, text: str) -> None:
+    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token or not chat:
+        return
+    from telegram import Bot
+
+    bot = Bot(token=token)
+    try:
+        await bot.send_message(
+            chat_id=chat,
+            text=text[:3900],
+            disable_web_page_preview=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to push YouTube notify to Telegram: %s", exc)
+
+
 def notify(text: str) -> None:
     """Fire-and-forget plain-text status post. Safe to call from sync code."""
     try:
@@ -58,6 +75,22 @@ def notify_error(stage: str, exc: BaseException, *, context: str = "") -> None:
     parts.append("")
     parts.append(tail)
     notify("\n".join(parts))
+
+
+def notify_youtube_published(title: str, url: str) -> None:
+    """Send a private alert when a YouTube Short is successfully uploaded."""
+    chat = (os.getenv("TELEGRAM_NOTIFY_CHAT_ID") or "").strip()
+    if not chat:
+        return
+    text = f"▶️ YouTube Short опубликован\n{title}\n{url}"
+    try:
+        asyncio.run(_send_direct(chat, text))
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(_send_direct(chat, text))
+        finally:
+            loop.close()
 
 
 def notify_summary(report) -> None:  # noqa: ANN001
