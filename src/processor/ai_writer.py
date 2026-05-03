@@ -10,6 +10,7 @@ import logging
 import re
 from typing import Any
 
+import anthropic
 from anthropic import Anthropic
 
 from ..config import settings
@@ -83,7 +84,39 @@ def _extract_json(text: str) -> dict[str, Any]:
     return json.loads(match.group(0))
 
 
+def _is_credit_or_auth_error(exc: BaseException) -> bool:
+    """Errors that mean Anthropic won't recover on retry — fall back to Gemini."""
+    if isinstance(exc, RuntimeError) and "ANTHROPIC_API_KEY" in str(exc):
+        return True
+    if isinstance(exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError)):
+        return True
+    if isinstance(exc, anthropic.BadRequestError):
+        msg = str(exc).lower()
+        if "credit balance" in msg or "credit_balance" in msg:
+            return True
+    return False
+
+
 def rewrite(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
+    try:
+        return _rewrite_via_anthropic(item, max_tokens=max_tokens)
+    except Exception as exc:  # noqa: BLE001
+        if not _is_credit_or_auth_error(exc):
+            raise
+        from .fallback_writer import is_configured, rewrite_via_gemini
+
+        if not is_configured():
+            log.error(
+                "Anthropic unavailable (%s) and GEMINI_API_KEY not configured "
+                "— re-raising original error",
+                exc,
+            )
+            raise
+        log.warning("Anthropic unavailable (%s) — falling back to Gemini", exc)
+        return rewrite_via_gemini(item, max_tokens=max_tokens)
+
+
+def _rewrite_via_anthropic(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
     client = _get_client()
     response = client.messages.create(
         model=settings.anthropic_model,
