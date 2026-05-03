@@ -63,6 +63,7 @@ jobs:
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          DJ_CATEGORY_BOOST_HOURS: ${{ vars.DJ_CATEGORY_BOOST_HOURS || '12' }}
 
           CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
           CONTENT_LANG: pt-BR

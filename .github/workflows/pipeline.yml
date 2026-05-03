@@ -78,6 +78,9 @@ jobs:
           # Free-tier fallback when Anthropic returns credit/auth errors.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          # Editorial: how many hours of virtual freshness to give DJ-category
+          # items so they compete with high-volume celeb feeds (default 12).
+          DJ_CATEGORY_BOOST_HOURS: ${{ vars.DJ_CATEGORY_BOOST_HOURS || '12' }}
           CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
           CONTENT_LANG: pt-BR
           DB_PATH: data/state.db
