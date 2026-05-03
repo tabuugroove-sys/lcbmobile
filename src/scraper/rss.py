@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable
 
 import feedparser
@@ -12,6 +13,12 @@ from bs4 import BeautifulSoup
 
 from ..models import NewsItem
 from .sources import Source
+
+# Editorial boost: DJ-scene sources publish ~1 item/day vs. dozens from celebrity
+# tabloids, so a strict published_at sort would never pick them. We grant the
+# "dj" category a virtual freshness bonus so it competes with same-day celeb
+# news. Override via DJ_CATEGORY_BOOST_HOURS (default 12h).
+_DJ_BOOST = timedelta(hours=int(os.getenv("DJ_CATEGORY_BOOST_HOURS", "12")))
 
 log = logging.getLogger(__name__)
 
@@ -101,8 +108,11 @@ def collect_news(sources: Iterable[Source], enrich: bool = True) -> list[NewsIte
                     item = _enrich_with_og(item, client)
                 items.append(item)
 
-    items.sort(
-        key=lambda i: i.published_at or datetime.min,
-        reverse=True,
-    )
+    def _sort_key(item: NewsItem) -> datetime:
+        ts = item.published_at or datetime.min
+        if item.category == "dj":
+            ts = ts + _DJ_BOOST
+        return ts
+
+    items.sort(key=_sort_key, reverse=True)
     return items
