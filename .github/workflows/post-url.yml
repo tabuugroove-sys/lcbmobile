@@ -1,0 +1,118 @@
+name: Post URL (ad-hoc)
+
+# Manual: post a single article URL through the pipeline.
+# Bypasses RSS — useful for breaking news or anything you want out NOW.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Article URL to scrape & post"
+        required: true
+      platforms:
+        description: "Comma-separated platforms (youtube,telegram,instagram,tiktok,twitter). Empty = all configured."
+        required: false
+        default: "youtube,telegram"
+      dry_run:
+        description: "Render only, do not publish"
+        required: false
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg + fonts + ImageMagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core imagemagick
+          sudo sed -i 's|<policy domain="path" rights="none" pattern="@\*"/>||' /etc/ImageMagick-6/policy.xml || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Materialize secret files
+        run: |
+          if [ -n "${YOUTUBE_CLIENT_SECRET}" ]; then
+            echo "$YOUTUBE_CLIENT_SECRET" > client_secret.json
+          fi
+          if [ -n "${YOUTUBE_TOKEN}" ]; then
+            echo "$YOUTUBE_TOKEN" > youtube_token.json
+          fi
+        env:
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+
+      - name: Post URL
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+
+          CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
+          CONTENT_LANG: pt-BR
+          OUTPUT_DIR: out
+
+          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_PUBLIC_BASE_URL: ${{ vars.INSTAGRAM_PUBLIC_BASE_URL }}
+
+          TIKTOK_ACCESS_TOKEN: ${{ secrets.TIKTOK_ACCESS_TOKEN }}
+          TIKTOK_OPEN_ID: ${{ secrets.TIKTOK_OPEN_ID }}
+
+          TWITTER_CONSUMER_KEY: ${{ secrets.TWITTER_CONSUMER_KEY }}
+          TWITTER_CONSUMER_SECRET: ${{ secrets.TWITTER_CONSUMER_SECRET }}
+          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_SECRET: ${{ secrets.TWITTER_ACCESS_SECRET }}
+
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+
+          TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' }}
+          ELEVENLABS_MODEL: ${{ vars.ELEVENLABS_MODEL || 'eleven_multilingual_v2' }}
+
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_AUTH_HEADER: ${{ secrets.WEBHOOK_AUTH_HEADER }}
+          WEBHOOK_TARGETS: ${{ vars.WEBHOOK_TARGETS || 'youtube,instagram,tiktok' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          URL: ${{ inputs.url }}
+          PLATFORMS: ${{ inputs.platforms }}
+          DRY_RUN_FLAG: ${{ inputs.dry_run }}
+        run: |
+          ARGS="-v"
+          if [ -n "${PLATFORMS}" ]; then
+            for p in $(echo "${PLATFORMS}" | tr ',' ' '); do
+              ARGS="$ARGS --only $p"
+            done
+          fi
+          if [ "${DRY_RUN_FLAG}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python -m scripts.post_url "${URL}" $ARGS
+
+      - name: Upload generated assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-url-${{ github.run_id }}
+          path: out
+          if-no-files-found: ignore
+          retention-days: 7
