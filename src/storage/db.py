@@ -93,3 +93,29 @@ class Store:
                 (fingerprint, platform),
             ).fetchone()
             return row is not None
+
+    def hours_since_last_post(self) -> float | None:
+        """Hours since the last successful publication on any platform.
+
+        Returns None if there are no successful posts on record. Used to
+        deduplicate redundant cron triggers — we now run the schedule twice
+        per slot (e.g. :13 and :43) for resilience against GHA dropping
+        scheduled workflow runs under load.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT posted_at FROM publications
+                   WHERE status = 'ok'
+                   ORDER BY posted_at DESC LIMIT 1"""
+            ).fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            from datetime import datetime, timezone
+            last = datetime.fromisoformat(row[0].replace("Z", "+00:00"))
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            return (now - last).total_seconds() / 3600.0
+        except (ValueError, TypeError):
+            return None

@@ -56,6 +56,26 @@ def run(
     dry_run = settings.dry_run if dry_run is None else dry_run
 
     store = Store(settings.db_path)
+
+    # Skip redundant cron triggers — we run the schedule twice per slot for
+    # GHA-drop resilience (cron at :13 AND :43). If the previous twin already
+    # posted, this run becomes a no-op. Configurable via env.
+    import os as _os
+    min_gap_h = float(_os.getenv("MIN_HOURS_BETWEEN_POSTS", "3.5"))
+    last = store.hours_since_last_post()
+    if last is not None and last < min_gap_h:
+        log.info(
+            "Skipping run: last post was %.2fh ago, min gap is %.2fh "
+            "(redundant cron trigger).",
+            last,
+            min_gap_h,
+        )
+        notify(
+            f"⏭️ Skip: post anterior há {last:.1f}h "
+            f"(gap mínimo {min_gap_h:.1f}h)."
+        )
+        return RunReport()
+
     sources = load_sources(sources_path)
     log.info("Loaded %d sources", len(sources))
 
