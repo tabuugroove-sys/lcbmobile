@@ -3,12 +3,16 @@ name: Autopost pipeline
 on:
   schedule:
     # GHA frequently drops scheduled runs under load. We schedule each of the
-    # 3 daily slots TWICE (30 min apart) so a missed trigger doesn't silently
-    # skip a post. The pipeline checks Store.hours_since_last_post() and the
-    # second twin no-ops if the first one already published. Net effect:
-    # still 3 posts/day, dramatically lower miss rate.
-    # Slots: 09:13/14:13/19:13 BRT (= 12:13/17:13/22:13 UTC) + :43 each.
-    - cron: "13,43 12,17,22 * * *"
+    # 3 daily slots THREE TIMES (20 min apart) so even consecutive drops can't
+    # kill a slot. The pipeline checks Store.hours_since_last_post() and the
+    # 2nd/3rd attempts no-op once the slot already produced a post.
+    # Net effect: 3 posts/day, ~9 chances to fire.
+    # Slots: 09:13/14:13/19:13 BRT (= 12:13/17:13/22:13 UTC), each + :33 + :53.
+    - cron: "13,33,53 12,17,22 * * *"
+    # Daily catch-up: at 06:00 UTC (03:00 BRT) check whether ANY post happened
+    # in the last 12h. If not, publish one — last-line defense against a day
+    # of complete cron silence.
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       platforms:
@@ -87,9 +91,11 @@ jobs:
           # items so they compete with high-volume celeb feeds (default 12).
           DJ_CATEGORY_BOOST_HOURS: ${{ vars.DJ_CATEGORY_BOOST_HOURS || '12' }}
           # Anti-duplicate guard: if a successful post happened within this
-          # window, the redundant cron twin (the :43 trigger) skips. Should be
-          # ~30 min less than the inter-slot gap (5h). Default 3.5h.
-          MIN_HOURS_BETWEEN_POSTS: ${{ vars.MIN_HOURS_BETWEEN_POSTS || '3.5' }}
+          # window, the run no-ops. Default 3.5h covers redundant slot triggers
+          # (:13/:33/:53). For the daily catch-up cron at 06:00 UTC we override
+          # to 10h — it should publish ONLY when the previous night's slot
+          # silently failed and we'd otherwise have a full day of silence.
+          MIN_HOURS_BETWEEN_POSTS: ${{ github.event.schedule == '0 6 * * *' && '10' || vars.MIN_HOURS_BETWEEN_POSTS || '3.5' }}
           CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
           CONTENT_LANG: pt-BR
           DB_PATH: data/state.db

@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 
 from ..models import NewsItem, RewrittenPost
-from .ai_writer import SYSTEM_PROMPT, _user_prompt
+from .ai_writer import SYSTEM_PROMPT, _extract_json, _user_prompt
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +64,13 @@ def rewrite_via_gemini(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPo
             f"Gemini returned no text (finishReason={finish}): {data}"
         ) from exc
 
-    payload = json.loads(text)
+    # Gemini occasionally emits invalid JSON (unescaped quotes inside strings,
+    # trailing commas, accidental markdown fences). Try strict json.loads first,
+    # then fall back to the regex-based extractor used for raw text responses.
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        log.warning("Gemini JSON invalid (%s) — retrying with regex extractor", exc)
+        payload = _extract_json(text)
     payload.setdefault("category", item.category or "geral")
     return RewrittenPost(source_url=item.url, **payload)
