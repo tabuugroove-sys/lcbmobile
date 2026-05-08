@@ -2,17 +2,23 @@ name: Autopost pipeline
 
 on:
   schedule:
-    # GHA frequently drops scheduled runs under load. We schedule each of the
-    # 3 daily slots THREE TIMES (20 min apart) so even consecutive drops can't
-    # kill a slot. The pipeline checks Store.hours_since_last_post() and the
-    # 2nd/3rd attempts no-op once the slot already produced a post.
-    # Net effect: 3 posts/day, ~9 chances to fire.
-    # Slots: 09:13/14:13/19:13 BRT (= 12:13/17:13/22:13 UTC), each + :33 + :53.
-    - cron: "13,33,53 12,17,22 * * *"
-    # Daily catch-up: at 06:00 UTC (03:00 BRT) check whether ANY post happened
-    # in the last 12h. If not, publish one — last-line defense against a day
-    # of complete cron silence.
-    - cron: "0 6 * * *"
+    # 3 posts/day distributed across Brazilian audience peak hours (BRT = UTC-3):
+    #   - 08:13 BRT (11:13 UTC) — morning scroll, pre-work
+    #   - 13:13 BRT (16:13 UTC) — lunch break peak
+    #   - 20:13 BRT (23:13 UTC) — evening prime time (primary engagement)
+    #
+    # Each slot fires THREE TIMES (20 min apart at :13/:33/:53) for resilience
+    # against GHA dropping scheduled runs. Pipeline checks
+    # Store.hours_since_last_post() and 2nd/3rd attempts no-op once the slot
+    # already produced a post. Net: 3 posts/day, ~9 chances to fire.
+    #
+    # Off-peak minutes (:13/:33/:53) avoid the GHA load spike at the top of
+    # every hour, which is a documented cause of dropped schedule events.
+    - cron: "13,33,53 11,16,23 * * *"
+    # Daily catch-up at 13:13 UTC (10:13 BRT — between morning and lunch slots).
+    # Publishes ONE post only if nothing has been posted in the last 10h —
+    # last-line defense against a full slot silently failing.
+    - cron: "13 13 * * *"
   workflow_dispatch:
     inputs:
       platforms:
@@ -92,10 +98,10 @@ jobs:
           DJ_CATEGORY_BOOST_HOURS: ${{ vars.DJ_CATEGORY_BOOST_HOURS || '12' }}
           # Anti-duplicate guard: if a successful post happened within this
           # window, the run no-ops. Default 3.5h covers redundant slot triggers
-          # (:13/:33/:53). For the daily catch-up cron at 06:00 UTC we override
-          # to 10h — it should publish ONLY when the previous night's slot
-          # silently failed and we'd otherwise have a full day of silence.
-          MIN_HOURS_BETWEEN_POSTS: ${{ github.event.schedule == '0 6 * * *' && '10' || vars.MIN_HOURS_BETWEEN_POSTS || '3.5' }}
+          # (:13/:33/:53). For the daily catch-up cron at 13:13 UTC we override
+          # to 10h — it should publish ONLY when the morning slot (11:13 UTC)
+          # silently failed (then ~17h since previous night's evening post).
+          MIN_HOURS_BETWEEN_POSTS: ${{ github.event.schedule == '13 13 * * *' && '10' || vars.MIN_HOURS_BETWEEN_POSTS || '3.5' }}
           CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
           CONTENT_LANG: pt-BR
           DB_PATH: data/state.db
