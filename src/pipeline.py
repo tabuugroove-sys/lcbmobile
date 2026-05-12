@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 import time
+from zoneinfo import ZoneInfo
 
 from .config import ROOT, settings
 from .models import GeneratedAssets, NewsItem, RewrittenPost
@@ -42,6 +44,38 @@ def _retry_wait(item: NewsItem, attempt: int) -> None:
         settings.max_attempts_per_item,
     )
     time.sleep(delay)
+
+
+def _yesterday_fallback_items(
+    items: list[NewsItem], store: Store, limit: int
+) -> list[NewsItem]:
+    if not settings.fallback_to_yesterday:
+        return []
+
+    tz = ZoneInfo(settings.timezone)
+    today = datetime.now(tz).date()
+    yesterday = today - timedelta(days=1)
+    fallback: list[NewsItem] = []
+
+    for item in items:
+        if not item.published_at:
+            continue
+        published = item.published_at
+        if published.tzinfo is not None:
+            published_date = published.astimezone(tz).date()
+        else:
+            published_date = published.date()
+        if published_date != yesterday:
+            continue
+
+        dedupe_key = f"replay:{today.isoformat()}:{item.fingerprint()}"
+        if store.is_seen(dedupe_key):
+            continue
+        fallback.append(item.model_copy(update={"dedupe_key": dedupe_key}))
+        if len(fallback) >= limit:
+            break
+
+    return fallback
 
 
 def run(
@@ -95,6 +129,19 @@ def run(
         fresh.append(item)
         if len(fresh) >= limit:
             break
+
+    if not fresh:
+        fresh = _yesterday_fallback_items(items, store, limit)
+        if fresh:
+            log.info(
+                "No fresh items; using %d yesterday fallback item(s).",
+                len(fresh),
+            )
+            notify(
+                f"ℹ️ Nada novo; usando notícia de ontem.\n"
+                f"fallback={len(fresh)} limit={limit}"
+            )
+
     report.new = len(fresh)
     log.info("Fetched=%d new=%d (limit=%d)", report.fetched, report.new, limit)
 

@@ -45,6 +45,7 @@ class Settings:
     max_items_per_run: int
     max_attempts_per_item: int
     retry_delay_seconds: int
+    fallback_to_yesterday: bool
     dry_run: bool
 
     tts_provider: str
@@ -120,6 +121,7 @@ def load_settings() -> Settings:
         max_items_per_run=_int(os.getenv("MAX_ITEMS_PER_RUN"), 3),
         max_attempts_per_item=_int(os.getenv("MAX_ATTEMPTS_PER_ITEM"), 5),
         retry_delay_seconds=_int(os.getenv("RETRY_DELAY_SECONDS"), 200),
+        fallback_to_yesterday=_bool(os.getenv("FALLBACK_TO_YESTERDAY"), True),
         dry_run=_bool(os.getenv("DRY_RUN"), False),
         tts_provider=_str("TTS_PROVIDER", "gtts").lower(),
         elevenlabs_api_key=_str("ELEVENLABS_API_KEY"),

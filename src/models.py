@@ -18,9 +18,10 @@ class NewsItem(BaseModel):
     summary: str = ""
     published_at: Optional[datetime] = None
     image_url: Optional[str] = None
+    dedupe_key: Optional[str] = None
 
     def fingerprint(self) -> str:
-        return self.url.strip().lower()
+        return (self.dedupe_key or self.url).strip().lower()
 
 
 class RewrittenPost(BaseModel):
