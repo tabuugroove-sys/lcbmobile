@@ -46,6 +46,11 @@ class Settings:
     max_attempts_per_item: int
     retry_delay_seconds: int
     fallback_to_yesterday: bool
+    analytics_enabled: bool
+    analytics_candidate_pool: int
+    analytics_history_limit: int
+    youtube_api_key: str
+    youtube_metrics_refresh_hours: int
     dry_run: bool
 
     tts_provider: str
@@ -122,6 +127,11 @@ def load_settings() -> Settings:
         max_attempts_per_item=_int(os.getenv("MAX_ATTEMPTS_PER_ITEM"), 5),
         retry_delay_seconds=_int(os.getenv("RETRY_DELAY_SECONDS"), 200),
         fallback_to_yesterday=_bool(os.getenv("FALLBACK_TO_YESTERDAY"), True),
+        analytics_enabled=_bool(os.getenv("ANALYTICS_ENABLED"), True),
+        analytics_candidate_pool=_int(os.getenv("ANALYTICS_CANDIDATE_POOL"), 40),
+        analytics_history_limit=_int(os.getenv("ANALYTICS_HISTORY_LIMIT"), 250),
+        youtube_api_key=_str("YOUTUBE_API_KEY"),
+        youtube_metrics_refresh_hours=_int(os.getenv("YOUTUBE_METRICS_REFRESH_HOURS"), 6),
         dry_run=_bool(os.getenv("DRY_RUN"), False),
         tts_provider=_str("TTS_PROVIDER", "gtts").lower(),
         elevenlabs_api_key=_str("ELEVENLABS_API_KEY"),

@@ -8,6 +8,7 @@ from pathlib import Path
 import time
 from zoneinfo import ZoneInfo
 
+from .analytics import refresh_youtube_metrics, select_best_candidates
 from .config import ROOT, settings
 from .models import GeneratedAssets, NewsItem, RewrittenPost
 from .notify import notify, notify_error, notify_summary
@@ -72,10 +73,10 @@ def _yesterday_fallback_items(
         if store.is_seen(dedupe_key):
             continue
         fallback.append(item.model_copy(update={"dedupe_key": dedupe_key}))
-        if len(fallback) >= limit:
+        if len(fallback) >= settings.analytics_candidate_pool:
             break
 
-    return fallback
+    return select_best_candidates(fallback, store, limit=limit, stage="fallback")
 
 
 def run(
@@ -90,6 +91,7 @@ def run(
     dry_run = settings.dry_run if dry_run is None else dry_run
 
     store = Store(settings.db_path)
+    refresh_youtube_metrics(store)
 
     # Skip redundant cron triggers — we run the schedule twice per slot for
     # GHA-drop resilience (cron at :13 AND :43). If the previous twin already
@@ -122,13 +124,14 @@ def run(
 
     report = RunReport(fetched=len(items))
 
-    fresh: list[NewsItem] = []
+    candidates: list[NewsItem] = []
     for item in items:
         if store.is_seen(item.fingerprint()):
             continue
-        fresh.append(item)
-        if len(fresh) >= limit:
+        candidates.append(item)
+        if len(candidates) >= settings.analytics_candidate_pool:
             break
+    fresh = select_best_candidates(candidates, store, limit=limit, stage="fresh")
 
     if not fresh:
         fresh = _yesterday_fallback_items(items, store, limit)
@@ -158,6 +161,7 @@ def run(
         return report
 
     for item in fresh:
+        store.record_item_features(item)
         for attempt in range(1, settings.max_attempts_per_item + 1):
             log.info(
                 "Processing %s (attempt %d/%d)",

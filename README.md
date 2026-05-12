@@ -94,6 +94,23 @@ Copie de `.env.example`. Mínimo necessário para começar:
 Cada publisher se desativa sozinho se não estiver configurado — não bloqueia os
 outros.
 
+## Analytics de escolha de pauta
+
+Antes de escolher a notícia do run, o pipeline atualiza métricas dos Shorts já
+publicados no YouTube (`views`, `likes`, `comments`) e ranqueia os candidatos de
+RSS por fonte, categoria e palavras do título que historicamente performaram
+melhor. Se ainda houver pouca amostra, ele mantém a ordem normal do RSS.
+
+Variáveis úteis:
+
+| Variável | Para quê |
+|---|---|
+| `ANALYTICS_ENABLED` | Liga/desliga o ranqueamento inteligente |
+| `ANALYTICS_CANDIDATE_POOL` | Quantas notícias frescas entram na disputa |
+| `ANALYTICS_HISTORY_LIMIT` | Quantos posts antigos entram no aprendizado |
+| `YOUTUBE_API_KEY` | Opcional; busca métricas públicas sem depender do OAuth |
+| `YOUTUBE_METRICS_REFRESH_HOURS` | Intervalo mínimo para atualizar métricas |
+
 ## Executando 24/7
 
 `/.github/workflows/pipeline.yml` roda a pipeline a cada 3 horas via

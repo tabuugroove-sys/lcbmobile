@@ -163,6 +163,12 @@ jobs:
           # Free-tier fallback when Anthropic returns credit/auth errors.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          # Learns which RSS candidates tend to win on YouTube.
+          ANALYTICS_ENABLED: ${{ vars.ANALYTICS_ENABLED || 'true' }}
+          ANALYTICS_CANDIDATE_POOL: ${{ vars.ANALYTICS_CANDIDATE_POOL || '40' }}
+          ANALYTICS_HISTORY_LIMIT: ${{ vars.ANALYTICS_HISTORY_LIMIT || '250' }}
+          YOUTUBE_METRICS_REFRESH_HOURS: ${{ vars.YOUTUBE_METRICS_REFRESH_HOURS || '6' }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           # Editorial: how many hours of virtual freshness to give DJ-category
           # items so they compete with high-volume celeb feeds (default 12).
           DJ_CATEGORY_BOOST_HOURS: ${{ vars.DJ_CATEGORY_BOOST_HOURS || '12' }}

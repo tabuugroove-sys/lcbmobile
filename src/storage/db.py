@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator
+
+from ..models import NewsItem
 
 
 SCHEMA = """
@@ -26,6 +28,41 @@ CREATE TABLE IF NOT EXISTS publications (
     error       TEXT,
     posted_at   TEXT NOT NULL,
     UNIQUE(fingerprint, platform)
+);
+
+CREATE TABLE IF NOT EXISTS item_features (
+    fingerprint  TEXT PRIMARY KEY,
+    source_id    TEXT NOT NULL,
+    source_name  TEXT NOT NULL,
+    category     TEXT NOT NULL,
+    url          TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    summary      TEXT,
+    published_at TEXT,
+    recorded_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS youtube_metrics (
+    video_id      TEXT PRIMARY KEY,
+    fingerprint   TEXT NOT NULL,
+    view_count    INTEGER NOT NULL DEFAULT 0,
+    like_count    INTEGER NOT NULL DEFAULT 0,
+    comment_count INTEGER NOT NULL DEFAULT 0,
+    collected_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS candidate_scores (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at      TEXT NOT NULL,
+    stage       TEXT NOT NULL,
+    rank        INTEGER NOT NULL,
+    fingerprint TEXT NOT NULL,
+    source_id   TEXT NOT NULL,
+    category    TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    score       REAL NOT NULL,
+    reason      TEXT NOT NULL,
+    selected    INTEGER NOT NULL
 );
 """
 
@@ -85,6 +122,26 @@ class Store:
                 ),
             )
 
+    def record_item_features(self, item: NewsItem) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO item_features
+                   (fingerprint, source_id, source_name, category, url, title,
+                    summary, published_at, recorded_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    item.fingerprint(),
+                    item.source_id,
+                    item.source_name,
+                    item.category,
+                    item.url,
+                    item.title,
+                    item.summary,
+                    item.published_at.isoformat() if item.published_at else None,
+                    datetime.utcnow().isoformat(),
+                ),
+            )
+
     def already_published(self, fingerprint: str, platform: str) -> bool:
         with self._conn() as conn:
             row = conn.execute(
@@ -119,3 +176,115 @@ class Store:
             return (now - last).total_seconds() / 3600.0
         except (ValueError, TypeError):
             return None
+
+    def youtube_metric_targets(
+        self, *, stale_after_hours: int, limit: int = 50
+    ) -> list[tuple[str, str]]:
+        cutoff = (datetime.utcnow() - timedelta(hours=stale_after_hours)).isoformat()
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT p.fingerprint, p.remote_id
+                   FROM publications p
+                   LEFT JOIN youtube_metrics m ON m.video_id = p.remote_id
+                   WHERE p.platform = 'youtube'
+                     AND p.status = 'ok'
+                     AND p.remote_id IS NOT NULL
+                     AND p.remote_id != ''
+                     AND (m.collected_at IS NULL OR m.collected_at < ?)
+                   ORDER BY p.posted_at DESC
+                   LIMIT ?""",
+                (cutoff, limit),
+            ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    def record_youtube_metrics(
+        self,
+        *,
+        fingerprint: str,
+        video_id: str,
+        view_count: int,
+        like_count: int,
+        comment_count: int,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO youtube_metrics
+                   (video_id, fingerprint, view_count, like_count,
+                    comment_count, collected_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    video_id,
+                    fingerprint,
+                    view_count,
+                    like_count,
+                    comment_count,
+                    datetime.utcnow().isoformat(),
+                ),
+            )
+
+    def analytics_examples(self, limit: int) -> list[dict[str, object]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT
+                       m.fingerprint,
+                       COALESCE(f.source_id, s.source_id, '') AS source_id,
+                       COALESCE(f.category, '') AS category,
+                       COALESCE(f.title, s.title, '') AS title,
+                       COALESCE(f.summary, '') AS summary,
+                       m.view_count,
+                       m.like_count,
+                       m.comment_count
+                   FROM youtube_metrics m
+                   JOIN publications p
+                     ON p.platform = 'youtube' AND p.remote_id = m.video_id
+                   LEFT JOIN item_features f ON f.fingerprint = m.fingerprint
+                   LEFT JOIN seen_items s ON s.fingerprint = m.fingerprint
+                   WHERE p.status = 'ok'
+                   ORDER BY p.posted_at DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "fingerprint": row[0],
+                "source_id": row[1],
+                "category": row[2],
+                "title": row[3],
+                "summary": row[4],
+                "view_count": row[5],
+                "like_count": row[6],
+                "comment_count": row[7],
+            }
+            for row in rows
+        ]
+
+    def record_candidate_scores(
+        self,
+        *,
+        stage: str,
+        scores: list[tuple[NewsItem, float, str]],
+        selected: set[str],
+    ) -> None:
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.executemany(
+                """INSERT INTO candidate_scores
+                   (run_at, stage, rank, fingerprint, source_id, category,
+                    title, score, reason, selected)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        now,
+                        stage,
+                        rank,
+                        item.fingerprint(),
+                        item.source_id,
+                        item.category,
+                        item.title,
+                        score,
+                        reason,
+                        1 if item.fingerprint() in selected else 0,
+                    )
+                    for rank, (item, score, reason) in enumerate(scores, start=1)
+                ],
+            )
