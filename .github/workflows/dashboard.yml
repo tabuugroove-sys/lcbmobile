@@ -1,0 +1,69 @@
+name: Dashboard
+
+on:
+  workflow_run:
+    workflows:
+      - Autopost pipeline
+      - Post URL (ad-hoc)
+      - Telegram only (one tap)
+      - Cloud publish (Telegram + Make.com)
+    types:
+      - completed
+  workflow_dispatch:
+  schedule:
+    # Keep the dashboard fresh even if no posting workflow ran recently.
+    - cron: "7 * * * *"
+
+concurrency:
+  group: dashboard-pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore state DB
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: dashboard-state-${{ github.run_id }}
+          restore-keys: |
+            lcb-state-
+
+      - name: Build dashboard
+        env:
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name || github.workflow }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion || 'manual' }}
+          WORKFLOW_URL: ${{ github.event.workflow_run.html_url || github.server_url }}
+        run: |
+          python scripts/build_dashboard.py \
+            --db data/state.db \
+            --out site \
+            --timezone America/Sao_Paulo \
+            --workflow-name "${WORKFLOW_NAME}" \
+            --workflow-conclusion "${WORKFLOW_CONCLUSION}" \
+            --workflow-url "${WORKFLOW_URL}"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

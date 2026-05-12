@@ -111,6 +111,18 @@ Variáveis úteis:
 | `YOUTUBE_API_KEY` | Opcional; busca métricas públicas sem depender do OAuth |
 | `YOUTUBE_METRICS_REFRESH_HOURS` | Intervalo mínimo para atualizar métricas |
 
+## Dashboard
+
+O dashboard roda sem servidor próprio: GitHub Actions lê `data/state.db`, gera
+um HTML estático e publica no GitHub Pages. Ele mostra posts do dia, erros,
+ranking dos candidatos escolhidos pela analytics e métricas de YouTube.
+
+URL: `https://tabuugroove-sys.github.io/lcbmobile/`
+
+Para testes futuros de voz, o dashboard deve comparar cada voz contra a
+performance esperada da notícia, não contra views brutas. Assim uma voz não
+ganha crédito só porque caiu em uma pauta naturalmente mais forte.
+
 ## Executando 24/7
 
 `/.github/workflows/pipeline.yml` roda a pipeline a cada 3 horas via
