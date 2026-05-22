@@ -51,6 +51,7 @@ class ElevenLabsProvider:
                 "stability": settings.elevenlabs_stability,
                 "similarity_boost": settings.elevenlabs_similarity,
                 "style": settings.elevenlabs_style,
+                "speed": settings.elevenlabs_speed,
                 "use_speaker_boost": True,
             },
         )

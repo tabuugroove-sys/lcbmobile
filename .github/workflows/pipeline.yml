@@ -204,6 +204,10 @@ jobs:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' }}
           ELEVENLABS_MODEL: ${{ vars.ELEVENLABS_MODEL || 'eleven_multilingual_v2' }}
+          ELEVENLABS_STABILITY: ${{ vars.ELEVENLABS_STABILITY || '0.62' }}
+          ELEVENLABS_SIMILARITY: ${{ vars.ELEVENLABS_SIMILARITY || '0.78' }}
+          ELEVENLABS_STYLE: ${{ vars.ELEVENLABS_STYLE || '0.18' }}
+          ELEVENLABS_SPEED: ${{ vars.ELEVENLABS_SPEED || '0.82' }}
 
           # Webhook -> Make.com/Zapier -> YouTube/IG/TikTok
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}

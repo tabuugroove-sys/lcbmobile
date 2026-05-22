@@ -60,6 +60,7 @@ class Settings:
     elevenlabs_stability: float
     elevenlabs_similarity: float
     elevenlabs_style: float
+    elevenlabs_speed: float
 
     youtube_client_secret_file: Path
     youtube_token_file: Path
@@ -140,6 +141,7 @@ def load_settings() -> Settings:
         elevenlabs_stability=_float(os.getenv("ELEVENLABS_STABILITY"), 0.45),
         elevenlabs_similarity=_float(os.getenv("ELEVENLABS_SIMILARITY"), 0.8),
         elevenlabs_style=_float(os.getenv("ELEVENLABS_STYLE"), 0.35),
+        elevenlabs_speed=_float(os.getenv("ELEVENLABS_SPEED"), 1.0),
         youtube_client_secret_file=Path(
             _str("YOUTUBE_CLIENT_SECRET_FILE", "client_secret.json")
         ),
