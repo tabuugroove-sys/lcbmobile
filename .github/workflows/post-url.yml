@@ -10,9 +10,9 @@ on:
         description: "Article URL to scrape & post"
         required: true
       platforms:
-        description: "Comma-separated platforms (youtube,telegram,instagram,tiktok,twitter). Empty = all configured."
+        description: "Comma-separated platforms (youtube,telegram,instagram,tiktok,twitter). Empty = YouTube only."
         required: false
-        default: "youtube,telegram"
+        default: "youtube"
       dry_run:
         description: "Render only, do not publish"
         required: false
@@ -68,6 +68,7 @@ jobs:
           CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
           CONTENT_LANG: pt-BR
           OUTPUT_DIR: out
+          OPTIONAL_PUBLISHERS: ${{ vars.OPTIONAL_PUBLISHERS || 'telegram' }}
 
           INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
@@ -99,7 +100,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
           URL: ${{ inputs.url }}
-          PLATFORMS: ${{ inputs.platforms }}
+          PLATFORMS: ${{ inputs.platforms || 'youtube' }}
           DRY_RUN_FLAG: ${{ inputs.dry_run }}
         run: |
           ARGS="-v"

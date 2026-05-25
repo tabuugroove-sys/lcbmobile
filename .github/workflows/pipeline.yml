@@ -25,9 +25,9 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Comma-separated platforms (telegram,youtube,instagram,tiktok,twitter). Empty = all configured."
+        description: "Comma-separated platforms (youtube,telegram,instagram,tiktok,twitter). Empty = YouTube only."
         required: false
-        default: "telegram,youtube"
+        default: "youtube"
       dry_run:
         description: "Render only, do not publish"
         required: false
@@ -184,6 +184,7 @@ jobs:
           OUTPUT_DIR: out
           MAX_ITEMS_PER_RUN: ${{ inputs.limit || '1' }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          OPTIONAL_PUBLISHERS: ${{ vars.OPTIONAL_PUBLISHERS || 'telegram' }}
 
           INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
@@ -215,7 +216,7 @@ jobs:
           WEBHOOK_TARGETS: ${{ vars.WEBHOOK_TARGETS || 'youtube,instagram,tiktok' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          PLATFORMS: ${{ inputs.platforms }}
+          PLATFORMS: ${{ inputs.platforms || 'youtube' }}
         run: |
           ARGS="-v"
           if [ -n "${PLATFORMS}" ]; then

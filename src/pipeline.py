@@ -173,6 +173,13 @@ def run(
         notify("⚠️ Nenhum publisher configurado.")
         return report
 
+    import os as _os
+    optional_publishers = {
+        name.strip().lower()
+        for name in _os.getenv("OPTIONAL_PUBLISHERS", "telegram").split(",")
+        if name.strip()
+    }
+
     for item in fresh:
         store.record_item_features(item)
         for attempt in range(1, settings.max_attempts_per_item + 1):
@@ -210,6 +217,7 @@ def run(
             any_ok = False
             all_ok = True
             for pub in publishers:
+                optional = pub.name in optional_publishers
                 fp = item.fingerprint()
                 ch = item.content_hash()
                 if store.already_published(fp, pub.name):
@@ -234,12 +242,19 @@ def run(
                 if result.ok:
                     any_ok = True
                 else:
-                    all_ok = False
-                    notify_error(
-                        f"publish:{pub.name}",
-                        Exception(result.error or "unknown error"),
-                        context=item.url,
-                    )
+                    if optional:
+                        log.warning(
+                            "Optional publisher %s failed; continuing: %s",
+                            pub.name,
+                            result.error or "unknown error",
+                        )
+                    else:
+                        all_ok = False
+                        notify_error(
+                            f"publish:{pub.name}",
+                            Exception(result.error or "unknown error"),
+                            context=item.url,
+                        )
                 log.info(
                     "[%s] %s -> %s",
                     pub.name,

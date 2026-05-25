@@ -1,7 +1,8 @@
-name: Cloud publish (Telegram + Make.com)
+name: Cloud publish (Make.com + optional Telegram)
 
-# Zero-input workflow: posts to Telegram directly AND fires a webhook to
+# Zero-input workflow: fires a webhook to
 # Make.com / Zapier (which then uploads to YouTube, Instagram Reels, TikTok).
+# Telegram is optional when the bot token is configured and valid.
 # Designed to be triggered with a single tap from the GitHub mobile app.
 #
 # Required Secrets:
@@ -50,7 +51,7 @@ jobs:
           restore-keys: |
             lcb-state-
 
-      - name: Run pipeline (telegram + webhook)
+      - name: Run pipeline (webhook + optional telegram)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
@@ -58,6 +59,7 @@ jobs:
           DB_PATH: data/state.db
           OUTPUT_DIR: out
           MAX_ITEMS_PER_RUN: ${{ vars.MAX_ITEMS_PER_RUN || '2' }}
+          OPTIONAL_PUBLISHERS: ${{ vars.OPTIONAL_PUBLISHERS || 'telegram' }}
 
           TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
@@ -70,4 +72,4 @@ jobs:
           WEBHOOK_AUTH_HEADER: ${{ secrets.WEBHOOK_AUTH_HEADER }}
           WEBHOOK_TARGETS: ${{ vars.WEBHOOK_TARGETS || 'youtube,instagram,tiktok' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m scripts.run_pipeline -v --only telegram --only webhook
+        run: python -m scripts.run_pipeline -v --only webhook --only telegram
