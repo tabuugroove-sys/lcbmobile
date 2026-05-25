@@ -73,6 +73,50 @@ class Store:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """Idempotent schema migrations for columns added after initial release."""
+        for ddl in [
+            "ALTER TABLE seen_items ADD COLUMN content_hash TEXT",
+            "ALTER TABLE publications ADD COLUMN content_hash TEXT",
+        ]:
+            try:
+                conn.execute(ddl)
+            except sqlite3.OperationalError:
+                pass  # column already exists
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_seen_content_hash "
+            "ON seen_items(content_hash) WHERE content_hash IS NOT NULL"
+        )
+        self._backfill_content_hash(conn)
+
+    @staticmethod
+    def _backfill_content_hash(conn: sqlite3.Connection) -> None:
+        """One-shot fill of content_hash for rows written before the column existed.
+
+        Uses the title text we already store. Skips rows that already have a
+        hash so it's safe to run on every startup.
+        """
+        # Lazy import to avoid models <-> storage cycle at module load
+        from ..models import _normalize_title
+        import hashlib
+
+        rows = conn.execute(
+            "SELECT fingerprint, title FROM seen_items WHERE content_hash IS NULL "
+            "AND title IS NOT NULL AND title != ''"
+        ).fetchall()
+        for fp, title in rows:
+            norm = _normalize_title(title or "")
+            if not norm:
+                continue
+            # Summary unknown for historical rows, so hash from title alone —
+            # close enough to catch obvious dupes (same headline = same story).
+            h = hashlib.sha1(f"{norm}|".encode("utf-8")).hexdigest()[:16]
+            conn.execute(
+                "UPDATE seen_items SET content_hash = ? WHERE fingerprint = ?",
+                (h, fp),
+            )
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -90,13 +134,55 @@ class Store:
             ).fetchone()
             return row is not None
 
-    def mark_seen(self, fingerprint: str, source_id: str, url: str, title: str) -> None:
+    def is_seen_by_content(self, content_hash: str) -> bool:
+        """Check whether any previously-seen item had this exact content hash.
+
+        Second layer of dedup — catches the case where the same story appears
+        at two different URLs (mirror, redirect, RSS reposting with a new slug).
+        """
+        if not content_hash:
+            return False
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM seen_items WHERE content_hash = ? LIMIT 1",
+                (content_hash,),
+            ).fetchone()
+            return row is not None
+
+    def already_published_by_content(self, content_hash: str, platform: str) -> bool:
+        """Same as already_published() but matches by content_hash."""
+        if not content_hash:
+            return False
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT 1 FROM publications
+                   WHERE content_hash = ? AND platform = ? AND status = 'ok'
+                   LIMIT 1""",
+                (content_hash, platform),
+            ).fetchone()
+            return row is not None
+
+    def mark_seen(
+        self,
+        fingerprint: str,
+        source_id: str,
+        url: str,
+        title: str,
+        content_hash: str | None = None,
+    ) -> None:
         with self._conn() as conn:
             conn.execute(
                 """INSERT OR IGNORE INTO seen_items
-                   (fingerprint, source_id, url, title, seen_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (fingerprint, source_id, url, title, datetime.utcnow().isoformat()),
+                   (fingerprint, source_id, url, title, seen_at, content_hash)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    fingerprint,
+                    source_id,
+                    url,
+                    title,
+                    datetime.utcnow().isoformat(),
+                    content_hash,
+                ),
             )
 
     def record_publication(
@@ -106,12 +192,14 @@ class Store:
         remote_id: str | None,
         status: str,
         error: str | None = None,
+        content_hash: str | None = None,
     ) -> None:
         with self._conn() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO publications
-                   (fingerprint, platform, remote_id, status, error, posted_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (fingerprint, platform, remote_id, status, error, posted_at,
+                    content_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     fingerprint,
                     platform,
@@ -119,6 +207,7 @@ class Store:
                     status,
                     error,
                     datetime.utcnow().isoformat(),
+                    content_hash,
                 ),
             )
 

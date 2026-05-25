@@ -124,9 +124,23 @@ def run(
     report = RunReport(fetched=len(items))
 
     candidates: list[NewsItem] = []
+    # Track content hashes added to candidates in THIS run, so two RSS items
+    # with the same headline (mirror sites, dupe feeds) collapse to one.
+    seen_hashes_this_run: set[str] = set()
     for item in items:
-        if store.is_seen(item.fingerprint()):
+        fp = item.fingerprint()
+        ch = item.content_hash()
+        if store.is_seen(fp):
             continue
+        if ch and store.is_seen_by_content(ch):
+            log.info(
+                "Skipping %s — same content already seen (hash %s)", item.url, ch
+            )
+            continue
+        if ch and ch in seen_hashes_this_run:
+            log.info("Skipping %s — duplicate in this run (hash %s)", item.url, ch)
+            continue
+        seen_hashes_this_run.add(ch)
         candidates.append(item)
         if len(candidates) >= settings.analytics_candidate_pool:
             break
@@ -196,16 +210,26 @@ def run(
             any_ok = False
             all_ok = True
             for pub in publishers:
-                if store.already_published(item.fingerprint(), pub.name):
+                fp = item.fingerprint()
+                ch = item.content_hash()
+                if store.already_published(fp, pub.name):
+                    log.info("Skip %s on %s — already published (by URL)", item.url, pub.name)
+                    continue
+                if ch and store.already_published_by_content(ch, pub.name):
+                    log.warning(
+                        "Skip %s on %s — same content already published (hash %s)",
+                        item.url, pub.name, ch,
+                    )
                     continue
                 result = pub.publish(post, assets)
                 report.publish_results.append(result)
                 store.record_publication(
-                    item.fingerprint(),
+                    fp,
                     pub.name,
                     result.remote_id,
                     "ok" if result.ok else "error",
                     error=result.error,
+                    content_hash=ch,
                 )
                 if result.ok:
                     any_ok = True
@@ -228,7 +252,11 @@ def run(
                 # intended to publish it. This keeps partial failures in the
                 # retry queue for another attempt.
                 store.mark_seen(
-                    item.fingerprint(), item.source_id, item.url, item.title
+                    item.fingerprint(),
+                    item.source_id,
+                    item.url,
+                    item.title,
+                    content_hash=item.content_hash(),
                 )
                 break
 
