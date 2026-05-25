@@ -100,15 +100,14 @@ def run(
     min_gap_h = float(_os.getenv("MIN_HOURS_BETWEEN_POSTS", "3.5"))
     last = store.hours_since_last_post()
     if last is not None and last < min_gap_h:
+        # Silent skip — this is a redundant cron twin, completely expected.
+        # No notify() because it would spam the public Telegram channel with
+        # ~6 messages/day. Detail is still in the GHA logs.
         log.info(
             "Skipping run: last post was %.2fh ago, min gap is %.2fh "
             "(redundant cron trigger).",
             last,
             min_gap_h,
-        )
-        notify(
-            f"⏭️ Skip: post anterior há {last:.1f}h "
-            f"(gap mínimo {min_gap_h:.1f}h)."
         )
         return RunReport()
 
