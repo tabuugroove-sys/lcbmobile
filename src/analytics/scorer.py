@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import unicodedata
 from collections import defaultdict
 from datetime import datetime, timezone
 from statistics import mean
@@ -47,6 +48,72 @@ _STOPWORDS = {
     "uma",
 }
 
+_DRAMA_TERMS = {
+    "acidente",
+    "afastado",
+    "afastada",
+    "ameaca",
+    "ameacado",
+    "ameacada",
+    "briga",
+    "cancelado",
+    "cancelada",
+    "chora",
+    "chorando",
+    "chorou",
+    "colapso",
+    "confusao",
+    "crise",
+    "desaba",
+    "desabafa",
+    "desespero",
+    "doenca",
+    "doente",
+    "dor",
+    "emergencia",
+    "enterro",
+    "escandalo",
+    "exposto",
+    "exposta",
+    "grave",
+    "hospital",
+    "internado",
+    "internada",
+    "investigado",
+    "investigada",
+    "luto",
+    "morre",
+    "morreu",
+    "morte",
+    "perde",
+    "perdeu",
+    "policia",
+    "preso",
+    "presa",
+    "processo",
+    "revoltado",
+    "revoltada",
+    "separacao",
+    "termino",
+    "tragedia",
+    "traicao",
+    "treta",
+}
+
+_DRAMA_PHRASES = (
+    "aos prantos",
+    "climao",
+    "estado grave",
+    "foi preso",
+    "foi presa",
+    "foi internado",
+    "foi internada",
+    "passa mal",
+    "passou mal",
+    "perdeu tudo",
+    "risco de morte",
+)
+
 
 def _tokens(text: str) -> list[str]:
     return [
@@ -79,6 +146,21 @@ def _freshness_score(item: NewsItem) -> float:
         / 3600.0,
     )
     return max(0.0, 1.0 - age_hours / 36.0)
+
+
+def _plain_text(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text)
+    return decomposed.encode("ascii", "ignore").decode("ascii").lower()
+
+
+def _drama_score(item: NewsItem) -> float:
+    """Boost stories with conflict, loss, health scares or public breakdowns."""
+    text = _plain_text(f"{item.title} {item.summary}")
+    tokens = set(_tokens(text))
+    term_hits = len(tokens & _DRAMA_TERMS)
+    phrase_hits = sum(1 for phrase in _DRAMA_PHRASES if phrase in text)
+    raw = term_hits + 1.5 * phrase_hits
+    return min(1.0, raw / 3.0)
 
 
 def select_best_candidates(
@@ -134,16 +216,18 @@ def select_best_candidates(
         category_part = _avg(category_scores[item.category], baseline)
         token_part = _avg(token_values, baseline)
         freshness = _freshness_score(item)
+        drama = _drama_score(item)
 
         score = (
             0.45 * source_part
             + 0.25 * category_part
             + 0.20 * token_part
             + 0.75 * freshness
+            + settings.drama_signal_weight * drama
         )
         reason = (
             f"source={source_part:.2f} category={category_part:.2f} "
-            f"tokens={token_part:.2f} fresh={freshness:.2f}"
+            f"tokens={token_part:.2f} fresh={freshness:.2f} drama={drama:.2f}"
         )
         scored.append((item, score, reason))
 
