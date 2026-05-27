@@ -163,6 +163,24 @@ def _drama_score(item: NewsItem) -> float:
     return min(1.0, raw / 3.0)
 
 
+def _cold_start_scores(pool: list[NewsItem]) -> list[tuple[NewsItem, float, str]]:
+    """Score candidates when YouTube history is absent or too small."""
+    scored: list[tuple[NewsItem, float, str]] = []
+    for idx, item in enumerate(pool):
+        freshness = _freshness_score(item)
+        drama = _drama_score(item)
+        rss_order = 1.0 - (idx / max(len(pool), 1))
+        score = (
+            0.60 * rss_order
+            + 0.75 * freshness
+            + settings.drama_signal_weight * drama
+        )
+        reason = f"rss={rss_order:.2f} fresh={freshness:.2f} drama={drama:.2f}"
+        scored.append((item, score, reason))
+    scored.sort(key=lambda row: row[1], reverse=True)
+    return scored
+
+
 def select_best_candidates(
     candidates: list[NewsItem],
     store: Store,
@@ -178,11 +196,15 @@ def select_best_candidates(
 
     examples = store.analytics_examples(settings.analytics_history_limit)
     if len(examples) < 3:
-        log.info("Analytics has only %d examples; keeping RSS order", len(examples))
-        selected = pool[:limit]
+        log.info(
+            "Analytics has only %d examples; using cold-start drama scoring",
+            len(examples),
+        )
+        scored = _cold_start_scores(pool)
+        selected = [item for item, _, _ in scored[:limit]]
         store.record_candidate_scores(
             stage=stage,
-            scores=[(item, float(len(pool) - idx), "rss_order") for idx, item in enumerate(pool)],
+            scores=scored[: min(len(scored), 50)],
             selected={item.fingerprint() for item in selected},
         )
         return selected
