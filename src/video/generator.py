@@ -19,15 +19,15 @@ import httpx
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from moviepy.editor import (
     AudioFileClip,
-    ColorClip,
+    CompositeAudioClip,
     CompositeVideoClip,
     ImageClip,
     TextClip,
-    concatenate_videoclips,
 )
 
+from ..config import settings
 from ..models import GeneratedAssets, NewsItem, RewrittenPost
-from .tts import TTSProvider, get_tts_provider
+from .tts import get_tts_provider
 
 log = logging.getLogger(__name__)
 
@@ -121,6 +121,28 @@ def _text_clip(text: str, duration: float, font: str | None) -> CompositeVideoCl
     return clip
 
 
+def _mix_voice_with_background(voice: AudioFileClip, duration: float) -> CompositeAudioClip | AudioFileClip:
+    music_path = settings.background_music_path
+    volume = max(0.0, settings.background_music_volume)
+    if volume <= 0 or not music_path.exists():
+        if volume > 0:
+            log.warning("Background music not found: %s", music_path)
+        return voice
+
+    music = AudioFileClip(str(music_path)).volumex(volume)
+    if music.duration < duration:
+        log.warning(
+            "Background music is shorter than the video (%.2fs < %.2fs); "
+            "using available music without looping",
+            music.duration,
+            duration,
+        )
+        duration = music.duration
+    music = music.subclip(0, duration).set_duration(duration)
+    log.info("Background music: %s at %.0f%% voice volume", music_path.name, volume * 100)
+    return CompositeAudioClip([music, voice]).set_duration(duration)
+
+
 def build_short(
     item: NewsItem,
     post: RewrittenPost,
@@ -149,6 +171,7 @@ def build_short(
         safe_audio_duration = max(0.5, audio.duration - 0.05)
         audio = audio.set_duration(safe_audio_duration)
         duration = max(8.0, min(60.0, safe_audio_duration))
+        audio = _mix_voice_with_background(audio, duration)
 
         bg_clip = ImageClip(str(bg_path)).set_duration(duration)
         # Subtle Ken-Burns zoom for life.

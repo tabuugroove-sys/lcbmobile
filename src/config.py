@@ -42,6 +42,8 @@ class Settings:
     timezone: str
     db_path: Path
     output_dir: Path
+    background_music_path: Path
+    background_music_volume: float
     max_items_per_run: int
     max_attempts_per_item: int
     retry_delay_seconds: int
@@ -113,6 +115,11 @@ def load_settings() -> Settings:
         db_path = ROOT / db_path
     if not output_dir.is_absolute():
         output_dir = ROOT / output_dir
+    background_music_path = Path(
+        _str("BACKGROUND_MUSIC_PATH", "assets/audio/travel_todos_momentos.wav")
+    )
+    if not background_music_path.is_absolute():
+        background_music_path = ROOT / background_music_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -125,6 +132,8 @@ def load_settings() -> Settings:
         timezone=_str("TIMEZONE", "America/Sao_Paulo"),
         db_path=db_path,
         output_dir=output_dir,
+        background_music_path=background_music_path,
+        background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 0.2),
         max_items_per_run=_int(os.getenv("MAX_ITEMS_PER_RUN"), 3),
         max_attempts_per_item=_int(os.getenv("MAX_ATTEMPTS_PER_ITEM"), 5),
         retry_delay_seconds=_int(os.getenv("RETRY_DELAY_SECONDS"), 200),

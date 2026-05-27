@@ -35,6 +35,8 @@ assets/generated/
 *.mp4
 *.wav
 *.mp3
+!assets/audio/
+!assets/audio/travel_todos_momentos.wav
 *.png
 !assets/template.png
 !assets/logo.png
