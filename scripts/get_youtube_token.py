@@ -16,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+# youtube.upload    -> publish Shorts (existing pipeline)
+# youtube.force-ssl -> read commentThreads + post comment replies (responder)
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
@@ -30,7 +32,13 @@ def main() -> None:
         sys.exit(1)
 
     flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRET), SCOPES)
-    creds = flow.run_local_server(port=0)
+    # access_type=offline + prompt=consent guarantees a refresh_token even when
+    # this account already authorized an older (narrower) scope set.
+    creds = flow.run_local_server(
+        port=0,
+        access_type="offline",
+        prompt="consent",
+    )
     TOKEN_FILE.write_text(creds.to_json())
     print(f"\n✅ New refresh token saved to {TOKEN_FILE.resolve()}")
     print("\nNow upload it as the YOUTUBE_TOKEN GitHub secret:")

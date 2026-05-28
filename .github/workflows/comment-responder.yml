@@ -1,0 +1,91 @@
+name: YouTube comment responder
+
+# Reads recent comments on the channel's own uploads and posts pt-BR replies
+# in the channel voice. YouTube only, autoposts immediately. Self-contained:
+# keeps its own dedup DB (data/comments.db) cached separately from the
+# publish pipeline so the two never clobber each other's state.
+
+on:
+  schedule:
+    # Every 2 hours, off the top of the hour to dodge the GHA load spike.
+    - cron: "47 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Read + generate replies but do not post them"
+        required: false
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+
+concurrency:
+  group: comment-responder
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  respond:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore comment-dedup DB
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: lcb-comments-${{ github.run_id }}
+          restore-keys: |
+            lcb-comments-
+
+      - name: Materialize secret files
+        run: |
+          if [ -n "${YOUTUBE_CLIENT_SECRET}" ]; then
+            echo "$YOUTUBE_CLIENT_SECRET" > client_secret.json
+          fi
+          if [ -n "${YOUTUBE_TOKEN}" ]; then
+            echo "$YOUTUBE_TOKEN" > youtube_token.json
+          fi
+        env:
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+
+      - name: Reply to comments
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Comment replies are short + high-volume -> cheap model by default.
+          ANTHROPIC_MODEL: ${{ vars.COMMENT_ANTHROPIC_MODEL || 'claude-haiku-4-5' }}
+          # Free-tier fallback when Anthropic returns credit/auth errors.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+
+          DB_PATH: data/state.db
+          COMMENTS_DB_PATH: data/comments.db
+
+          # Tunables (override via repo Variables if needed).
+          COMMENT_LOOKBACK_VIDEOS: ${{ vars.COMMENT_LOOKBACK_VIDEOS || '30' }}
+          COMMENT_MAX_PER_RUN: ${{ vars.COMMENT_MAX_PER_RUN || '10' }}
+          COMMENT_MAX_PER_VIDEO: ${{ vars.COMMENT_MAX_PER_VIDEO || '5' }}
+          COMMENT_DAILY_CAP: ${{ vars.COMMENT_DAILY_CAP || '120' }}
+          COMMENT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+
+          # notify() posts a short run summary to the channel (best-effort).
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: |
+          ARGS="-v"
+          if [ "${COMMENT_DRY_RUN}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python -m scripts.reply_comments $ARGS
