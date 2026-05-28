@@ -226,6 +226,19 @@ jobs:
           fi
           python -m scripts.run_pipeline $ARGS
 
+      - name: Reply to YouTube comments
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+          DB_PATH: data/state.db
+        run: |
+          python -m scripts.respond_youtube_comments \
+            --video-limit "${{ vars.YOUTUBE_COMMENT_VIDEO_LIMIT || '20' }}" \
+            --comment-limit "${{ vars.YOUTUBE_COMMENT_SCAN_LIMIT || '50' }}" \
+            --reply-limit "${{ vars.YOUTUBE_COMMENT_REPLY_LIMIT || '10' }}" \
+            -v
+
       - name: Skip summary
         if: steps.gate.outputs.should_run != 'true'
         run: echo "${{ steps.gate.outputs.reason }}"

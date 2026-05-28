@@ -51,6 +51,18 @@ CREATE TABLE IF NOT EXISTS youtube_metrics (
     collected_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS youtube_comment_actions (
+    comment_id        TEXT PRIMARY KEY,
+    video_id          TEXT NOT NULL,
+    author_channel_id TEXT,
+    author_name       TEXT,
+    comment_text      TEXT NOT NULL,
+    reply_text        TEXT,
+    status            TEXT NOT NULL,
+    error             TEXT,
+    action_at         TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS candidate_scores (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     run_at      TEXT NOT NULL,
@@ -307,6 +319,60 @@ class Store:
                     view_count,
                     like_count,
                     comment_count,
+                    datetime.utcnow().isoformat(),
+                ),
+            )
+
+    def youtube_comment_targets(self, limit: int = 20) -> list[tuple[str, str]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT fingerprint, remote_id
+                   FROM publications
+                   WHERE platform = 'youtube'
+                     AND status = 'ok'
+                     AND remote_id IS NOT NULL
+                     AND remote_id != ''
+                   ORDER BY posted_at DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    def youtube_comment_was_processed(self, comment_id: str) -> bool:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM youtube_comment_actions WHERE comment_id = ?",
+                (comment_id,),
+            ).fetchone()
+        return row is not None
+
+    def record_youtube_comment_action(
+        self,
+        *,
+        comment_id: str,
+        video_id: str,
+        author_channel_id: str | None,
+        author_name: str | None,
+        comment_text: str,
+        reply_text: str | None,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO youtube_comment_actions
+                   (comment_id, video_id, author_channel_id, author_name,
+                    comment_text, reply_text, status, error, action_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    comment_id,
+                    video_id,
+                    author_channel_id,
+                    author_name,
+                    comment_text,
+                    reply_text,
+                    status,
+                    error,
                     datetime.utcnow().isoformat(),
                 ),
             )

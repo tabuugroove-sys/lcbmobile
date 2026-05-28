@@ -111,6 +111,39 @@ Variáveis úteis:
 | `YOUTUBE_API_KEY` | Opcional; busca métricas públicas sem depender do OAuth |
 | `YOUTUBE_METRICS_REFRESH_HOURS` | Intervalo mínimo para atualizar métricas |
 
+## Respostas automáticas no YouTube
+
+Depois do pipeline de publicação, o GitHub Actions roda:
+
+```bash
+python -m scripts.respond_youtube_comments -v
+```
+
+Ele verifica Shorts recentes já publicados, encontra comentários novos, gera uma
+resposta curta em pt-BR e responde uma vez por comentário. Comentários com link,
+spam óbvio ou threads que já têm resposta são ignorados e ficam registrados no
+`data/state.db`.
+
+Para habilitar respostas, gere novamente o `YOUTUBE_TOKEN` com o escopo de
+comentários:
+
+```bash
+python -m scripts.get_youtube_token
+gh secret set YOUTUBE_TOKEN -R tabuugroove-sys/lcbmobile < youtube_token.json
+```
+
+Limites úteis:
+
+| Variável | Para quê |
+|---|---|
+| `YOUTUBE_COMMENT_VIDEO_LIMIT` | Quantos vídeos recentes escanear |
+| `YOUTUBE_COMMENT_SCAN_LIMIT` | Quantos comentários ler por vídeo |
+| `YOUTUBE_COMMENT_REPLY_LIMIT` | Quantas respostas enviar por run |
+
+Nota: a YouTube Data API permite responder comentários, mas não expõe um método
+oficial para dar like em comentários. O pipeline registra isso como
+`likes_unsupported`.
+
 ## Dashboard
 
 O dashboard roda sem servidor próprio: GitHub Actions lê `data/state.db`, gera

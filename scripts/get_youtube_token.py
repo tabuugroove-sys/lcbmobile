@@ -1,8 +1,9 @@
 """One-shot OAuth flow to refresh youtube_token.json locally.
 
 Run when the existing refresh token has been revoked or expired (Google
-returns `invalid_grant`). After it succeeds, copy the resulting JSON into
-the YOUTUBE_TOKEN GitHub secret so the GHA runner picks it up.
+returns `invalid_grant`) or when adding permissions for comment replies. After
+it succeeds, copy the resulting JSON into the YOUTUBE_TOKEN GitHub secret so the
+GHA runner picks it up.
 
     python -m scripts.get_youtube_token
 """
@@ -15,7 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+]
 CLIENT_SECRET = Path("client_secret.json")
 TOKEN_FILE = Path("youtube_token.json")
 
