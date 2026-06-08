@@ -21,6 +21,12 @@ from src.video.tts import get_tts_provider
 
 OUT = ROOT / "out" / "legal_star_horizontal_test"
 
+NEWS = {
+    "title": "'Não conseguiu cantar de tão bêbado': como excesso de álcool nos palcos e bastidores afeta rotina dos artistas",
+    "source": "G1 Pop & Arte",
+    "url": "https://g1.globo.com/pop-arte/sertanejo/noticia/2026/06/08/nao-conseguiu-cantar-de-tao-bebado-como-excesso-de-alcool-nos-palcos-e-bastidores-afeta-rotina-dos-artistas.ghtml",
+}
+
 ASSETS = [
     {
         "id": "ive_red_carpet",
@@ -36,8 +42,88 @@ ASSETS = [
         "display_credit": "IVE at 2023 Melon Music Awards Red Carpet, video by TV10, CC BY 3.0",
         "source": "https://commons.wikimedia.org/wiki/File:IVE_(%EC%95%84%EC%9D%B4%EB%B8%8C)_at_the_2023_Melon_Music_Awards_Red_Carpet.webm",
         "license": "https://creativecommons.org/licenses/by/3.0/",
+    },
+    {
+        "id": "katy_perry_interview",
+        "name": "Katy Perry",
+        "commons_title": "File:Interview with Katy Perry on her role as UNICEF Goodwill Ambassador.webm",
+        "file": "katy_perry_interview_720p.webm",
+        "download_url": (
+            "https://upload.wikimedia.org/wikipedia/commons/transcoded/c/cc/"
+            "Interview_with_Katy_Perry_on_her_role_as_UNICEF_Goodwill_Ambassador.webm/"
+            "Interview_with_Katy_Perry_on_her_role_as_UNICEF_Goodwill_Ambassador.webm.720p.vp9.webm"
+        ),
+        "credit": "Interview with Katy Perry, video by Priyanka Pruthi, CC BY 3.0",
+        "display_credit": "Katy Perry interview, video by Priyanka Pruthi, CC BY 3.0",
+        "source": "https://commons.wikimedia.org/wiki/File:Interview_with_Katy_Perry_on_her_role_as_UNICEF_Goodwill_Ambassador.webm",
+        "license": "https://creativecommons.org/licenses/by/3.0/",
+    },
+    {
+        "id": "lady_gaga_interview",
+        "name": "Lady Gaga",
+        "commons_title": "File:SB50 Lady GaGa Interview.webm",
+        "file": "lady_gaga_sb50_interview_720p.webm",
+        "download_url": (
+            "https://upload.wikimedia.org/wikipedia/commons/transcoded/f/f9/"
+            "SB50_Lady_GaGa_Interview.webm/SB50_Lady_GaGa_Interview.webm.720p.vp9.webm"
+        ),
+        "credit": "SB50 Lady GaGa Interview, video by SMP Entertainment, CC BY 3.0",
+        "display_credit": "Lady Gaga interview, video by SMP Entertainment, CC BY 3.0",
+        "source": "https://commons.wikimedia.org/wiki/File:SB50_Lady_GaGa_Interview.webm",
+        "license": "https://creativecommons.org/licenses/by/3.0/",
+    },
+]
+
+SCENES = [
+    {
+        "asset_id": "ive_red_carpet",
+        "seek_start": 3.0,
+        "duration": 6.0,
+        "eyebrow": "SCENE 1  |  CHEGADA",
+        "title": "Chegada ao tapete",
+        "body": "A noticia fala sobre o limite entre festa, palco e bastidor.",
+        "crop_x": 0,
+        "crop_y": 10,
+    },
+    {
+        "asset_id": "ive_red_carpet",
         "seek_start": 25.0,
-        "duration_limit": 26.0,
+        "duration": 6.0,
+        "eyebrow": "SCENE 2  |  PHOTO CALL",
+        "title": "Pose para imprensa",
+        "body": "O visual mostra celebridades sob flashes, nao um trecho cru.",
+        "crop_x": 100,
+        "crop_y": 40,
+    },
+    {
+        "asset_id": "katy_perry_interview",
+        "seek_start": 10.0,
+        "duration": 6.0,
+        "eyebrow": "SCENE 3  |  ENTREVISTA",
+        "title": "Bastidor em contexto",
+        "body": "A narracao editorial conecta o B-roll a noticia do RSS.",
+        "crop_x": 0,
+        "crop_y": 0,
+    },
+    {
+        "asset_id": "lady_gaga_interview",
+        "seek_start": 20.0,
+        "duration": 6.0,
+        "eyebrow": "SCENE 4  |  IMPRENSA",
+        "title": "Rotina de artista",
+        "body": "Entrevistas ajudam a quebrar o ritmo e evitar bloco longo.",
+        "crop_x": 60,
+        "crop_y": 20,
+    },
+    {
+        "asset_id": "ive_red_carpet",
+        "seek_start": 65.0,
+        "duration": 6.0,
+        "eyebrow": "SCENE 5  |  PUBLICO",
+        "title": "Aceno aos fas",
+        "body": "O fechamento volta ao tapete, com novo enquadramento.",
+        "crop_x": 160,
+        "crop_y": 0,
     },
 ]
 
@@ -91,21 +177,27 @@ def download_assets() -> None:
             resp.raise_for_status()
             (OUT / asset["file"]).write_bytes(resp.content)
     (OUT / "credits.json").write_text(
-        json.dumps(ASSETS, ensure_ascii=False, indent=2),
+        json.dumps({"news": NEWS, "assets": ASSETS, "scenes": SCENES}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     (OUT / "credits.txt").write_text(
-        "\n".join(f"{a['credit']} | {a['source']} | {a['license']}" for a in ASSETS),
+        "\n".join(
+            [
+                f"News: {NEWS['title']} | {NEWS['source']} | {NEWS['url']}",
+                *[f"{a['credit']} | {a['source']} | {a['license']}" for a in ASSETS],
+            ]
+        ),
         encoding="utf-8",
     )
 
 
 def synthesize_voice() -> Path:
     text = (
-        "Teste editorial da LCB. Agora o vídeo usa footage real de artistas "
-        "da música no red carpet, com câmera estável, pose para imprensa e "
-        "licença explícita do Wikimedia Commons. O áudio original fica mutado. "
-        "A narração é nossa, feita no ElevenLabs, com música baixa no fundo."
+        "Notícia da G1 Pop e Arte: excesso de álcool em palcos e bastidores "
+        "pode afetar a rotina dos artistas. O ponto central é simples: quando "
+        "a festa passa do limite, show, equipe e público sentem o impacto. "
+        "Neste teste, a LCB monta cenas legais de tapete vermelho e entrevistas, "
+        "com áudio original mutado e créditos preservados."
     )
     (OUT / "voiceover.txt").write_text(text, encoding="utf-8")
     provider = get_tts_provider()
@@ -143,8 +235,8 @@ def probe_duration(path: Path) -> float:
     return float(out.strip())
 
 
-def make_overlay(asset: dict[str, object]) -> Path:
-    overlay = OUT / "overlay.png"
+def make_overlay(scene: dict[str, object], asset: dict[str, object], index: int) -> Path:
+    overlay = OUT / f"overlay_{index}.png"
     im = imagemagick_bin()
     run(
         [
@@ -168,7 +260,7 @@ def make_overlay(asset: dict[str, object]) -> Path:
             "34",
             "-annotate",
             "+90+815",
-            "LEGAL COMMONS VIDEO  |  ORIGINAL AUDIO MUTED",
+            str(scene["eyebrow"]),
             "-font",
             font_file(bold=True),
             "-fill",
@@ -177,7 +269,7 @@ def make_overlay(asset: dict[str, object]) -> Path:
             "72",
             "-annotate",
             "+90+895",
-            "IVE no red carpet",
+            str(scene["title"]),
             "-font",
             font_file(),
             "-fill",
@@ -186,7 +278,7 @@ def make_overlay(asset: dict[str, object]) -> Path:
             "32",
             "-annotate",
             "+90+965",
-            "Footage legal de press line, com camera estavel e creditos preservados.",
+            str(scene["body"]),
             "-font",
             font_file(),
             "-fill",
@@ -204,56 +296,106 @@ def make_overlay(asset: dict[str, object]) -> Path:
 
 def build_video() -> Path:
     require_bin("ffmpeg")
-    asset = ASSETS[0]
-    source = OUT / asset["file"]
-    seek_start = float(asset.get("seek_start", 0.0))
-    duration = min(float(asset["duration_limit"]), max(probe_duration(source) - seek_start, 0.0), 30.0)
+    assets_by_id = {str(asset["id"]): asset for asset in ASSETS}
+    rendered_scenes: list[Path] = []
+    total_duration = sum(float(scene["duration"]) for scene in SCENES)
     video = OUT / "legal_star_horizontal.mp4"
     music = ROOT / "assets" / "audio" / "travel_todos_momentos.wav"
-    overlay = make_overlay(asset)
+
+    for index, scene in enumerate(SCENES, start=1):
+        asset = assets_by_id[str(scene["asset_id"])]
+        source = OUT / str(asset["file"])
+        seek_start = float(scene["seek_start"])
+        duration = min(float(scene["duration"]), max(probe_duration(source) - seek_start, 0.0))
+        overlay = make_overlay(scene, asset, index)
+        scene_video = OUT / f"scene_{index}.mp4"
+        crop_x = int(scene["crop_x"])
+        crop_y = int(scene["crop_y"])
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                f"{seek_start:.3f}",
+                "-i",
+                str(source),
+                "-loop",
+                "1",
+                "-i",
+                str(overlay),
+                "-t",
+                f"{duration:.3f}",
+                "-filter_complex",
+                (
+                    "[0:v]fps=30,scale=2100:1182:force_original_aspect_ratio=increase,"
+                    f"crop=1920:1080:x={crop_x}:y={crop_y},"
+                    "setsar=1,eq=brightness=-0.06:saturation=0.95,"
+                    "fade=t=in:st=0:d=0.18,fade=t=out:st="
+                    f"{max(duration - 0.25, 0):.3f}:d=0.25,"
+                    "format=yuv420p[base];"
+                    "[base][1:v]overlay=0:0:shortest=1,format=yuv420p[v]"
+                ),
+                "-map",
+                "[v]",
+                "-an",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "20",
+                "-movflags",
+                "+faststart",
+                str(scene_video),
+            ]
+        )
+        rendered_scenes.append(scene_video)
+
+    concat_file = OUT / "scenes.txt"
+    concat_file.write_text(
+        "\n".join(f"file '{scene_video.name}'" for scene_video in rendered_scenes),
+        encoding="utf-8",
+    )
+    silent_video = OUT / "legal_star_horizontal_silent.mp4"
     run(
         [
             "ffmpeg",
             "-y",
-            "-ss",
-            f"{seek_start:.3f}",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
             "-i",
-            str(source),
+            str(concat_file),
+            "-c",
+            "copy",
+            str(silent_video),
+        ]
+    )
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(silent_video),
             "-i",
             str(OUT / "voiceover.mp3"),
             "-i",
             str(music),
-            "-loop",
-            "1",
-            "-i",
-            str(overlay),
             "-t",
-            f"{duration:.3f}",
+            f"{total_duration:.3f}",
             "-filter_complex",
             (
-                "[0:v]fps=30,scale=2100:1182:force_original_aspect_ratio=increase,"
-                "crop=1920:1080:"
-                "x='if(lt(t,5),0,if(lt(t,10),80,if(lt(t,15),160,if(lt(t,20),40,120))))':"
-                "y='if(lt(t,5),0,if(lt(t,10),40,if(lt(t,15),0,if(lt(t,20),60,20))))',"
-                "setsar=1,eq=brightness=-0.06:saturation=0.95,"
-                "fade=t=in:st=0:d=0.25,fade=t=out:st="
-                f"{max(duration - 0.35, 0):.3f}:d=0.35,"
-                "format=yuv420p[base];"
-                "[base][3:v]overlay=0:0:shortest=1,format=yuv420p[v];"
-                f"[2:a]atrim=0:{duration:.3f},asetpts=PTS-STARTPTS,volume=0.10[m];"
-                f"[1:a]atrim=0:{duration:.3f},adelay=200|200,volume=1.0[vo];"
+                f"[2:a]atrim=0:{total_duration:.3f},asetpts=PTS-STARTPTS,volume=0.10[m];"
+                f"[1:a]atrim=0:{total_duration:.3f},adelay=200|200,volume=1.0[vo];"
                 "[m][vo]amix=inputs=2:duration=first:dropout_transition=0[a]"
             ),
             "-map",
-            "[v]",
+            "0:v",
             "-map",
             "[a]",
             "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "20",
+            "copy",
             "-c:a",
             "aac",
             "-b:a",
