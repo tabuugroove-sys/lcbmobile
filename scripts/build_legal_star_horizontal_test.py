@@ -1,8 +1,9 @@
-"""Build a legal-media horizontal test video with ElevenLabs voiceover.
+"""Build a legal moving-media horizontal test video with ElevenLabs voiceover.
 
 This is a workflow-only smoke test for the future media whitelist layer:
-- star visuals come from explicitly licensed Wikimedia Commons files;
+- star footage comes from explicitly licensed Wikimedia Commons files;
 - credits are written next to the rendered video;
+- original footage audio is muted;
 - voiceover must use ElevenLabs in GitHub Actions.
 """
 from __future__ import annotations
@@ -10,7 +11,6 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import textwrap
 from pathlib import Path
 
 import httpx
@@ -23,22 +23,14 @@ OUT = ROOT / "out" / "legal_star_horizontal_test"
 
 ASSETS = [
     {
-        "id": "anitta",
-        "name": "Anitta",
-        "commons_title": "File:Anitta - Citibank Hall (30139698071).jpg",
-        "file": "anitta.jpg",
-        "credit": "Anitta, photo by Teca Lamboglia, CC BY 2.0",
-        "source": "https://commons.wikimedia.org/wiki/File:Anitta_-_Citibank_Hall_(30139698071).jpg",
-        "license": "https://creativecommons.org/licenses/by/2.0/",
-    },
-    {
-        "id": "neymar",
+        "id": "neymar_free_kick",
         "name": "Neymar",
-        "commons_title": "File:Neymar (cropped).jpg",
-        "file": "neymar.jpg",
-        "credit": "Neymar, photo by Alex Fau, CC BY 2.0",
-        "source": "https://commons.wikimedia.org/wiki/File:Neymar_(cropped).jpg",
-        "license": "https://creativecommons.org/licenses/by/2.0/",
+        "commons_title": "File:Neymar takes a free kick - BRA v. RSA, Rio 2016.ogv",
+        "file": "neymar_free_kick.ogv",
+        "credit": "Neymar free kick, video by Rodrigogomesonetwo, CC BY-SA 4.0",
+        "source": "https://commons.wikimedia.org/wiki/File:Neymar_takes_a_free_kick_-_BRA_v._RSA,_Rio_2016.ogv",
+        "license": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "duration_limit": 26.0,
     },
 ]
 
@@ -47,6 +39,13 @@ USER_AGENT = "LCBMobileBot/1.0 legal-media-test (https://github.com/tabuugroove-
 
 def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
+
+
+def require_bin(name: str) -> str:
+    binary = shutil.which(name)
+    if not binary:
+        raise RuntimeError(f"{name} not found")
+    return binary
 
 
 def imagemagick_bin() -> str:
@@ -70,14 +69,17 @@ def download_assets() -> None:
                     "action": "query",
                     "titles": asset["commons_title"],
                     "prop": "imageinfo",
-                    "iiprop": "url",
+                    "iiprop": "url|mime|size|extmetadata",
                     "format": "json",
                 },
             )
             api.raise_for_status()
             pages = api.json()["query"]["pages"]
             page = next(iter(pages.values()))
-            asset_url = page["imageinfo"][0]["url"]
+            info = page["imageinfo"][0]
+            asset_url = info["url"]
+            asset["mime"] = info.get("mime")
+            asset["size"] = info.get("size")
             resp = client.get(asset_url)
             resp.raise_for_status()
             (OUT / asset["file"]).write_bytes(resp.content)
@@ -93,11 +95,10 @@ def download_assets() -> None:
 
 def synthesize_voice() -> Path:
     text = (
-        "Teste editorial da LCB. Aqui o vídeo usa apenas imagens de estrelas com "
-        "licença explícita, crédito preservado e narração original em português. "
-        "A ideia é simples: quando a notícia citar uma celebridade, o agente só "
-        "pode usar mídia que esteja na whitelist legal, como press kit, media kit "
-        "ou Creative Commons validado. Sem isso, ele volta para card visual seguro."
+        "Teste editorial da LCB. Agora o vídeo usa footage real de Neymar, "
+        "baixado do Wikimedia Commons com licença explícita e crédito preservado. "
+        "O áudio original fica mutado. A narração é nossa, feita no ElevenLabs, "
+        "com música baixa no fundo."
     )
     (OUT / "voiceover.txt").write_text(text, encoding="utf-8")
     provider = get_tts_provider()
@@ -106,175 +107,128 @@ def synthesize_voice() -> Path:
     return provider.synthesize(text, OUT / "voiceover.mp3", lang="pt-BR")
 
 
-def make_slide(
-    *,
-    source: Path,
-    dest: Path,
-    eyebrow: str,
-    title: str,
-    body: str,
-    credit: str,
-) -> None:
-    title_wrapped = "\n".join(textwrap.wrap(title, width=24))
-    body_wrapped = "\n".join(textwrap.wrap(body, width=48))
+def font_file(bold: bool = False) -> str:
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/Library/Fonts/Arial Bold.ttf" if bold else "/Library/Fonts/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
+    ]
+    for candidate in candidates:
+        if Path(candidate).exists():
+            return candidate
+    return "DejaVuSans-Bold" if bold else "DejaVuSans"
+
+
+def probe_duration(path: Path) -> float:
+    out = subprocess.check_output(
+        [
+            require_bin("ffprobe"),
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        text=True,
+    )
+    return float(out.strip())
+
+
+def make_overlay(asset: dict[str, object]) -> Path:
+    overlay = OUT / "overlay.png"
     im = imagemagick_bin()
     run(
         [
             im,
-            str(source),
-            "-resize",
-            "1920x1080^",
-            "-gravity",
-            "center",
-            "-extent",
+            "-size",
             "1920x1080",
-            "-blur",
-            "0x12",
-            "-modulate",
-            "72,85,100",
-            "(",
-            str(source),
-            "-resize",
-            "820x920>",
-            "-gravity",
-            "center",
-            "-background",
-            "none",
-            "-extent",
-            "860x940",
-            ")",
-            "-gravity",
-            "east",
-            "-geometry",
-            "+110+0",
-            "-composite",
+            "xc:none",
             "-fill",
-            "rgba(0,0,0,0.66)",
+            "rgba(0,0,0,0.62)",
             "-draw",
-            "rectangle 0,0 1040,1080",
+            "rectangle 0,760 1920,1080",
             "-fill",
             "#d23b68",
             "-draw",
             "rectangle 0,0 22,1080",
             "-font",
-            "DejaVu-Sans-Bold",
+            font_file(bold=True),
             "-fill",
             "#f8fafc",
             "-pointsize",
             "34",
             "-annotate",
-            "+90+150",
-            eyebrow,
+            "+90+815",
+            "LEGAL COMMONS VIDEO  |  ORIGINAL AUDIO MUTED",
             "-font",
-            "DejaVu-Sans-Bold",
+            font_file(bold=True),
             "-fill",
             "#ffffff",
             "-pointsize",
-            "78",
-            "-interline-spacing",
-            "8",
+            "72",
             "-annotate",
-            "+90+300",
-            title_wrapped,
+            "+90+895",
+            "Neymar em footage legal",
             "-font",
-            "DejaVu-Sans",
+            font_file(),
             "-fill",
             "#d1d5db",
             "-pointsize",
-            "34",
-            "-interline-spacing",
-            "6",
+            "32",
             "-annotate",
-            "+90+660",
-            body_wrapped,
+            "+90+965",
+            "Video real do Wikimedia Commons com credito e licenca preservados.",
             "-font",
-            "DejaVu-Sans",
+            font_file(),
             "-fill",
             "#aeb7c5",
             "-pointsize",
             "22",
             "-annotate",
-            "+90+1010",
-            credit[:120],
-            str(dest),
+            "+90+1032",
+            str(asset["credit"]),
+            str(overlay),
         ]
     )
+    return overlay
 
 
 def build_video() -> Path:
-    make_slide(
-        source=OUT / "anitta.jpg",
-        dest=OUT / "slide1.png",
-        eyebrow="LEGAL MEDIA TEST  |  CC-BY ASSET",
-        title="Estrela na tela, direito preservado",
-        body=(
-            "O pipeline pode usar imagens reais quando a licença está clara "
-            "e o crédito acompanha o vídeo."
-        ),
-        credit=ASSETS[0]["credit"],
-    )
-    make_slide(
-        source=OUT / "neymar.jpg",
-        dest=OUT / "slide2.png",
-        eyebrow="WHITELIST VISUAL  |  SEM FOOTAGE PIRATA",
-        title="Só entra mídia liberada",
-        body=(
-            "Press kit, media kit ou Creative Commons validado. Se não passar "
-            "no filtro, o vídeo volta para visual seguro."
-        ),
-        credit=ASSETS[1]["credit"],
-    )
-    make_slide(
-        source=OUT / "anitta.jpg",
-        dest=OUT / "slide3.png",
-        eyebrow="LCB PIPELINE  |  ELEVENLABS VOICE",
-        title="Formato pronto para notícias",
-        body=(
-            "Narração original, música própria em volume baixo e créditos dos "
-            "assets no arquivo de saída."
-        ),
-        credit="Credits stored in credits.txt and credits.json",
-    )
-
+    require_bin("ffmpeg")
+    asset = ASSETS[0]
+    source = OUT / asset["file"]
+    duration = min(float(asset["duration_limit"]), probe_duration(source), 30.0)
     video = OUT / "legal_star_horizontal.mp4"
     music = ROOT / "assets" / "audio" / "travel_todos_momentos.wav"
+    overlay = make_overlay(asset)
     run(
         [
             "ffmpeg",
             "-y",
-            "-loop",
-            "1",
-            "-t",
-            "10",
             "-i",
-            str(OUT / "slide1.png"),
-            "-loop",
-            "1",
-            "-t",
-            "10",
-            "-i",
-            str(OUT / "slide2.png"),
-            "-loop",
-            "1",
-            "-t",
-            "10",
-            "-i",
-            str(OUT / "slide3.png"),
+            str(source),
             "-i",
             str(OUT / "voiceover.mp3"),
             "-i",
             str(music),
+            "-loop",
+            "1",
+            "-i",
+            str(overlay),
+            "-t",
+            f"{duration:.3f}",
             "-filter_complex",
             (
-                "[0:v]scale=1920:1080,format=yuv420p,fade=t=in:st=0:d=0.25,"
-                "fade=t=out:st=9.7:d=0.3[v0];"
-                "[1:v]scale=1920:1080,format=yuv420p,fade=t=in:st=0:d=0.25,"
-                "fade=t=out:st=9.7:d=0.3[v1];"
-                "[2:v]scale=1920:1080,format=yuv420p,fade=t=in:st=0:d=0.25,"
-                "fade=t=out:st=9.7:d=0.3[v2];"
-                "[v0][v1][v2]concat=n=3:v=1:a=0[v];"
-                "[4:a]atrim=0:30,asetpts=PTS-STARTPTS,volume=0.10[m];"
-                "[3:a]adelay=250|250,volume=1.0[vo];"
+                "[0:v]scale=1920:1080:force_original_aspect_ratio=increase,"
+                "crop=1920:1080,setsar=1,eq=brightness=-0.06:saturation=0.95,"
+                "fade=t=in:st=0:d=0.25,fade=t=out:st="
+                f"{max(duration - 0.35, 0):.3f}:d=0.35,"
+                "format=yuv420p[base];"
+                "[base][3:v]overlay=0:0:shortest=1,format=yuv420p[v];"
+                f"[2:a]atrim=0:{duration:.3f},asetpts=PTS-STARTPTS,volume=0.10[m];"
+                f"[1:a]atrim=0:{duration:.3f},adelay=200|200,volume=1.0[vo];"
                 "[m][vo]amix=inputs=2:duration=first:dropout_transition=0[a]"
             ),
             "-map",
@@ -305,6 +259,8 @@ def build_video() -> Path:
             "-i",
             str(video),
             "-frames:v",
+            "1",
+            "-update",
             "1",
             str(OUT / "preview.png"),
         ]
