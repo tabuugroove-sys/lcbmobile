@@ -8,6 +8,7 @@ This is a workflow-only smoke test for the future media whitelist layer:
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import textwrap
 from pathlib import Path
@@ -46,6 +47,13 @@ USER_AGENT = "LCBMobileBot/1.0 legal-media-test (https://github.com/tabuugroove-
 
 def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
+
+
+def imagemagick_bin() -> str:
+    binary = shutil.which("magick") or shutil.which("convert")
+    if not binary:
+        raise RuntimeError("ImageMagick not found: expected magick or convert")
+    return binary
 
 
 def download_assets() -> None:
@@ -109,9 +117,10 @@ def make_slide(
 ) -> None:
     title_wrapped = "\n".join(textwrap.wrap(title, width=24))
     body_wrapped = "\n".join(textwrap.wrap(body, width=48))
+    im = imagemagick_bin()
     run(
         [
-            "magick",
+            im,
             str(source),
             "-resize",
             "1920x1080^",
