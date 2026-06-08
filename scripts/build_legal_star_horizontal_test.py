@@ -107,7 +107,7 @@ SCENES = [
     },
     {
         "asset_id": "lady_gaga_interview",
-        "seek_start": 20.0,
+        "seek_start": 25.0,
         "duration": 6.0,
         "eyebrow": "SCENE 4  |  IMPRENSA",
         "title": "Rotina de artista",
