@@ -23,13 +23,20 @@ OUT = ROOT / "out" / "legal_star_horizontal_test"
 
 ASSETS = [
     {
-        "id": "neymar_free_kick",
-        "name": "Neymar",
-        "commons_title": "File:Neymar takes a free kick - BRA v. RSA, Rio 2016.ogv",
-        "file": "neymar_free_kick.ogv",
-        "credit": "Neymar free kick, video by Rodrigogomesonetwo, CC BY-SA 4.0",
-        "source": "https://commons.wikimedia.org/wiki/File:Neymar_takes_a_free_kick_-_BRA_v._RSA,_Rio_2016.ogv",
-        "license": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "id": "ive_red_carpet",
+        "name": "IVE",
+        "commons_title": "File:IVE (아이브) at the 2023 Melon Music Awards Red Carpet.webm",
+        "file": "ive_red_carpet_480p.webm",
+        "download_url": (
+            "https://upload.wikimedia.org/wikipedia/commons/transcoded/c/c4/"
+            "IVE_%28%EC%95%84%EC%9D%B4%EB%B8%8C%29_at_the_2023_Melon_Music_Awards_Red_Carpet.webm/"
+            "IVE_%28%EC%95%84%EC%9D%B4%EB%B8%8C%29_at_the_2023_Melon_Music_Awards_Red_Carpet.webm.480p.vp9.webm"
+        ),
+        "credit": "IVE at 2023 Melon Music Awards Red Carpet, video by 티비텐 TV10, CC BY 3.0",
+        "display_credit": "IVE at 2023 Melon Music Awards Red Carpet, video by TV10, CC BY 3.0",
+        "source": "https://commons.wikimedia.org/wiki/File:IVE_(%EC%95%84%EC%9D%B4%EB%B8%8C)_at_the_2023_Melon_Music_Awards_Red_Carpet.webm",
+        "license": "https://creativecommons.org/licenses/by/3.0/",
+        "seek_start": 25.0,
         "duration_limit": 26.0,
     },
 ]
@@ -77,7 +84,7 @@ def download_assets() -> None:
             pages = api.json()["query"]["pages"]
             page = next(iter(pages.values()))
             info = page["imageinfo"][0]
-            asset_url = info["url"]
+            asset_url = str(asset.get("download_url") or info["url"])
             asset["mime"] = info.get("mime")
             asset["size"] = info.get("size")
             resp = client.get(asset_url)
@@ -95,10 +102,10 @@ def download_assets() -> None:
 
 def synthesize_voice() -> Path:
     text = (
-        "Teste editorial da LCB. Agora o vídeo usa footage real de Neymar, "
-        "baixado do Wikimedia Commons com licença explícita e crédito preservado. "
-        "O áudio original fica mutado. A narração é nossa, feita no ElevenLabs, "
-        "com música baixa no fundo."
+        "Teste editorial da LCB. Agora o vídeo usa footage real de artistas "
+        "da música no red carpet, com câmera estável, pose para imprensa e "
+        "licença explícita do Wikimedia Commons. O áudio original fica mutado. "
+        "A narração é nossa, feita no ElevenLabs, com música baixa no fundo."
     )
     (OUT / "voiceover.txt").write_text(text, encoding="utf-8")
     provider = get_tts_provider()
@@ -170,7 +177,7 @@ def make_overlay(asset: dict[str, object]) -> Path:
             "72",
             "-annotate",
             "+90+895",
-            "Neymar em footage legal",
+            "IVE no red carpet",
             "-font",
             font_file(),
             "-fill",
@@ -179,7 +186,7 @@ def make_overlay(asset: dict[str, object]) -> Path:
             "32",
             "-annotate",
             "+90+965",
-            "Video real do Wikimedia Commons com credito e licenca preservados.",
+            "Footage legal de press line, com camera estavel e creditos preservados.",
             "-font",
             font_file(),
             "-fill",
@@ -188,7 +195,7 @@ def make_overlay(asset: dict[str, object]) -> Path:
             "22",
             "-annotate",
             "+90+1032",
-            str(asset["credit"]),
+            str(asset.get("display_credit") or asset["credit"]),
             str(overlay),
         ]
     )
@@ -199,7 +206,8 @@ def build_video() -> Path:
     require_bin("ffmpeg")
     asset = ASSETS[0]
     source = OUT / asset["file"]
-    duration = min(float(asset["duration_limit"]), probe_duration(source), 30.0)
+    seek_start = float(asset.get("seek_start", 0.0))
+    duration = min(float(asset["duration_limit"]), max(probe_duration(source) - seek_start, 0.0), 30.0)
     video = OUT / "legal_star_horizontal.mp4"
     music = ROOT / "assets" / "audio" / "travel_todos_momentos.wav"
     overlay = make_overlay(asset)
@@ -207,6 +215,8 @@ def build_video() -> Path:
         [
             "ffmpeg",
             "-y",
+            "-ss",
+            f"{seek_start:.3f}",
             "-i",
             str(source),
             "-i",
