@@ -24,10 +24,7 @@ ASSETS = [
     {
         "id": "anitta",
         "name": "Anitta",
-        "url": (
-            "https://commons.wikimedia.org/wiki/Special:Redirect/file/"
-            "Anitta%20-%20Citibank%20Hall%20%2830139698071%29.jpg"
-        ),
+        "commons_title": "File:Anitta - Citibank Hall (30139698071).jpg",
         "file": "anitta.jpg",
         "credit": "Anitta, photo by Teca Lamboglia, CC BY 2.0",
         "source": "https://commons.wikimedia.org/wiki/File:Anitta_-_Citibank_Hall_(30139698071).jpg",
@@ -36,16 +33,15 @@ ASSETS = [
     {
         "id": "neymar",
         "name": "Neymar",
-        "url": (
-            "https://commons.wikimedia.org/wiki/Special:Redirect/file/"
-            "Neymar%20%28cropped%29.jpg"
-        ),
+        "commons_title": "File:Neymar (cropped).jpg",
         "file": "neymar.jpg",
         "credit": "Neymar, photo by Alex Fau, CC BY 2.0",
         "source": "https://commons.wikimedia.org/wiki/File:Neymar_(cropped).jpg",
         "license": "https://creativecommons.org/licenses/by/2.0/",
     },
 ]
+
+USER_AGENT = "LCBMobileBot/1.0 legal-media-test (https://github.com/tabuugroove-sys/lcbmobile)"
 
 
 def run(cmd: list[str]) -> None:
@@ -54,9 +50,27 @@ def run(cmd: list[str]) -> None:
 
 def download_assets() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+    with httpx.Client(
+        timeout=30.0,
+        follow_redirects=True,
+        headers={"User-Agent": USER_AGENT},
+    ) as client:
         for asset in ASSETS:
-            resp = client.get(asset["url"])
+            api = client.get(
+                "https://commons.wikimedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "titles": asset["commons_title"],
+                    "prop": "imageinfo",
+                    "iiprop": "url",
+                    "format": "json",
+                },
+            )
+            api.raise_for_status()
+            pages = api.json()["query"]["pages"]
+            page = next(iter(pages.values()))
+            asset_url = page["imageinfo"][0]["url"]
+            resp = client.get(asset_url)
             resp.raise_for_status()
             (OUT / asset["file"]).write_bytes(resp.content)
     (OUT / "credits.json").write_text(
