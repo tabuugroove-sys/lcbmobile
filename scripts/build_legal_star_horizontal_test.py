@@ -231,8 +231,11 @@ def build_video() -> Path:
             f"{duration:.3f}",
             "-filter_complex",
             (
-                "[0:v]scale=1920:1080:force_original_aspect_ratio=increase,"
-                "crop=1920:1080,setsar=1,eq=brightness=-0.06:saturation=0.95,"
+                "[0:v]fps=30,scale=2100:1182:force_original_aspect_ratio=increase,"
+                "crop=1920:1080:"
+                "x='if(lt(t,5),0,if(lt(t,10),80,if(lt(t,15),160,if(lt(t,20),40,120))))':"
+                "y='if(lt(t,5),0,if(lt(t,10),40,if(lt(t,15),0,if(lt(t,20),60,20))))',"
+                "setsar=1,eq=brightness=-0.06:saturation=0.95,"
                 "fade=t=in:st=0:d=0.25,fade=t=out:st="
                 f"{max(duration - 0.35, 0):.3f}:d=0.35,"
                 "format=yuv420p[base];"
