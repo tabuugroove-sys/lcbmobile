@@ -596,6 +596,8 @@ def build_video() -> Path:
             str(silent_video),
             "-i",
             str(OUT / "voiceover.mp3"),
+            "-stream_loop",
+            "-1",
             "-i",
             str(music),
             "-t",
