@@ -22,129 +22,80 @@ from src.video.tts import get_tts_provider
 OUT = ROOT / "out" / "legal_star_horizontal_test"
 
 NEWS = {
-    "title": "Casamento de Dua Lipa e Callum Turner movimenta Sicília com evento cercado de sigilo",
+    "title": "'Não conseguiu cantar de tão bêbado': como excesso de álcool nos palcos e bastidores afeta rotina dos artistas",
     "source": "G1 Pop & Arte",
-    "url": "https://g1.globo.com/pop-arte/noticia/2026/06/05/sicilia-se-prepara-para-festa-de-casamento-de-dua-lipa-e-callum-turner.ghtml",
+    "url": "https://g1.globo.com/pop-arte/sertanejo/noticia/2026/06/08/nao-conseguiu-cantar-de-tao-bebado-como-excesso-de-alcool-nos-palcos-e-bastidores-afeta-rotina-dos-artistas.ghtml",
 }
 
 ASSETS = [
     {
-        "id": "dua_berlin_red_carpet_wide",
-        "name": "Dua Lipa",
-        "media_type": "image",
-        "commons_title": "File:Dua Lipa-69806.jpg",
-        "file": "dua_lipa_berlin_69806.jpg",
-        "credit": "Dua Lipa at the 2026 Berlin International Film Festival, photo by Harald Krichel, CC BY-SA 4.0",
-        "display_credit": "Dua Lipa at Berlinale 2026, Harald Krichel, CC BY-SA 4.0",
-        "source": "https://commons.wikimedia.org/wiki/File:Dua_Lipa-69806.jpg",
-        "license": "https://creativecommons.org/licenses/by-sa/4.0/",
-    },
-    {
-        "id": "dua_berlin_red_carpet_close",
-        "name": "Dua Lipa",
-        "media_type": "image",
-        "commons_title": "File:Dua Lipa-69819.jpg",
-        "file": "dua_lipa_berlin_69819.jpg",
-        "credit": "Dua Lipa at the 2026 Berlin International Film Festival, photo by Harald Krichel, CC BY-SA 4.0",
-        "display_credit": "Dua Lipa at Berlinale 2026, Harald Krichel, CC BY-SA 4.0",
-        "source": "https://commons.wikimedia.org/wiki/File:Dua_Lipa-69819.jpg",
-        "license": "https://creativecommons.org/licenses/by-sa/4.0/",
-    },
-    {
-        "id": "dua_grammys_interview",
-        "name": "Dua Lipa",
+        "id": "ive_melon_red_carpet",
+        "name": "IVE",
         "media_type": "video",
-        "commons_title": "File:Interview with Dua Lipa at the 2021 Grammys.webm",
-        "file": "dua_lipa_grammys_2021_480p.webm",
+        "commons_title": "File:IVE (아이브) at the 2023 Melon Music Awards Red Carpet.webm",
+        "file": "ive_melon_red_carpet_480p.webm",
         "download_url": (
-            "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/0c/"
-            "Interview_with_Dua_Lipa_at_the_2021_Grammys.webm/"
-            "Interview_with_Dua_Lipa_at_the_2021_Grammys.webm.480p.vp9.webm"
+            "https://upload.wikimedia.org/wikipedia/commons/transcoded/c/c4/"
+            "IVE_%28%EC%95%84%EC%9D%B4%EB%B8%8C%29_at_the_2023_Melon_Music_Awards_Red_Carpet.webm/"
+            "IVE_%28%EC%95%84%EC%9D%B4%EB%B8%8C%29_at_the_2023_Melon_Music_Awards_Red_Carpet.webm.480p.vp9.webm"
         ),
-        "credit": "Interview with Dua Lipa at the 2021 Grammys, video by Warner Music New Zealand, CC BY 3.0",
-        "display_credit": "Dua Lipa at 2021 Grammys, Warner Music NZ, CC BY 3.0",
-        "source": "https://commons.wikimedia.org/wiki/File:Interview_with_Dua_Lipa_at_the_2021_Grammys.webm",
+        "credit": "IVE at 2023 Melon Music Awards Red Carpet, video by 티비텐 TV10, CC BY 3.0",
+        "display_credit": "IVE at 2023 Melon Music Awards Red Carpet, TV10, CC BY 3.0",
+        "source": "https://commons.wikimedia.org/wiki/File:IVE_(%EC%95%84%EC%9D%B4%EB%B8%8C)_at_the_2023_Melon_Music_Awards_Red_Carpet.webm",
         "license": "https://creativecommons.org/licenses/by/3.0/",
-    },
-    {
-        "id": "dua_interview_2018",
-        "name": "Dua Lipa",
-        "media_type": "video",
-        "commons_title": "File:Interview with Dua Lipa from 2018.webm",
-        "file": "dua_lipa_interview_2018_480p.webm",
-        "download_url": (
-            "https://upload.wikimedia.org/wikipedia/commons/transcoded/4/46/"
-            "Interview_with_Dua_Lipa_from_2018.webm/"
-            "Interview_with_Dua_Lipa_from_2018.webm.480p.vp9.webm"
-        ),
-        "credit": "Interview with Dua Lipa from 2018, video by Warner Music New Zealand, CC BY 3.0",
-        "display_credit": "Dua Lipa interview, Warner Music NZ, CC BY 3.0",
-        "source": "https://commons.wikimedia.org/wiki/File:Interview_with_Dua_Lipa_from_2018.webm",
-        "license": "https://creativecommons.org/licenses/by/3.0/",
-    },
-    {
-        "id": "dua_berlin_red_carpet_final",
-        "name": "Dua Lipa",
-        "media_type": "image",
-        "commons_title": "File:Dua Lipa-69838.jpg",
-        "file": "dua_lipa_berlin_69838.jpg",
-        "credit": "Dua Lipa at the 2026 Berlin International Film Festival, photo by Harald Krichel, CC BY-SA 4.0",
-        "display_credit": "Dua Lipa at Berlinale 2026, Harald Krichel, CC BY-SA 4.0",
-        "source": "https://commons.wikimedia.org/wiki/File:Dua_Lipa-69838.jpg",
-        "license": "https://creativecommons.org/licenses/by-sa/4.0/",
     },
 ]
 
 SCENES = [
     {
-        "asset_id": "dua_berlin_red_carpet_wide",
-        "seek_start": 0.0,
+        "asset_id": "ive_melon_red_carpet",
+        "seek_start": 2.0,
         "duration": 6.0,
-        "eyebrow": "SCENE 1  |  RED CARPET",
-        "title": "Dua Lipa no tapete",
-        "body": "A noticia gira em torno dela e de um evento cercado de sigilo.",
-        "pan_x": -70,
-        "pan_y": 0,
+        "eyebrow": "SCENE 1  |  CHEGADA",
+        "title": "Entrada no tapete",
+        "body": "Video real de red carpet, sem fotos estaticas.",
+        "crop_x": 0,
+        "crop_y": 0,
     },
     {
-        "asset_id": "dua_berlin_red_carpet_close",
-        "seek_start": 0.0,
+        "asset_id": "ive_melon_red_carpet",
+        "seek_start": 18.0,
         "duration": 6.0,
         "eyebrow": "SCENE 2  |  PHOTO CALL",
-        "title": "Pose para imprensa",
-        "body": "O still legal vira movimento com zoom leve e legenda editorial.",
-        "pan_x": 80,
-        "pan_y": 0,
+        "title": "Poses para fotógrafos",
+        "body": "Mais tapete e flashes, menos fala de entrevista.",
+        "crop_x": 80,
+        "crop_y": 25,
     },
     {
-        "asset_id": "dua_grammys_interview",
-        "seek_start": 25.0,
+        "asset_id": "ive_melon_red_carpet",
+        "seek_start": 32.0,
         "duration": 6.0,
-        "eyebrow": "SCENE 3  |  GRAMMYS",
-        "title": "Entrevista em premiação",
-        "body": "O trecho de fala ajuda a manter tudo focado em uma pessoa.",
-        "crop_x": 0,
+        "eyebrow": "SCENE 3  |  PREMIAÇÃO",
+        "title": "Linha de imprensa",
+        "body": "O corte muda o enquadramento e mantém o ritmo visual.",
+        "crop_x": 160,
+        "crop_y": 45,
+    },
+    {
+        "asset_id": "ive_melon_red_carpet",
+        "seek_start": 55.0,
+        "duration": 6.0,
+        "eyebrow": "SCENE 4  |  FOTÓGRAFOS",
+        "title": "Mais poses, outro ângulo",
+        "body": "A montagem usa novos trechos do evento, nao um bloco cru.",
+        "crop_x": 120,
         "crop_y": 0,
     },
     {
-        "asset_id": "dua_interview_2018",
-        "seek_start": 35.0,
+        "asset_id": "ive_melon_red_carpet",
+        "seek_start": 72.0,
         "duration": 6.0,
-        "eyebrow": "SCENE 4  |  ENTREVISTA",
-        "title": "Conversa em ambiente aberto",
-        "body": "A cena muda o ritmo sem sair da mesma personagem.",
-        "crop_x": 0,
-        "crop_y": 0,
-    },
-    {
-        "asset_id": "dua_berlin_red_carpet_final",
-        "seek_start": 0.0,
-        "duration": 6.0,
-        "eyebrow": "SCENE 5  |  FECHAMENTO",
-        "title": "Imagem final de destaque",
-        "body": "A montagem fecha com a artista, nao com B-roll generico.",
-        "pan_x": 40,
-        "pan_y": -20,
+        "eyebrow": "SCENE 5  |  SAÍDA",
+        "title": "Aceno e fechamento",
+        "body": "O final volta ao red carpet em movimento.",
+        "crop_x": 180,
+        "crop_y": 20,
     },
 ]
 
@@ -152,27 +103,27 @@ NARRATION_SEGMENTS = [
     (
         0.4,
         5.2,
-        "Na notícia da G1, Dua Lipa aparece no centro dos preparativos para uma festa de casamento na Sicília.",
+        "Na notícia da G1, o excesso de álcool em palcos e bastidores volta ao centro da conversa.",
     ),
     (
         5.2,
         10.6,
-        "O ponto que chama atenção é o sigilo: local histórico, equipe trabalhando e pouca confirmação pública.",
+        "A questão não é só festa: quando o limite passa, show, equipe e público sentem o impacto.",
     ),
     (
         10.6,
         16.4,
-        "Para contar isso sem usar paparazzi, a LCB monta apenas imagens legais da própria Dua.",
+        "Neste teste, a LCB usa só vídeo legal de tapete vermelho e premiação, sem fotos paradas.",
     ),
     (
         16.4,
         22.6,
-        "Entram tapete vermelho, photo call e entrevistas, com o áudio original mutado e narração nossa.",
+        "O foco visual fica em chegada, photo call, poses para fotógrafos e cortes rápidos de evento.",
     ),
     (
         22.6,
         29.4,
-        "A edição mantém uma pessoa no foco e deixa claro onde está o trabalho editorial.",
+        "O áudio original fica mutado, a narração é nossa e a edição mostra trabalho editorial.",
     ),
 ]
 
