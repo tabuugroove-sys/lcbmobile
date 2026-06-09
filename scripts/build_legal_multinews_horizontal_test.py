@@ -196,7 +196,7 @@ SCENES = [
     {"asset_id": "rock_in_rio_crowd", "seek_start": 4.0, "duration": 7.0, "eyebrow": "NEWS 3  |  PÚBLICO", "title": "Fãs no festival", "body": "B-roll legal do Rock in Rio entra no contexto.", "crop_x": 80, "crop_y": 0},
     {"asset_id": "calvin_live_05", "seek_start": 3.0, "duration": 7.0, "eyebrow": "NEWS 3  |  FESTIVAL", "title": "Público em alta", "body": "Mais um corte legal de show para variar o bloco.", "crop_x": 20, "crop_y": 0},
     {"asset_id": "rock_in_rio_crowd", "seek_start": 13.0, "duration": 7.0, "eyebrow": "NEWS 3  |  MAROON 5", "title": "Dia também esgotou", "body": "Maroon 5 entra pela força da venda e do público.", "crop_x": 40, "crop_y": 0},
-    {"asset_id": "calvin_live_02", "seek_start": 6.0, "duration": 7.0, "eyebrow": "FECHO  |  RADAR POP", "title": "Três notícias, um vídeo", "body": "Formato longo 16:9 para teste editorial.", "crop_x": 20, "crop_y": 0},
+    {"asset_id": "calvin_live_04", "seek_start": 12.0, "duration": 7.0, "eyebrow": "FECHO  |  RADAR POP", "title": "Três notícias, um vídeo", "body": "Formato longo 16:9 para teste editorial.", "crop_x": 20, "crop_y": 0},
 ]
 
 NARRATION_SEGMENTS = [
