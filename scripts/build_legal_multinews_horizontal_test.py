@@ -127,6 +127,18 @@ ASSETS = [
         "source": "https://commons.wikimedia.org/wiki/File:Videos_of_Calvin_Harris_live_in_Bengaluru_(2026)_04.webm",
         "license": "https://creativecommons.org/licenses/by-sa/4.0/",
     },
+    {
+        "id": "calvin_longitude_gif",
+        "name": "Calvin Harris",
+        "media_type": "video",
+        "commons_title": "File:Calvin Harris performing on the Main Stage at Longitude Festival 2023.gif",
+        "file": "calvin_harris_longitude_2023.gif",
+        "download_url": "https://upload.wikimedia.org/wikipedia/commons/5/5b/Calvin_Harris_performing_on_the_Main_Stage_at_Longitude_Festival_2023.gif",
+        "credit": "Calvin Harris performing on the Main Stage at Longitude Festival 2023, animated image by Edl-irishboy, CC BY-SA 4.0",
+        "display_credit": "Edl-irishboy, CC BY-SA 4.0",
+        "source": "https://commons.wikimedia.org/wiki/File:Calvin_Harris_performing_on_the_Main_Stage_at_Longitude_Festival_2023.gif",
+        "license": "https://creativecommons.org/licenses/by-sa/4.0/",
+    },
 ]
 
 SCENES = [
@@ -139,11 +151,11 @@ SCENES = [
     {"asset_id": "dua_grammys", "seek_start": 4.0, "duration": 7.0, "eyebrow": "NEWS 2  |  ESTRELA", "title": "Dua no centro", "body": "A edição usa vídeo oficial licenciado.", "crop_x": 70, "crop_y": 0},
     {"asset_id": "dua_radical", "seek_start": 12.0, "duration": 7.0, "eyebrow": "NEWS 2  |  POP", "title": "Casamento vira pauta", "body": "Sem foto parada: só cenas em movimento.", "crop_x": 120, "crop_y": 0},
     {"asset_id": "dua_grammys", "seek_start": 18.0, "duration": 7.0, "eyebrow": "NEWS 2  |  FOCO", "title": "Imagem editorial", "body": "A narração explica a notícia sem inventar.", "crop_x": 40, "crop_y": 0},
-    {"asset_id": "dua_radical", "seek_start": 25.0, "duration": 7.0, "eyebrow": "NEWS 2  |  FECHO", "title": "Dua segue no radar", "body": "A segunda nota fecha com contexto pop.", "crop_x": 90, "crop_y": 0},
-    {"asset_id": "calvin_live_01", "seek_start": 0.0, "duration": 7.0, "eyebrow": "NEWS 3  |  CALVIN HARRIS", "title": "Rock in Rio esgota", "body": "O dia de Calvin Harris sumiu em pouco mais de 2h.", "crop_x": 0, "crop_y": 0},
+    {"asset_id": "dua_grammys", "seek_start": 8.0, "duration": 7.0, "eyebrow": "NEWS 2  |  FECHO", "title": "Dua segue no radar", "body": "A segunda nota fecha com contexto pop.", "crop_x": 95, "crop_y": 0},
+    {"asset_id": "calvin_longitude_gif", "seek_start": 0.0, "duration": 7.0, "eyebrow": "NEWS 3  |  CALVIN HARRIS", "title": "Rock in Rio esgota", "body": "O dia de Calvin Harris sumiu em pouco mais de 2h.", "crop_x": 40, "crop_y": 900, "loop_source": True},
     {"asset_id": "calvin_live_03", "seek_start": 0.0, "duration": 7.0, "eyebrow": "NEWS 3  |  FESTIVAL", "title": "Line-up pesado", "body": "A notícia mostra a força do festival.", "crop_x": 80, "crop_y": 0},
     {"asset_id": "calvin_live_04", "seek_start": 0.0, "duration": 7.0, "eyebrow": "NEWS 3  |  PALCO", "title": "Set em destaque", "body": "Cortes curtos evitam bloco cru de show.", "crop_x": 120, "crop_y": 0},
-    {"asset_id": "calvin_live_01", "seek_start": 7.0, "duration": 7.0, "eyebrow": "NEWS 3  |  RITMO", "title": "Venda acelerada", "body": "A edição cruza texto, legenda e vídeo.", "crop_x": 50, "crop_y": 0},
+    {"asset_id": "calvin_longitude_gif", "seek_start": 0.0, "duration": 7.0, "eyebrow": "NEWS 3  |  RITMO", "title": "Venda acelerada", "body": "A edição cruza texto, legenda e vídeo.", "crop_x": 70, "crop_y": 980, "loop_source": True},
     {"asset_id": "calvin_live_03", "seek_start": 5.0, "duration": 7.0, "eyebrow": "FECHO  |  RADAR POP", "title": "Três notícias, um vídeo", "body": "Formato longo 16:9 para teste editorial.", "crop_x": 20, "crop_y": 0},
 ]
 

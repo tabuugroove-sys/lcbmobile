@@ -503,7 +503,10 @@ def build_video() -> Path:
         asset = assets_by_id[str(scene["asset_id"])]
         source = OUT / str(asset["file"])
         seek_start = float(scene["seek_start"])
+        loop_source = bool(scene.get("loop_source"))
         if asset.get("media_type") == "image":
+            duration = scene_durations[index - 1]
+        elif loop_source:
             duration = scene_durations[index - 1]
         else:
             duration = min(scene_durations[index - 1], max(probe_duration(source) - seek_start, 0.0))
@@ -527,6 +530,8 @@ def build_video() -> Path:
             crop_x = int(scene["crop_x"])
             crop_y = int(scene["crop_y"])
             input_args = ["-ss", f"{seek_start:.3f}", "-i", str(source)]
+            if loop_source:
+                input_args = ["-stream_loop", "-1", *input_args]
             base_filter = (
                 "fps=30,scale=2100:1182:force_original_aspect_ratio=increase,"
                 f"crop=1920:1080:x={crop_x}:y={crop_y},"
