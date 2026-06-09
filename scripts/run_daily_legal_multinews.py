@@ -33,6 +33,46 @@ PLATFORM = "youtube_daily_multinews"
 YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 log = logging.getLogger(__name__)
 
+_ENTERTAINMENT_TERMS = {
+    "ator",
+    "atriz",
+    "artista",
+    "banda",
+    "bbb",
+    "cantor",
+    "cantora",
+    "celebridade",
+    "dj",
+    "elenco",
+    "famoso",
+    "famosa",
+    "festival",
+    "forro",
+    "influenciador",
+    "musica",
+    "novela",
+    "palco",
+    "rock",
+    "sertanejo",
+    "show",
+    "vocalista",
+}
+
+_NON_ENTERTAINMENT_TERMS = {
+    "aposentadoria",
+    "banco",
+    "cartao",
+    "clt",
+    "credito",
+    "fgts",
+    "financiamento",
+    "inss",
+    "itau",
+    "lei",
+    "nubank",
+    "salario",
+}
+
 
 def _plain(text: str) -> str:
     decomposed = unicodedata.normalize("NFKD", text or "")
@@ -44,6 +84,16 @@ def _clip(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
+
+
+def _is_entertainment_item(item: NewsItem) -> bool:
+    text = _plain(f"{item.title} {item.summary} {item.category}")
+    tokens = set(re.findall(r"[a-z0-9]+", text))
+    if tokens & _NON_ENTERTAINMENT_TERMS:
+        return False
+    if item.category in {"celebridades", "fofoca", "dj"}:
+        return True
+    return bool(tokens & _ENTERTAINMENT_TERMS)
 
 
 def _asset_ids_for_item(item: NewsItem) -> list[str]:
@@ -143,6 +193,9 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
     candidates: list[NewsItem] = []
     seen_hashes: set[str] = set()
     for item in items:
+        if not _is_entertainment_item(item):
+            log.info("Skipping non-entertainment item: %s", item.title)
+            continue
         fp = item.fingerprint()
         ch = item.content_hash()
         if store.is_seen(fp) or store.already_published(fp, PLATFORM):
