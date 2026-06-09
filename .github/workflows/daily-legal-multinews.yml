@@ -1,0 +1,126 @@
+name: Daily legal multinews 16x9
+
+on:
+  schedule:
+    # 15:00 America/Sao_Paulo = 18:00 UTC.
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Number of top RSS news items to include"
+        required: false
+        default: "5"
+      publish:
+        description: "Publish to YouTube after building"
+        required: false
+        type: choice
+        default: "true"
+        options:
+          - "true"
+          - "false"
+      force:
+        description: "Ignore today's daily dedupe marker"
+        required: false
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+
+concurrency:
+  group: daily-legal-multinews
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg + ImageMagick + fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg imagemagick fonts-dejavu-core
+          sudo sed -i 's|<policy domain="path" rights="none" pattern="@\*"/>||' /etc/ImageMagick-6/policy.xml || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore state DB
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: lcb-state-${{ github.run_id }}
+          restore-keys: |
+            lcb-state-
+
+      - name: Materialize YouTube secret files
+        if: ${{ github.event.inputs.publish != 'false' }}
+        run: |
+          if [ -n "${YOUTUBE_CLIENT_SECRET}" ]; then
+            echo "$YOUTUBE_CLIENT_SECRET" > client_secret.json
+          fi
+          if [ -n "${YOUTUBE_TOKEN}" ]; then
+            echo "$YOUTUBE_TOKEN" > youtube_token.json
+          fi
+        env:
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+
+      - name: Build and optionally publish daily multinews
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+
+          ANALYTICS_ENABLED: ${{ vars.ANALYTICS_ENABLED || 'true' }}
+          ANALYTICS_CANDIDATE_POOL: ${{ vars.ANALYTICS_CANDIDATE_POOL || '50' }}
+          ANALYTICS_HISTORY_LIMIT: ${{ vars.ANALYTICS_HISTORY_LIMIT || '250' }}
+          YOUTUBE_METRICS_REFRESH_HOURS: ${{ vars.YOUTUBE_METRICS_REFRESH_HOURS || '6' }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          DRAMA_SIGNAL_WEIGHT: ${{ vars.DRAMA_SIGNAL_WEIGHT || '0.9' }}
+          DJ_CATEGORY_BOOST_HOURS: ${{ vars.DJ_CATEGORY_BOOST_HOURS || '12' }}
+
+          CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
+          CONTENT_LANG: pt-BR
+          TIMEZONE: America/Sao_Paulo
+          DB_PATH: data/state.db
+          OUTPUT_DIR: out
+          BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.10' }}
+
+          TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' }}
+          ELEVENLABS_MODEL: ${{ vars.ELEVENLABS_MODEL || 'eleven_multilingual_v2' }}
+          ELEVENLABS_STABILITY: ${{ vars.ELEVENLABS_STABILITY || '0.62' }}
+          ELEVENLABS_SIMILARITY: ${{ vars.ELEVENLABS_SIMILARITY || '0.78' }}
+          ELEVENLABS_STYLE: ${{ vars.ELEVENLABS_STYLE || '0.18' }}
+          ELEVENLABS_SPEED: ${{ vars.ELEVENLABS_SPEED || '0.82' }}
+          YOUTUBE_CATEGORY_ID: ${{ vars.YOUTUBE_CATEGORY_ID || '24' }}
+        run: |
+          ARGS="-v --limit ${{ github.event.inputs.limit || '5' }}"
+          if [ "${{ github.event.inputs.publish || 'true' }}" = "false" ]; then
+            ARGS="$ARGS --no-publish"
+          fi
+          if [ "${{ github.event.inputs.force || 'false' }}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          python -m scripts.run_daily_legal_multinews $ARGS
+
+      - name: Upload generated assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-legal-multinews-${{ github.run_id }}
+          path: out/daily_legal_multinews
+          if-no-files-found: ignore
+          retention-days: 7
