@@ -2,6 +2,15 @@ name: Legal multinews horizontal video test
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to YouTube after building"
+        required: false
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
 
 jobs:
   build:
@@ -23,6 +32,19 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: Materialize YouTube secret files
+        if: ${{ inputs.publish == 'true' }}
+        run: |
+          if [ -n "${YOUTUBE_CLIENT_SECRET}" ]; then
+            echo "$YOUTUBE_CLIENT_SECRET" > client_secret.json
+          fi
+          if [ -n "${YOUTUBE_TOKEN}" ]; then
+            echo "$YOUTUBE_TOKEN" > youtube_token.json
+          fi
+        env:
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+
       - name: Build legal multinews horizontal test
         env:
           TTS_PROVIDER: elevenlabs
@@ -34,6 +56,12 @@ jobs:
           ELEVENLABS_STYLE: ${{ vars.ELEVENLABS_STYLE || '0.18' }}
           ELEVENLABS_SPEED: ${{ vars.ELEVENLABS_SPEED || '0.82' }}
         run: python -m scripts.build_legal_multinews_horizontal_test
+
+      - name: Publish legal multinews video
+        if: ${{ inputs.publish == 'true' }}
+        env:
+          YOUTUBE_CATEGORY_ID: ${{ vars.YOUTUBE_CATEGORY_ID || '24' }}
+        run: python -m scripts.publish_legal_multinews_horizontal_test
 
       - name: Upload test video
         uses: actions/upload-artifact@v4
