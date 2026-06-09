@@ -170,7 +170,7 @@ SCENES = [
     {"asset_id": "dua_grammys", "seek_start": 8.0, "duration": 7.0, "eyebrow": "NEWS 2  |  FECHO", "title": "Dua segue no radar", "body": "A segunda nota fecha com contexto pop.", "crop_x": 95, "crop_y": 0},
     {"asset_id": "calvin_longitude_gif", "seek_start": 0.0, "duration": 7.0, "eyebrow": "NEWS 3  |  CALVIN HARRIS", "title": "Rock in Rio esgota", "body": "O dia de Calvin Harris sumiu em pouco mais de 2h.", "crop_x": 40, "crop_y": 900, "loop_source": True},
     {"asset_id": "rock_in_rio_crowd", "seek_start": 4.0, "duration": 7.0, "eyebrow": "NEWS 3  |  PÚBLICO", "title": "Fãs no festival", "body": "B-roll legal do Rock in Rio entra no contexto.", "crop_x": 80, "crop_y": 0},
-    {"asset_id": "calvin_longitude_gif", "seek_start": 0.0, "duration": 7.0, "eyebrow": "NEWS 3  |  PALCO", "title": "Set em destaque", "body": "Cortes curtos evitam bloco cru de show.", "crop_x": 90, "crop_y": 980, "loop_source": True},
+    {"asset_id": "rock_in_rio_crowd", "seek_start": 20.0, "duration": 7.0, "eyebrow": "NEWS 3  |  FESTIVAL", "title": "Público em alta", "body": "O foco vira demanda forte para os dias esgotados.", "crop_x": 40, "crop_y": 0},
     {"asset_id": "rock_in_rio_crowd", "seek_start": 13.0, "duration": 7.0, "eyebrow": "NEWS 3  |  MAROON 5", "title": "Dia também esgotou", "body": "Maroon 5 entra pela força da venda e do público.", "crop_x": 40, "crop_y": 0},
     {"asset_id": "calvin_live_03", "seek_start": 5.0, "duration": 7.0, "eyebrow": "FECHO  |  RADAR POP", "title": "Três notícias, um vídeo", "body": "Formato longo 16:9 para teste editorial.", "crop_x": 20, "crop_y": 0},
 ]
