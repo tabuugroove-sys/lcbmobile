@@ -1,0 +1,44 @@
+name: Legal multinews horizontal video test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg + ImageMagick + fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg imagemagick fonts-dejavu-core
+          sudo sed -i 's|<policy domain="path" rights="none" pattern="@\*"/>||' /etc/ImageMagick-6/policy.xml || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Build legal multinews horizontal test
+        env:
+          TTS_PROVIDER: elevenlabs
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' }}
+          ELEVENLABS_MODEL: ${{ vars.ELEVENLABS_MODEL || 'eleven_multilingual_v2' }}
+          ELEVENLABS_STABILITY: ${{ vars.ELEVENLABS_STABILITY || '0.62' }}
+          ELEVENLABS_SIMILARITY: ${{ vars.ELEVENLABS_SIMILARITY || '0.78' }}
+          ELEVENLABS_STYLE: ${{ vars.ELEVENLABS_STYLE || '0.18' }}
+          ELEVENLABS_SPEED: ${{ vars.ELEVENLABS_SPEED || '0.82' }}
+        run: python -m scripts.build_legal_multinews_horizontal_test
+
+      - name: Upload test video
+        uses: actions/upload-artifact@v4
+        with:
+          name: legal-multinews-horizontal-test
+          path: out/legal_multinews_horizontal_test
+          if-no-files-found: error
+          retention-days: 7
