@@ -24,7 +24,6 @@ from scripts.build_legal_multinews_horizontal_test import ASSETS  # noqa: E402
 from src.analytics import refresh_youtube_metrics, select_best_candidates  # noqa: E402
 from src.config import ROOT, settings  # noqa: E402
 from src.models import NewsItem  # noqa: E402
-from src.scraper import collect_news, load_sources  # noqa: E402
 from src.storage import Store  # noqa: E402
 
 
@@ -73,6 +72,46 @@ _NON_ENTERTAINMENT_TERMS = {
     "salario",
 }
 
+_TAG_STOPWORDS = {
+    "acontece",
+    "ainda",
+    "antes",
+    "apenas",
+    "assim",
+    "com",
+    "como",
+    "das",
+    "depois",
+    "dos",
+    "esta",
+    "este",
+    "mais",
+    "para",
+    "pela",
+    "pelo",
+    "por",
+    "que",
+    "sao",
+    "sem",
+    "ser",
+    "sobre",
+    "sua",
+    "suas",
+    "tem",
+    "uma",
+}
+
+_KNOWN_ENTITIES = (
+    "Shakira",
+    "Dua Lipa",
+    "Calvin Harris",
+    "Maroon 5",
+    "Adam Levine",
+    "Anitta",
+    "Madonna",
+    "Rock in Rio",
+)
+
 
 def _plain(text: str) -> str:
     decomposed = unicodedata.normalize("NFKD", text or "")
@@ -84,6 +123,83 @@ def _clip(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
+
+
+def _timestamp(seconds: int) -> str:
+    minutes, secs = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _detected_entities(items: list[NewsItem]) -> list[str]:
+    text = _plain(" ".join(f"{item.title} {item.summary}" for item in items))
+    found: list[str] = []
+    for entity in _KNOWN_ENTITIES:
+        if _plain(entity) in text:
+            found.append(entity)
+    return found
+
+
+def _keyword_tags(items: list[NewsItem]) -> list[str]:
+    tags = [
+        "pop news",
+        "noticias dos famosos",
+        "celebridades",
+        "fofoca",
+        "musica",
+        "Brasil",
+    ]
+    tags.extend(_detected_entities(items))
+    for item in items:
+        for token in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]{4,}", item.title):
+            plain = _plain(token)
+            if plain in _TAG_STOPWORDS:
+                continue
+            tag = token[:30]
+            if tag not in tags:
+                tags.append(tag)
+            if len(tags) >= 28:
+                return tags
+    return tags[:28]
+
+
+def _youtube_metadata(items: list[NewsItem]) -> tuple[str, str, list[str]]:
+    today = datetime.now(ZoneInfo(settings.timezone)).strftime("%d/%m/%Y")
+    entities = _detected_entities(items)
+    if entities:
+        focus = ", ".join(entities[:3])
+        title = f"Top 5 noticias pop de hoje: {focus} | {today}"
+    else:
+        main_topic = _clip(items[0].title, 42)
+        title = f"Top 5 noticias dos famosos hoje: {main_topic} | {today}"
+
+    chapters = ["00:00 Abertura e noticia 1"]
+    for index, item in enumerate(items[1:], start=2):
+        chapters.append(f"{_timestamp((index - 1) * 21)} Noticia {index}: {_clip(item.title, 48)}")
+
+    news_lines = "\n".join(
+        f"{index}. {item.title}\n   Fonte: {item.source_name}\n   Link: {item.url}"
+        for index, item in enumerate(items, start=1)
+    )
+    credits = (OUT / "credits.txt").read_text(encoding="utf-8")
+    description = (
+        "Top 5 noticias pop do dia em formato editorial, com narracao propria, "
+        "texto na tela e videos licenciados/creditados.\n\n"
+        "O que tem no video:\n"
+        f"{news_lines}\n\n"
+        "Capitulos:\n"
+        f"{chr(10).join(chapters)}\n\n"
+        "Como o video foi feito:\n"
+        "- Selecao por RSS + sinais de frescor, drama e historico de performance.\n"
+        "- Audio original dos videos mutado.\n"
+        "- Uso apenas de videos com licenca, press permission ou b-roll editorial permitido.\n\n"
+        "Creditos e licencas:\n"
+        f"{credits}\n\n"
+        "#PopNews #Celebridades #Fofoca #NoticiasDosFamosos #Noticias"
+    )[:4900]
+    return title[:100], description, _keyword_tags(items)
 
 
 def _is_entertainment_item(item: NewsItem) -> bool:
@@ -180,6 +296,8 @@ def _build_storyboard(items: list[NewsItem]) -> tuple[list[dict[str, object]], l
 
 
 def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], str]:
+    from src.scraper import collect_news, load_sources
+
     store = Store(settings.db_path)
     tz = ZoneInfo(settings.timezone)
     today = datetime.now(tz).date().isoformat()
@@ -252,19 +370,7 @@ def _build_video(items: list[NewsItem]) -> Path:
 
 
 def _publish(video: Path, items: list[NewsItem]) -> str:
-    today = datetime.now(ZoneInfo(settings.timezone)).strftime("%d/%m/%Y")
-    title = f"Top 5 noticias pop de hoje | {today}"
-    news_lines = "\n".join(f"- {item.title} ({item.source_name}): {item.url}" for item in items)
-    credits = (OUT / "credits.txt").read_text(encoding="utf-8")
-    description = (
-        "Top 5 noticias pop selecionadas por sinais de frescor, drama e historico de performance.\n\n"
-        "Noticias:\n"
-        f"{news_lines}\n\n"
-        "Creditos e licencas:\n"
-        f"{credits}\n\n"
-        "#PopNews #Celebridades #Fofoca #RockInRio #Noticias"
-    )[:4900]
-    tags = ["pop news", "celebridades", "fofoca", "Brasil", "Rock in Rio"]
+    title, description, tags = _youtube_metadata(items)
     yt = _youtube_service()
     body = {
         "snippet": {
