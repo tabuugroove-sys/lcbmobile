@@ -10,6 +10,7 @@ runs.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -125,20 +126,32 @@ def main(url: str, only_publishers: tuple[str, ...], dry_run: bool, verbose: boo
         notify("⚠️ post_url: nenhum publisher configurado.")
         sys.exit(4)
 
-    any_failure = False
+    optional_publishers = {
+        name.strip().lower()
+        for name in os.getenv("OPTIONAL_PUBLISHERS", "telegram").split(",")
+        if name.strip()
+    }
+    any_required_failure = False
     for pub in publishers:
         result = pub.publish(post, assets)
         marker = "OK" if result.ok else "FAIL"
         click.echo(f"[{marker}] {pub.name} -> {result.remote_id or result.error}")
         if not result.ok:
-            any_failure = True
+            if pub.name in optional_publishers:
+                log.warning(
+                    "Optional publisher %s failed; continuing: %s",
+                    pub.name,
+                    result.error or "unknown error",
+                )
+                continue
+            any_required_failure = True
             notify_error(
                 f"post_url:publish:{pub.name}",
                 Exception(result.error or "unknown"),
                 context=url,
             )
 
-    if any_failure:
+    if any_required_failure:
         sys.exit(5)
 
 
