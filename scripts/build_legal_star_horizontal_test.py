@@ -9,6 +9,7 @@ This is a workflow-only smoke test for the future media whitelist layer:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -498,6 +499,7 @@ def build_video() -> Path:
     total_duration = sum(scene_durations)
     video = OUT / "legal_star_horizontal.mp4"
     music = ROOT / "assets" / "audio" / "travel_todos_momentos.wav"
+    music_volume = max(0.0, float(os.getenv("BACKGROUND_MUSIC_VOLUME", "0.15")))
 
     for index, scene in enumerate(SCENES, start=1):
         asset = assets_by_id[str(scene["asset_id"])]
@@ -609,7 +611,7 @@ def build_video() -> Path:
             f"{total_duration:.3f}",
             "-filter_complex",
             (
-                f"[2:a]atrim=0:{total_duration:.3f},asetpts=PTS-STARTPTS,volume=0.10[m];"
+                f"[2:a]atrim=0:{total_duration:.3f},asetpts=PTS-STARTPTS,volume={music_volume:.3f}[m];"
                 f"[1:a]atrim=0:{total_duration:.3f},adelay=200|200,volume=1.0[vo];"
                 "[m][vo]amix=inputs=2:duration=first:dropout_transition=0[a]"
             ),

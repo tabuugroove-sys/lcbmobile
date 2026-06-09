@@ -95,7 +95,7 @@ jobs:
           TIMEZONE: America/Sao_Paulo
           DB_PATH: data/state.db
           OUTPUT_DIR: out
-          BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.10' }}
+          BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.15' }}
 
           TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
