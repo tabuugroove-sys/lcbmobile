@@ -23,7 +23,7 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Build legal star horizontal test
+      - name: Build legal multinews horizontal test
         env:
           TTS_PROVIDER: elevenlabs
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
@@ -33,12 +33,12 @@ jobs:
           ELEVENLABS_SIMILARITY: ${{ vars.ELEVENLABS_SIMILARITY || '0.78' }}
           ELEVENLABS_STYLE: ${{ vars.ELEVENLABS_STYLE || '0.18' }}
           ELEVENLABS_SPEED: ${{ vars.ELEVENLABS_SPEED || '0.82' }}
-        run: python -m scripts.build_legal_star_horizontal_test
+        run: python -m scripts.build_legal_multinews_horizontal_test
 
       - name: Upload test video
         uses: actions/upload-artifact@v4
         with:
-          name: legal-star-horizontal-test
-          path: out/legal_star_horizontal_test
+          name: legal-multinews-horizontal-test
+          path: out/legal_multinews_horizontal_test
           if-no-files-found: error
           retention-days: 7
