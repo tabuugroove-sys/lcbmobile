@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import hashlib
 import sys
 import unicodedata
 from datetime import datetime
@@ -119,6 +120,24 @@ _KNOWN_ENTITIES = (
     "Rock in Rio",
 )
 
+_GENERIC_STAGE_ASSETS = [
+    "rock_in_rio_crowd",
+    "calvin_live_01",
+    "calvin_live_02",
+    "calvin_live_03",
+    "calvin_live_04",
+    "calvin_live_05",
+    "calvin_longitude_gif",
+]
+
+_ENTITY_ASSETS = {
+    "shakira": ["shakira_un_imagine", "shakira_davos", "rock_in_rio_crowd"],
+    "dua": ["dua_radical", "dua_grammys", "rock_in_rio_crowd"],
+    "calvin": ["calvin_longitude_gif", "calvin_live_05", "calvin_live_04"],
+    "maroon": ["rock_in_rio_crowd", "calvin_live_01", "calvin_live_03"],
+    "anitta": ["rock_in_rio_crowd", "shakira_davos", "calvin_live_02"],
+}
+
 
 def _plain(text: str) -> str:
     decomposed = unicodedata.normalize("NFKD", text or "")
@@ -226,19 +245,62 @@ def _is_entertainment_item(item: NewsItem) -> bool:
     return bool(tokens & _ENTERTAINMENT_TERMS)
 
 
-def _asset_ids_for_item(item: NewsItem) -> list[str]:
+def _stable_index(value: str, modulo: int) -> int:
+    if modulo <= 0:
+        return 0
+    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % modulo
+
+
+def _pick_assets(
+    candidates: list[str],
+    *,
+    key: str,
+    recent_assets: list[str],
+    count: int = 3,
+) -> list[str]:
+    pool: list[str] = []
+    for asset_id in candidates + _GENERIC_STAGE_ASSETS:
+        if asset_id not in pool:
+            pool.append(asset_id)
+    if not pool:
+        return []
+
+    offset = _stable_index(key, len(pool))
+    ordered = pool[offset:] + pool[:offset]
+    selected: list[str] = []
+    for asset_id in ordered:
+        if asset_id in selected:
+            continue
+        if not selected and recent_assets and asset_id == recent_assets[-1]:
+            continue
+        selected.append(asset_id)
+        if len(selected) >= count:
+            break
+
+    for asset_id in ordered:
+        if len(selected) >= count:
+            break
+        if asset_id not in selected:
+            selected.append(asset_id)
+
+    return selected[:count]
+
+
+def _asset_ids_for_item(item: NewsItem, recent_assets: list[str] | None = None) -> list[str]:
     text = _plain(f"{item.title} {item.summary}")
+    recent_assets = recent_assets or []
     if "shakira" in text:
-        return ["shakira_un_imagine", "shakira_davos", "shakira_un_imagine"]
+        return _pick_assets(_ENTITY_ASSETS["shakira"], key=item.fingerprint(), recent_assets=recent_assets)
     if "dua lipa" in text or re.search(r"\bdua\b", text):
-        return ["dua_radical", "dua_grammys", "dua_grammys"]
+        return _pick_assets(_ENTITY_ASSETS["dua"], key=item.fingerprint(), recent_assets=recent_assets)
     if "calvin" in text or "harris" in text:
-        return ["calvin_longitude_gif", "calvin_live_05", "calvin_live_04"]
+        return _pick_assets(_ENTITY_ASSETS["calvin"], key=item.fingerprint(), recent_assets=recent_assets)
     if "maroon" in text or "adam levine" in text or "rock in rio" in text:
-        return ["rock_in_rio_crowd", "rock_in_rio_crowd", "calvin_live_04"]
+        return _pick_assets(_ENTITY_ASSETS["maroon"], key=item.fingerprint(), recent_assets=recent_assets)
     if "anitta" in text:
-        return ["shakira_un_imagine", "rock_in_rio_crowd", "shakira_davos"]
-    return ["rock_in_rio_crowd", "shakira_davos", "dua_grammys"]
+        return _pick_assets(_ENTITY_ASSETS["anitta"], key=item.fingerprint(), recent_assets=recent_assets)
+    return _pick_assets(_GENERIC_STAGE_ASSETS, key=item.fingerprint(), recent_assets=recent_assets)
 
 
 def _scene_for(
@@ -271,9 +333,10 @@ def _build_storyboard(
 ) -> tuple[list[dict[str, object]], list[tuple[float, float, str]]]:
     scenes: list[dict[str, object]] = []
     narration: list[tuple[float, float, str]] = []
+    recent_assets: list[str] = []
     t = 0.4
     for idx, item in enumerate(items, start=1):
-        asset_ids = _asset_ids_for_item(item)
+        asset_ids = _asset_ids_for_item(item, recent_assets)
         title = _clip(item.title, 90)
         source = item.source_name
         summary = _clip(item.summary, 140) if item.summary else "A nota entra no radar pop de hoje."
@@ -309,6 +372,7 @@ def _build_storyboard(
                     body=scene_bodies[sub_index],
                 )
             )
+            recent_assets.append(asset_ids[sub_index])
             t = end
     return scenes, narration
 
