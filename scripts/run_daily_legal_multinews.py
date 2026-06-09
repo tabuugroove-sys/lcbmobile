@@ -22,6 +22,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts import build_legal_star_horizontal_test as base  # noqa: E402
 from scripts.build_legal_multinews_horizontal_test import ASSETS  # noqa: E402
 from src.analytics import refresh_youtube_metrics, select_best_candidates  # noqa: E402
+from src.analytics.traffic_experiments import (  # noqa: E402
+    TrafficProfile,
+    choose_traffic_profile,
+    experiment_reason,
+    headline_angle,
+    order_items_for_profile,
+)
 from src.config import ROOT, settings  # noqa: E402
 from src.models import NewsItem  # noqa: E402
 from src.storage import Store  # noqa: E402
@@ -165,12 +172,17 @@ def _keyword_tags(items: list[NewsItem]) -> list[str]:
     return tags[:28]
 
 
-def _youtube_metadata(items: list[NewsItem]) -> tuple[str, str, list[str]]:
+def _youtube_metadata(
+    items: list[NewsItem],
+    profile: TrafficProfile,
+) -> tuple[str, str, list[str]]:
     today = datetime.now(ZoneInfo(settings.timezone)).strftime("%d/%m/%Y")
     entities = _detected_entities(items)
-    if entities:
+    if profile.id == "conflict_first":
+        title = f"{_clip(items[0].title, 62)} | Top 5 pop {today}"
+    elif profile.id == "star_name_first" and entities:
         focus = ", ".join(entities[:3])
-        title = f"Top 5 noticias pop de hoje: {focus} | {today}"
+        title = f"{focus}: as 5 noticias pop de hoje | {today}"
     else:
         main_topic = _clip(items[0].title, 42)
         title = f"Top 5 noticias dos famosos hoje: {main_topic} | {today}"
@@ -193,6 +205,8 @@ def _youtube_metadata(items: list[NewsItem]) -> tuple[str, str, list[str]]:
         f"{chr(10).join(chapters)}\n\n"
         "Como o video foi feito:\n"
         "- Selecao por RSS + sinais de frescor, drama e historico de performance.\n"
+        f"- Teste editorial ativo: {profile.label} ({profile.id}).\n"
+        f"- Hipotese: {profile.hypothesis}\n"
         "- Audio original dos videos mutado.\n"
         "- Uso apenas de videos com licenca, press permission ou b-roll editorial permitido.\n\n"
         "Creditos e licencas:\n"
@@ -251,7 +265,10 @@ def _scene_for(
     }
 
 
-def _build_storyboard(items: list[NewsItem]) -> tuple[list[dict[str, object]], list[tuple[float, float, str]]]:
+def _build_storyboard(
+    items: list[NewsItem],
+    profile: TrafficProfile,
+) -> tuple[list[dict[str, object]], list[tuple[float, float, str]]]:
     scenes: list[dict[str, object]] = []
     narration: list[tuple[float, float, str]] = []
     t = 0.4
@@ -260,18 +277,19 @@ def _build_storyboard(items: list[NewsItem]) -> tuple[list[dict[str, object]], l
         title = _clip(item.title, 90)
         source = item.source_name
         summary = _clip(item.summary, 140) if item.summary else "A nota entra no radar pop de hoje."
+        lead_line = headline_angle(item, profile) if idx == 1 else f"Destaque {idx}: {title}"
         lines = [
-            f"Destaque {idx}: {title}",
+            lead_line,
             f"Segundo {source}, {summary}",
             "A edicao usa apenas video licenciado ou b-roll editorial permitido, com audio original mutado.",
         ]
         scene_titles = [
-            _clip(title, 34),
+            _clip(lead_line, 34),
             "Contexto da noticia",
             "Radar pop do dia",
         ]
         scene_bodies = [
-            f"Fonte: {source}",
+            profile.opening_body if idx == 1 else f"Fonte: {source}",
             "Top 5 escolhido por sinais de frescor, drama e historico.",
             "Texto proprio, narracao propria e creditos no arquivo.",
         ]
@@ -329,7 +347,11 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
     return store, selected, daily_fp
 
 
-def _write_credits(items: list[NewsItem], scenes: list[dict[str, object]]) -> None:
+def _write_credits(
+    items: list[NewsItem],
+    scenes: list[dict[str, object]],
+    profile: TrafficProfile,
+) -> None:
     assets_by_id = {str(asset["id"]): asset for asset in ASSETS}
     used_asset_ids = []
     for scene in scenes:
@@ -339,6 +361,11 @@ def _write_credits(items: list[NewsItem], scenes: list[dict[str, object]]) -> No
 
     lines = ["News items:"]
     lines.extend(f"- {item.title} | {item.source_name} | {item.url}" for item in items)
+    lines.append("")
+    lines.append("Traffic experiment:")
+    lines.append(f"- Profile: {profile.id} ({profile.label})")
+    lines.append(f"- Hypothesis: {profile.hypothesis}")
+    lines.append(f"- Lead reason: {experiment_reason(items, profile)}")
     lines.append("")
     lines.append("Video assets:")
     for asset_id in used_asset_ids:
@@ -350,9 +377,9 @@ def _write_credits(items: list[NewsItem], scenes: list[dict[str, object]]) -> No
     (OUT / "credits.txt").write_text("\n".join(lines), encoding="utf-8")
 
 
-def _build_video(items: list[NewsItem]) -> Path:
+def _build_video(items: list[NewsItem], profile: TrafficProfile) -> Path:
     OUT.mkdir(parents=True, exist_ok=True)
-    scenes, narration = _build_storyboard(items)
+    scenes, narration = _build_storyboard(items, profile)
     package_news = {
         "title": f"Top {len(items)} noticias pop do dia",
         "source": "RSS + analytics scorer",
@@ -364,13 +391,13 @@ def _build_video(items: list[NewsItem]) -> Path:
     base.SCENES = scenes
     base.NARRATION_SEGMENTS = narration
     base.download_assets()
-    _write_credits(items, scenes)
+    _write_credits(items, scenes, profile)
     base.synthesize_voice()
     return base.build_video()
 
 
-def _publish(video: Path, items: list[NewsItem]) -> str:
-    title, description, tags = _youtube_metadata(items)
+def _publish(video: Path, items: list[NewsItem], profile: TrafficProfile) -> tuple[str, str]:
+    title, description, tags = _youtube_metadata(items, profile)
     yt = _youtube_service()
     body = {
         "snippet": {
@@ -388,7 +415,7 @@ def _publish(video: Path, items: list[NewsItem]) -> str:
     response = None
     while response is None:
         _, response = request.next_chunk()
-    return str(response["id"])
+    return str(response["id"]), title
 
 
 def _youtube_service():
@@ -412,8 +439,20 @@ def _youtube_service():
 @click.option("--limit", type=int, default=5, show_default=True)
 @click.option("--publish/--no-publish", default=True, show_default=True)
 @click.option("--force", is_flag=True, default=False)
+@click.option(
+    "--traffic-profile",
+    default="auto",
+    show_default=True,
+    help="auto, conflict_first, star_name_first, or fast_countdown",
+)
 @click.option("-v", "--verbose", is_flag=True, default=False)
-def main(limit: int, publish: bool, force: bool, verbose: bool) -> None:
+def main(
+    limit: int,
+    publish: bool,
+    force: bool,
+    traffic_profile: str,
+    verbose: bool,
+) -> None:
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -422,18 +461,30 @@ def main(limit: int, publish: bool, force: bool, verbose: bool) -> None:
     if not items:
         click.echo(f"daily_multinews=skipped fingerprint={daily_fp}")
         return
-    video = _build_video(items)
+    profile = choose_traffic_profile(daily_fp, traffic_profile)
+    items = order_items_for_profile(items, profile)
+    click.echo(f"traffic_profile={profile.id} reason={experiment_reason(items, profile)}")
+    video = _build_video(items, profile)
     click.echo(f"daily_multinews_video={video}")
     if not publish:
         click.echo("daily_multinews=dry_run")
         return
 
     try:
-        video_id = _publish(video, items)
+        video_id, youtube_title = _publish(video, items, profile)
     except HttpError as exc:
         log.error("Daily multinews YouTube upload failed: %s", exc)
         raise
 
+    store.record_traffic_experiment(
+        video_id=video_id,
+        fingerprint=daily_fp,
+        platform=PLATFORM,
+        profile_id=profile.id,
+        hypothesis=profile.hypothesis,
+        title=youtube_title,
+        item_count=len(items),
+    )
     store.mark_seen(daily_fp, "daily_multinews", "", f"Daily legal multinews {daily_fp}")
     for item in items:
         store.record_item_features(item)

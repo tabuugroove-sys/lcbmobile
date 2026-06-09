@@ -26,6 +26,10 @@ on:
         options:
           - "false"
           - "true"
+      traffic_profile:
+        description: "auto, conflict_first, star_name_first, or fast_countdown"
+        required: false
+        default: "auto"
 
 concurrency:
   group: daily-legal-multinews
@@ -96,6 +100,7 @@ jobs:
           DB_PATH: data/state.db
           OUTPUT_DIR: out
           BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.15' }}
+          YOUTUBE_TRAFFIC_PROFILE: ${{ github.event.inputs.traffic_profile || vars.YOUTUBE_TRAFFIC_PROFILE || 'auto' }}
 
           TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
@@ -114,6 +119,7 @@ jobs:
           if [ "${{ github.event.inputs.force || 'false' }}" = "true" ]; then
             ARGS="$ARGS --force"
           fi
+          ARGS="$ARGS --traffic-profile ${YOUTUBE_TRAFFIC_PROFILE}"
           python -m scripts.run_daily_legal_multinews $ARGS
 
       - name: Upload generated assets

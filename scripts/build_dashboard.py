@@ -50,7 +50,7 @@ def _today_bounds(tz: ZoneInfo) -> tuple[str, str]:
 
 def _fetch_summary(conn: sqlite3.Connection | None, tz: ZoneInfo) -> dict[str, int]:
     if conn is None or not _has_table(conn, "publications"):
-        return {"youtube_today": 0, "telegram_today": 0, "errors_today": 0}
+        return {"youtube_today": 0, "youtube_daily_today": 0, "telegram_today": 0, "errors_today": 0}
     start, end = _today_bounds(tz)
     rows = conn.execute(
         """SELECT platform, status, COUNT(DISTINCT fingerprint) AS count
@@ -59,10 +59,12 @@ def _fetch_summary(conn: sqlite3.Connection | None, tz: ZoneInfo) -> dict[str, i
            GROUP BY platform, status""",
         (start, end),
     ).fetchall()
-    summary = {"youtube_today": 0, "telegram_today": 0, "errors_today": 0}
+    summary = {"youtube_today": 0, "youtube_daily_today": 0, "telegram_today": 0, "errors_today": 0}
     for row in rows:
         if row["platform"] == "youtube" and row["status"] == "ok":
             summary["youtube_today"] = int(row["count"])
+        if row["platform"] == "youtube_daily_multinews" and row["status"] == "ok":
+            summary["youtube_daily_today"] = int(row["count"])
         if row["platform"] == "telegram" and row["status"] == "ok":
             summary["telegram_today"] = int(row["count"])
         if row["status"] == "error":
@@ -120,7 +122,15 @@ def _top_posts(conn: sqlite3.Connection | None) -> list[sqlite3.Row]:
                m.collected_at,
                COALESCE(f.title, s.title, m.fingerprint) AS title,
                COALESCE(f.source_id, s.source_id, '') AS source_id,
-               COALESCE(f.category, '') AS category
+               COALESCE(f.category, '') AS category,
+               COALESCE(
+                 (SELECT p.platform
+                  FROM publications p
+                  WHERE p.remote_id = m.video_id
+                  ORDER BY p.posted_at DESC
+                  LIMIT 1),
+                 'youtube'
+               ) AS platform
            FROM youtube_metrics m
            LEFT JOIN item_features f ON f.fingerprint = m.fingerprint
            LEFT JOIN seen_items s ON s.fingerprint = m.fingerprint
@@ -129,15 +139,40 @@ def _top_posts(conn: sqlite3.Connection | None) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def _traffic_experiments(conn: sqlite3.Connection | None) -> list[sqlite3.Row]:
+    if conn is None or not _has_table(conn, "traffic_experiments"):
+        return []
+    return conn.execute(
+        """SELECT
+               e.assigned_at,
+               e.platform,
+               e.video_id,
+               e.profile_id,
+               e.hypothesis,
+               e.title,
+               e.item_count,
+               m.view_count,
+               m.like_count,
+               m.comment_count,
+               m.collected_at
+           FROM traffic_experiments e
+           LEFT JOIN youtube_metrics m ON m.video_id = e.video_id
+           ORDER BY e.assigned_at DESC
+           LIMIT 30"""
+    ).fetchall()
+
+
 def _status_badge(status: str) -> str:
     cls = "ok" if status in {"ok", "success"} else "bad"
     return f'<span class="badge {cls}">{html.escape(status)}</span>'
 
 
-def _youtube_link(remote_id: str | None) -> str:
+def _youtube_link(remote_id: str | None, platform: str = "youtube") -> str:
     if not remote_id:
         return "-"
     esc = html.escape(remote_id)
+    if platform == "youtube_daily_multinews":
+        return f'<a href="https://www.youtube.com/watch?v={esc}">{esc}</a>'
     return f'<a href="https://youtube.com/shorts/{esc}">{esc}</a>'
 
 
@@ -160,6 +195,7 @@ def build_dashboard(
     latest = _latest_posts(conn)
     candidates = _candidate_scores(conn)
     top_posts = _top_posts(conn)
+    traffic_tests = _traffic_experiments(conn)
     updated = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
     workflow_status = workflow_conclusion or "unknown"
     workflow_label = workflow_name or "unknown"
@@ -242,6 +278,7 @@ def build_dashboard(
 
   <section class="grid">
     <div class="card"><div class="muted">YouTube posts today</div><div class="metric">{summary["youtube_today"]}/3</div></div>
+    <div class="card"><div class="muted">Daily 16x9 today</div><div class="metric">{summary["youtube_daily_today"]}</div></div>
     <div class="card"><div class="muted">Telegram posts today</div><div class="metric">{summary["telegram_today"]}</div></div>
     <div class="card"><div class="muted">Errors today</div><div class="metric">{summary["errors_today"]}</div></div>
     <div class="card"><div class="muted">Analytics samples</div><div class="metric">{len(top_posts)}</div></div>
@@ -256,12 +293,30 @@ def build_dashboard(
           f'<tr><td>{_local_dt(row["posted_at"], tz)}</td>'
           f'<td>{html.escape(str(row["platform"]))}</td>'
           f'<td>{_status_badge(str(row["status"]))}</td>'
-          f'<td>{_youtube_link(row["remote_id"]) if row["platform"] == "youtube" else html.escape(str(row["remote_id"] or "-"))}</td>'
+          f'<td>{_youtube_link(row["remote_id"], str(row["platform"])) if str(row["platform"]).startswith("youtube") else html.escape(str(row["remote_id"] or "-"))}</td>'
           f'<td>{html.escape(str(row["title"]))}<div class="tiny">{html.escape(str(row["source_id"]))} {html.escape(str(row["category"]))}</div></td>'
           f'<td>{html.escape(str(row["view_count"] or "-"))}</td>'
           f'<td class="tiny">{html.escape(str(row["error"] or ""))}</td></tr>'
           for row in latest
       ) or '<tr><td colspan="7" class="muted">No publications yet.</td></tr>'}
+    </tbody>
+  </table>
+
+  <h2>Traffic Format Tests</h2>
+  <table>
+    <thead><tr><th>Assigned</th><th>Profile</th><th>Video</th><th>Items</th><th>Views</th><th>Likes</th><th>Comments</th><th>Title / Hypothesis</th></tr></thead>
+    <tbody>
+      {''.join(
+          f'<tr><td>{_local_dt(row["assigned_at"], tz)}</td>'
+          f'<td>{html.escape(str(row["profile_id"]))}</td>'
+          f'<td>{_youtube_link(row["video_id"], str(row["platform"]))}</td>'
+          f'<td>{html.escape(str(row["item_count"]))}</td>'
+          f'<td>{html.escape(str(row["view_count"] or "-"))}</td>'
+          f'<td>{html.escape(str(row["like_count"] or "-"))}</td>'
+          f'<td>{html.escape(str(row["comment_count"] or "-"))}</td>'
+          f'<td>{html.escape(str(row["title"]))}<div class="tiny">{html.escape(str(row["hypothesis"]))}</div></td></tr>'
+          for row in traffic_tests
+      ) or '<tr><td colspan="8" class="muted">No traffic format tests yet.</td></tr>'}
     </tbody>
   </table>
 
@@ -287,7 +342,7 @@ def build_dashboard(
     <thead><tr><th>Video</th><th>Views</th><th>Likes</th><th>Comments</th><th>Title</th><th>Collected</th></tr></thead>
     <tbody>
       {''.join(
-          f'<tr><td>{_youtube_link(row["video_id"])}</td>'
+          f'<tr><td>{_youtube_link(row["video_id"], str(row["platform"]))}</td>'
           f'<td>{html.escape(str(row["view_count"]))}</td>'
           f'<td>{html.escape(str(row["like_count"]))}</td>'
           f'<td>{html.escape(str(row["comment_count"]))}</td>'

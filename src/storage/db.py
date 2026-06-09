@@ -76,6 +76,17 @@ CREATE TABLE IF NOT EXISTS candidate_scores (
     reason      TEXT NOT NULL,
     selected    INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS traffic_experiments (
+    video_id    TEXT PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    platform    TEXT NOT NULL,
+    profile_id  TEXT NOT NULL,
+    hypothesis  TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    item_count  INTEGER NOT NULL,
+    assigned_at TEXT NOT NULL
+);
 """
 
 
@@ -284,14 +295,15 @@ class Store:
         cutoff = (datetime.utcnow() - timedelta(hours=stale_after_hours)).isoformat()
         with self._conn() as conn:
             rows = conn.execute(
-                """SELECT p.fingerprint, p.remote_id
+                """SELECT MIN(p.fingerprint) AS fingerprint, p.remote_id
                    FROM publications p
                    LEFT JOIN youtube_metrics m ON m.video_id = p.remote_id
-                   WHERE p.platform = 'youtube'
+                   WHERE p.platform IN ('youtube', 'youtube_daily_multinews')
                      AND p.status = 'ok'
                      AND p.remote_id IS NOT NULL
                      AND p.remote_id != ''
                      AND (m.collected_at IS NULL OR m.collected_at < ?)
+                   GROUP BY p.remote_id
                    ORDER BY p.posted_at DESC
                    LIMIT ?""",
                 (cutoff, limit),
@@ -442,4 +454,33 @@ class Store:
                     )
                     for rank, (item, score, reason) in enumerate(scores, start=1)
                 ],
+            )
+
+    def record_traffic_experiment(
+        self,
+        *,
+        video_id: str,
+        fingerprint: str,
+        platform: str,
+        profile_id: str,
+        hypothesis: str,
+        title: str,
+        item_count: int,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO traffic_experiments
+                   (video_id, fingerprint, platform, profile_id, hypothesis,
+                    title, item_count, assigned_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    video_id,
+                    fingerprint,
+                    platform,
+                    profile_id,
+                    hypothesis,
+                    title,
+                    item_count,
+                    datetime.utcnow().isoformat(),
+                ),
             )
