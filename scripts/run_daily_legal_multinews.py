@@ -145,7 +145,7 @@ _ENTITY_ASSETS = {
     "gilberto": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_02"],
     "djavan": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_03"],
     "ronaldinho": ["ronaldinho_embratur", "mexico_olympic_stadium", "rock_in_rio_crowd"],
-    "mexico": ["mexico_olympic_stadium", "rock_in_rio_crowd", "calvin_live_05"],
+    "mexico": ["mexico_olympic_stadium", "rock_in_rio_crowd", "mexico_olympic_stadium_alt"],
 }
 
 
@@ -504,8 +504,13 @@ def _write_credits(
     lines.append(f"- Lead reason: {experiment_reason(items, profile)}")
     lines.append("")
     lines.append("Video assets:")
+    seen_credits: set[tuple[str, str, str]] = set()
     for asset_id in used_asset_ids:
         asset = assets_by_id[asset_id]
+        credit_key = (str(asset["credit"]), str(asset["source"]), str(asset["license"]))
+        if credit_key in seen_credits:
+            continue
+        seen_credits.add(credit_key)
         lines.append(f"- {asset['credit']} | {asset['source']} | {asset['license']}")
     lines.append("")
     lines.append("Sourcing policy:")

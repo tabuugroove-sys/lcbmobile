@@ -227,6 +227,18 @@ ASSETS = [
         "source": "https://commons.wikimedia.org/wiki/File:Estadio_Ol%C3%ADmpico_Universitario_video.webm",
         "license": "https://creativecommons.org/licenses/by-sa/4.0/",
     },
+    {
+        "id": "mexico_olympic_stadium_alt",
+        "name": "Mexico City stadium",
+        "media_type": "video",
+        "commons_title": "File:Estadio Olímpico Universitario video.webm",
+        "file": "mexico_olympic_stadium.webm",
+        "download_url": "https://upload.wikimedia.org/wikipedia/commons/0/05/Estadio_Ol%C3%ADmpico_Universitario_video.webm",
+        "credit": "Estadio Olimpico Universitario drone video by ProtoplasmaKid, CC BY-SA 4.0",
+        "display_credit": "ProtoplasmaKid, CC BY-SA 4.0",
+        "source": "https://commons.wikimedia.org/wiki/File:Estadio_Ol%C3%ADmpico_Universitario_video.webm",
+        "license": "https://creativecommons.org/licenses/by-sa/4.0/",
+    },
 ]
 
 SCENES = [

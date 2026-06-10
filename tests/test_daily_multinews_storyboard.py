@@ -65,8 +65,8 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
             ["ronaldinho_embratur", "mexico_olympic_stadium", "rock_in_rio_crowd"],
         )
         self.assertEqual(
-            _asset_ids_for_item(item(3, "Mexico abre portas para a Copa do Mundo"))[0],
-            "mexico_olympic_stadium",
+            _asset_ids_for_item(item(3, "Mexico abre portas para a Copa do Mundo")),
+            ["mexico_olympic_stadium", "rock_in_rio_crowd", "mexico_olympic_stadium_alt"],
         )
         self.assertEqual(
             _asset_ids_for_item(item(5, "Waka Waka volta ao radar da Copa")),
