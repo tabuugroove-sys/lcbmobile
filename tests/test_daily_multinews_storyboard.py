@@ -50,6 +50,7 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
         self.assertEqual(_visual_support_key(item(2, "Caetano Veloso participa de campanha")), "caetano")
         self.assertEqual(_visual_support_key(item(3, "México abre portas para a Copa do Mundo")), "mexico")
         self.assertEqual(_visual_support_key(item(4, "Madonna faz show surpresa")), "madonna")
+        self.assertEqual(_visual_support_key(item(7, "Waka Waka volta ao radar da Copa")), "shakira")
         self.assertIsNone(_visual_support_key(item(4, "Atriz comenta bastidores sem video direto")))
         self.assertIsNone(_visual_support_key(item(5, "Gravacoes no Mexico desafiam apresentadora")))
         self.assertIsNone(_visual_support_key(item(6, "Anitta busca novo feat sem video direto")))
@@ -63,9 +64,17 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
             _asset_ids_for_item(item(2, "Ronaldinho Gaucho lanca album"))[0],
             "ronaldinho_embratur",
         )
+        self.assertNotIn(
+            "calvin_live_04",
+            _asset_ids_for_item(item(2, "Ronaldinho Gaucho lanca album")),
+        )
         self.assertEqual(
             _asset_ids_for_item(item(3, "Mexico abre portas para a Copa do Mundo"))[0],
             "mexico_olympic_stadium",
+        )
+        self.assertEqual(
+            _asset_ids_for_item(item(5, "Waka Waka volta ao radar da Copa"))[0],
+            "shakira_un_imagine",
         )
         self.assertEqual(
             _asset_ids_for_item(item(4, "Madonna faz show surpresa"))[0],

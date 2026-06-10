@@ -144,7 +144,7 @@ _ENTITY_ASSETS = {
     "caetano": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_01"],
     "gilberto": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_02"],
     "djavan": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_03"],
-    "ronaldinho": ["ronaldinho_embratur", "rock_in_rio_crowd", "calvin_live_04"],
+    "ronaldinho": ["ronaldinho_embratur", "mexico_olympic_stadium", "rock_in_rio_crowd"],
     "mexico": ["mexico_olympic_stadium", "rock_in_rio_crowd", "calvin_live_05"],
 }
 
@@ -271,6 +271,8 @@ def _visual_support_key(item: NewsItem) -> str | None:
     """Return the direct legal-video support bucket for a story, if available."""
     text = _plain(f"{item.title} {item.summary}")
     if "shakira" in text:
+        return "shakira"
+    if "waka waka" in text:
         return "shakira"
     if "dua lipa" in text or re.search(r"\bdua\b", text):
         return "dua"
