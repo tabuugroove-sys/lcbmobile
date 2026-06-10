@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from scripts.run_daily_legal_multinews import (
     _asset_ids_for_item,
     _build_storyboard,
+    _is_today_item,
     _visual_support_key,
     _youtube_metadata,
 )
@@ -47,8 +49,10 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
         self.assertEqual(_visual_support_key(item(1, "Ronaldinho lança álbum")), "ronaldinho")
         self.assertEqual(_visual_support_key(item(2, "Caetano Veloso participa de campanha")), "caetano")
         self.assertEqual(_visual_support_key(item(3, "México abre portas para a Copa do Mundo")), "mexico")
+        self.assertEqual(_visual_support_key(item(4, "Madonna faz show surpresa")), "madonna")
         self.assertIsNone(_visual_support_key(item(4, "Atriz comenta bastidores sem video direto")))
         self.assertIsNone(_visual_support_key(item(5, "Gravacoes no Mexico desafiam apresentadora")))
+        self.assertIsNone(_visual_support_key(item(6, "Anitta busca novo feat sem video direto")))
 
     def test_supported_story_starts_with_direct_asset(self) -> None:
         self.assertEqual(
@@ -63,6 +67,23 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
             _asset_ids_for_item(item(3, "Mexico abre portas para a Copa do Mundo"))[0],
             "mexico_olympic_stadium",
         )
+        self.assertEqual(
+            _asset_ids_for_item(item(4, "Madonna faz show surpresa"))[0],
+            "madonna_russia_speech",
+        )
+
+    def test_daily_package_requires_today_local_date(self) -> None:
+        tz = ZoneInfo("America/Sao_Paulo")
+        today = item(1, "Ronaldinho lanca album").model_copy(
+            update={"published_at": datetime(2026, 6, 9, 12, 0, tzinfo=timezone.utc)}
+        )
+        yesterday = item(2, "Rock in Rio esgota ingressos").model_copy(
+            update={"published_at": datetime(2026, 6, 8, 12, 0, tzinfo=timezone.utc)}
+        )
+        unknown = item(3, "Sem data no RSS").model_copy(update={"published_at": None})
+        self.assertTrue(_is_today_item(today, tz, "2026-06-09"))
+        self.assertFalse(_is_today_item(yesterday, tz, "2026-06-09"))
+        self.assertFalse(_is_today_item(unknown, tz, "2026-06-09"))
 
     def test_youtube_metadata_uses_actual_item_count(self) -> None:
         profile = choose_traffic_profile("test", "fast_countdown")

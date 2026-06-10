@@ -180,6 +180,18 @@ ASSETS = [
         "license": "https://creativecommons.org/licenses/by/3.0/",
     },
     {
+        "id": "madonna_russia_speech",
+        "name": "Madonna",
+        "media_type": "video",
+        "commons_title": "File:Madonna speaks out in Russia about anti-gay law.webm",
+        "file": "madonna_russia_speech.webm",
+        "download_url": "https://upload.wikimedia.org/wikipedia/commons/f/fc/Madonna_speaks_out_in_Russia_about_anti-gay_law.webm",
+        "credit": "Madonna speaks out in Russia about anti-gay law, video by qlistapp, CC BY 3.0",
+        "display_credit": "qlistapp, CC BY 3.0",
+        "source": "https://commons.wikimedia.org/wiki/File:Madonna_speaks_out_in_Russia_about_anti-gay_law.webm",
+        "license": "https://creativecommons.org/licenses/by/3.0/",
+    },
+    {
         "id": "caetano_unicamp",
         "name": "Caetano Veloso",
         "media_type": "video",

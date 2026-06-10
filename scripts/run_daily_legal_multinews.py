@@ -140,7 +140,7 @@ _ENTITY_ASSETS = {
     "dua": ["dua_radical", "dua_grammys", "rock_in_rio_crowd"],
     "calvin": ["calvin_longitude_gif", "calvin_live_05", "calvin_live_04"],
     "maroon": ["rock_in_rio_crowd", "calvin_live_01", "calvin_live_03"],
-    "anitta": ["rock_in_rio_crowd", "shakira_davos", "calvin_live_02"],
+    "madonna": ["madonna_russia_speech", "rock_in_rio_crowd", "calvin_live_02"],
     "caetano": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_01"],
     "gilberto": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_02"],
     "djavan": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_03"],
@@ -256,6 +256,17 @@ def _is_entertainment_item(item: NewsItem) -> bool:
     return bool(tokens & _ENTERTAINMENT_TERMS)
 
 
+def _is_today_item(item: NewsItem, tz: ZoneInfo, today: str | None = None) -> bool:
+    """Keep the daily package tied to the current local news date."""
+    if not item.published_at:
+        return False
+    published = item.published_at
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=ZoneInfo("UTC"))
+    target_date = today or datetime.now(tz).date().isoformat()
+    return published.astimezone(tz).date().isoformat() == target_date
+
+
 def _visual_support_key(item: NewsItem) -> str | None:
     """Return the direct legal-video support bucket for a story, if available."""
     text = _plain(f"{item.title} {item.summary}")
@@ -267,8 +278,8 @@ def _visual_support_key(item: NewsItem) -> str | None:
         return "calvin"
     if "maroon" in text or "adam levine" in text or "rock in rio" in text:
         return "maroon"
-    if "anitta" in text:
-        return "anitta"
+    if "madonna" in text:
+        return "madonna"
     if "caetano" in text:
         return "caetano"
     if "gilberto gil" in text or "gilberto" in text:
@@ -390,7 +401,7 @@ def _build_storyboard(
         ]
         scene_bodies = [
             profile.opening_body if idx == 1 else f"Fonte: {source}",
-            "Top 5 escolhido por sinais de frescor, drama e historico.",
+            f"Top {len(items)} escolhido por sinais de frescor, drama e historico.",
             "Texto proprio, narracao propria e creditos no arquivo.",
         ]
         seeks = [0.0, 6.0, 12.0]
@@ -430,6 +441,9 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
     candidates: list[NewsItem] = []
     seen_hashes: set[str] = set()
     for item in items:
+        if not _is_today_item(item, tz, today):
+            log.info("Skipping item outside today's local date: %s", item.title)
+            continue
         if not _is_entertainment_item(item):
             log.info("Skipping non-entertainment item: %s", item.title)
             continue
