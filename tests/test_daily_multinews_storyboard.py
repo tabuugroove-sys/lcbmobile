@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timezone
 
 from scripts.run_daily_legal_multinews import (
+    _asset_ids_for_item,
     _build_storyboard,
     _visual_support_key,
     _youtube_metadata,
@@ -47,6 +48,21 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
         self.assertEqual(_visual_support_key(item(2, "Caetano Veloso participa de campanha")), "caetano")
         self.assertEqual(_visual_support_key(item(3, "México abre portas para a Copa do Mundo")), "mexico")
         self.assertIsNone(_visual_support_key(item(4, "Atriz comenta bastidores sem video direto")))
+        self.assertIsNone(_visual_support_key(item(5, "Gravacoes no Mexico desafiam apresentadora")))
+
+    def test_supported_story_starts_with_direct_asset(self) -> None:
+        self.assertEqual(
+            _asset_ids_for_item(item(1, "Caetano Veloso participa de campanha"))[0],
+            "caetano_unicamp",
+        )
+        self.assertEqual(
+            _asset_ids_for_item(item(2, "Ronaldinho Gaucho lanca album"))[0],
+            "ronaldinho_embratur",
+        )
+        self.assertEqual(
+            _asset_ids_for_item(item(3, "Mexico abre portas para a Copa do Mundo"))[0],
+            "mexico_olympic_stadium",
+        )
 
     def test_youtube_metadata_uses_actual_item_count(self) -> None:
         profile = choose_traffic_profile("test", "fast_countdown")

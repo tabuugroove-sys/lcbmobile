@@ -277,7 +277,7 @@ def _visual_support_key(item: NewsItem) -> str | None:
         return "djavan"
     if "ronaldinho" in text:
         return "ronaldinho"
-    if "mexico" in text or "mexico" in _plain(item.url) or "copa do mundo" in text:
+    if "copa do mundo" in text or "world cup" in text:
         return "mexico"
     return None
 
@@ -296,20 +296,28 @@ def _pick_assets(
     recent_assets: list[str],
     count: int = 3,
 ) -> list[str]:
-    pool: list[str] = []
-    for asset_id in candidates + _GENERIC_STAGE_ASSETS:
-        if asset_id not in pool:
-            pool.append(asset_id)
-    if not pool:
+    preferred: list[str] = []
+    for asset_id in candidates:
+        if asset_id not in preferred:
+            preferred.append(asset_id)
+    support_pool: list[str] = []
+    for asset_id in preferred + _GENERIC_STAGE_ASSETS:
+        if asset_id not in support_pool:
+            support_pool.append(asset_id)
+    if not support_pool:
         return []
 
-    offset = _stable_index(key, len(pool))
-    ordered = pool[offset:] + pool[:offset]
     selected: list[str] = []
+    for asset_id in preferred:
+        if not selected and recent_assets and asset_id == recent_assets[-1]:
+            continue
+        selected.append(asset_id)
+        break
+
+    offset = _stable_index(key, len(support_pool))
+    ordered = support_pool[offset:] + support_pool[:offset]
     for asset_id in ordered:
         if asset_id in selected:
-            continue
-        if not selected and recent_assets and asset_id == recent_assets[-1]:
             continue
         selected.append(asset_id)
         if len(selected) >= count:
