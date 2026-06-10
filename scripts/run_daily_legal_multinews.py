@@ -136,15 +136,15 @@ _GENERIC_STAGE_ASSETS = [
 ]
 
 _ENTITY_ASSETS = {
-    "shakira": ["shakira_un_imagine", "shakira_davos", "rock_in_rio_crowd"],
+    "shakira": ["shakira_un_imagine", "shakira_davos", "shakira_goat"],
     "dua": ["dua_radical", "dua_grammys", "rock_in_rio_crowd"],
     "calvin": ["calvin_longitude_gif", "calvin_live_05", "calvin_live_04"],
     "maroon": ["rock_in_rio_crowd", "calvin_live_01", "calvin_live_03"],
-    "madonna": ["madonna_russia_speech", "rock_in_rio_crowd", "calvin_live_02"],
+    "madonna": ["madonna_russia_speech", "madonna_russia_speech_alt", "rock_in_rio_crowd"],
     "caetano": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_01"],
     "gilberto": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_02"],
     "djavan": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_03"],
-    "ronaldinho": ["ronaldinho_embratur", "mexico_olympic_stadium", "rock_in_rio_crowd"],
+    "ronaldinho": ["ronaldinho_embratur", "ronaldinho_embratur_alt", "mexico_olympic_stadium"],
     "mexico": ["mexico_olympic_stadium", "rock_in_rio_crowd", "mexico_olympic_stadium_alt"],
 }
 
@@ -307,16 +307,19 @@ def _pick_assets(
     *,
     key: str,
     recent_assets: list[str],
+    avoid_assets: set[str] | None = None,
     count: int = 3,
     prefer_in_order: bool = False,
 ) -> list[str]:
+    avoid_assets = avoid_assets or set()
     preferred: list[str] = []
     for asset_id in candidates:
-        if asset_id not in preferred:
+        if asset_id not in avoid_assets and asset_id not in preferred:
             preferred.append(asset_id)
+    fallback_candidates = [] if prefer_in_order else _GENERIC_STAGE_ASSETS
     support_pool: list[str] = []
-    for asset_id in preferred + _GENERIC_STAGE_ASSETS:
-        if asset_id not in support_pool:
+    for asset_id in preferred + fallback_candidates:
+        if asset_id not in avoid_assets and asset_id not in support_pool:
             support_pool.append(asset_id)
     if not support_pool:
         return []
@@ -350,7 +353,11 @@ def _pick_assets(
     return selected[:count]
 
 
-def _asset_ids_for_item(item: NewsItem, recent_assets: list[str] | None = None) -> list[str]:
+def _asset_ids_for_item(
+    item: NewsItem,
+    recent_assets: list[str] | None = None,
+    avoid_assets: set[str] | None = None,
+) -> list[str]:
     recent_assets = recent_assets or []
     support_key = _visual_support_key(item)
     if support_key:
@@ -358,9 +365,15 @@ def _asset_ids_for_item(item: NewsItem, recent_assets: list[str] | None = None) 
             _ENTITY_ASSETS[support_key],
             key=item.fingerprint(),
             recent_assets=recent_assets,
+            avoid_assets=avoid_assets,
             prefer_in_order=True,
         )
-    return _pick_assets(_GENERIC_STAGE_ASSETS, key=item.fingerprint(), recent_assets=recent_assets)
+    return _pick_assets(
+        _GENERIC_STAGE_ASSETS,
+        key=item.fingerprint(),
+        recent_assets=recent_assets,
+        avoid_assets=avoid_assets,
+    )
 
 
 def _scene_for(
@@ -390,13 +403,16 @@ def _scene_for(
 def _build_storyboard(
     items: list[NewsItem],
     profile: TrafficProfile,
+    avoid_assets: set[str] | None = None,
 ) -> tuple[list[dict[str, object]], list[tuple[float, float, str]]]:
     scenes: list[dict[str, object]] = []
     narration: list[tuple[float, float, str]] = []
     recent_assets: list[str] = []
     t = 0.4
     for idx, item in enumerate(items, start=1):
-        asset_ids = _asset_ids_for_item(item, recent_assets)
+        asset_ids = _asset_ids_for_item(item, recent_assets, avoid_assets)
+        if len(asset_ids) < 3:
+            raise RuntimeError(f"Not enough non-repeated legal assets for: {item.title}")
         title = _clip(item.title, 90)
         source = item.source_name
         summary = _clip(item.summary, 140) if item.summary else "A nota entra no radar pop de hoje."
@@ -437,7 +453,7 @@ def _build_storyboard(
     return scenes, narration
 
 
-def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], str]:
+def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], str, set[str]]:
     from src.scraper import collect_news, load_sources
 
     store = Store(settings.db_path)
@@ -446,9 +462,12 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
     daily_fp = f"daily-legal-multinews:{today}"
     if store.is_seen(daily_fp) and not force:
         log.info("Daily multinews already posted today: %s", daily_fp)
-        return store, [], daily_fp
+        return store, [], daily_fp, set()
 
     refresh_youtube_metrics(store)
+    avoid_assets = store.latest_daily_video_assets()
+    if avoid_assets:
+        log.info("Avoiding assets from previous daily video: %s", ", ".join(sorted(avoid_assets)))
     items = collect_news(load_sources(ROOT / "config" / "sources.yaml"))
     candidates: list[NewsItem] = []
     seen_hashes: set[str] = set()
@@ -461,6 +480,9 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
             continue
         if not _visual_support_key(item):
             log.info("Skipping item without direct legal video support: %s", item.title)
+            continue
+        if len(_asset_ids_for_item(item, avoid_assets=avoid_assets)) < 3:
+            log.info("Skipping item without enough fresh legal footage: %s", item.title)
             continue
         fp = item.fingerprint()
         ch = item.content_hash()
@@ -478,9 +500,9 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
             "Daily multinews skipped: only %d visually supported candidate(s)",
             len(candidates),
         )
-        return store, [], daily_fp
+        return store, [], daily_fp, avoid_assets
     selected = select_best_candidates(candidates, store, limit=limit, stage="daily_multinews")
-    return store, selected, daily_fp
+    return store, selected, daily_fp, avoid_assets
 
 
 def _write_credits(
@@ -518,9 +540,13 @@ def _write_credits(
     (OUT / "credits.txt").write_text("\n".join(lines), encoding="utf-8")
 
 
-def _build_video(items: list[NewsItem], profile: TrafficProfile) -> Path:
+def _build_video(
+    items: list[NewsItem],
+    profile: TrafficProfile,
+    avoid_assets: set[str] | None = None,
+) -> tuple[Path, list[dict[str, object]]]:
     OUT.mkdir(parents=True, exist_ok=True)
-    scenes, narration = _build_storyboard(items, profile)
+    scenes, narration = _build_storyboard(items, profile, avoid_assets)
     package_news = {
         "title": f"Top {len(items)} noticias pop do dia",
         "source": "RSS + analytics scorer",
@@ -534,7 +560,7 @@ def _build_video(items: list[NewsItem], profile: TrafficProfile) -> Path:
     base.download_assets()
     _write_credits(items, scenes, profile)
     base.synthesize_voice()
-    return base.build_video()
+    return base.build_video(), scenes
 
 
 def _publish(video: Path, items: list[NewsItem], profile: TrafficProfile) -> tuple[str, str]:
@@ -598,14 +624,20 @@ def main(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    store, items, daily_fp = _select_top_items(limit, force)
+    store, items, daily_fp, avoid_assets = _select_top_items(limit, force)
     if not items:
         click.echo(f"daily_multinews=skipped fingerprint={daily_fp}")
         return
     profile = choose_traffic_profile(daily_fp, traffic_profile)
     items = order_items_for_profile(items, profile)
     click.echo(f"traffic_profile={profile.id} reason={experiment_reason(items, profile)}")
-    video = _build_video(items, profile)
+    video, scenes = _build_video(items, profile, avoid_assets)
+    asset_ids = [str(scene["asset_id"]) for scene in scenes]
+    store.record_daily_video_assets(
+        run_fingerprint=daily_fp,
+        asset_ids=asset_ids,
+        status="dry_run" if not publish else "built",
+    )
     click.echo(f"daily_multinews_video={video}")
     if not publish:
         click.echo("daily_multinews=dry_run")
@@ -625,6 +657,12 @@ def main(
         hypothesis=profile.hypothesis,
         title=youtube_title,
         item_count=len(items),
+    )
+    store.record_daily_video_assets(
+        run_fingerprint=daily_fp,
+        asset_ids=asset_ids,
+        status="ok",
+        remote_id=video_id,
     )
     store.mark_seen(daily_fp, "daily_multinews", "", f"Daily legal multinews {daily_fp}")
     for item in items:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
+from tempfile import TemporaryDirectory
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from scripts.run_daily_legal_multinews import (
@@ -13,6 +15,7 @@ from scripts.run_daily_legal_multinews import (
 )
 from src.analytics.traffic_experiments import choose_traffic_profile
 from src.models import NewsItem
+from src.storage import Store
 
 
 def item(index: int, title: str) -> NewsItem:
@@ -62,7 +65,7 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
         )
         self.assertEqual(
             _asset_ids_for_item(item(2, "Ronaldinho Gaucho lanca album")),
-            ["ronaldinho_embratur", "mexico_olympic_stadium", "rock_in_rio_crowd"],
+            ["ronaldinho_embratur", "ronaldinho_embratur_alt", "mexico_olympic_stadium"],
         )
         self.assertEqual(
             _asset_ids_for_item(item(3, "Mexico abre portas para a Copa do Mundo")),
@@ -70,7 +73,7 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
         )
         self.assertEqual(
             _asset_ids_for_item(item(5, "Waka Waka volta ao radar da Copa")),
-            ["shakira_un_imagine", "shakira_davos", "rock_in_rio_crowd"],
+            ["shakira_un_imagine", "shakira_davos", "shakira_goat"],
         )
         self.assertEqual(
             _asset_ids_for_item(item(4, "Madonna faz show surpresa"))[0],
@@ -102,6 +105,26 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
         )
         self.assertIn("Top 3", title)
         self.assertIn("Top 3", description)
+
+    def test_asset_selection_can_avoid_previous_daily_assets(self) -> None:
+        self.assertEqual(
+            _asset_ids_for_item(
+                item(1, "Waka Waka volta ao radar da Copa"),
+                avoid_assets={"shakira_un_imagine"},
+            ),
+            ["shakira_davos", "shakira_goat"],
+        )
+
+    def test_store_records_latest_daily_video_assets(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            store = Store(Path(tmpdir) / "state.db")
+            store.record_daily_video_assets(
+                run_fingerprint="daily-legal-multinews:2026-06-09",
+                asset_ids=["a", "b", "a"],
+                status="ok",
+                remote_id="video-1",
+            )
+            self.assertEqual(store.latest_daily_video_assets(), {"a", "b"})
 
 
 if __name__ == "__main__":

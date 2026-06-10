@@ -68,6 +68,22 @@ ASSETS = [
         "license": "https://creativecommons.org/licenses/by/3.0/",
     },
     {
+        "id": "shakira_goat",
+        "name": "Shakira",
+        "media_type": "video",
+        "commons_title": "File:Shakira- They Said I Sang Like a Goat.webm",
+        "file": "shakira_goat_480p.webm",
+        "download_url": (
+            "https://upload.wikimedia.org/wikipedia/commons/transcoded/e/ef/"
+            "Shakira-_They_Said_I_Sang_Like_a_Goat.webm/"
+            "Shakira-_They_Said_I_Sang_Like_a_Goat.webm.480p.vp9.webm"
+        ),
+        "credit": "Shakira: They Said I Sang Like a Goat, video by World Economic Forum, CC BY 3.0",
+        "display_credit": "World Economic Forum, CC BY 3.0",
+        "source": "https://commons.wikimedia.org/wiki/File:Shakira-_They_Said_I_Sang_Like_a_Goat.webm",
+        "license": "https://creativecommons.org/licenses/by/3.0/",
+    },
+    {
         "id": "dua_radical",
         "name": "Dua Lipa",
         "media_type": "video",
@@ -192,6 +208,18 @@ ASSETS = [
         "license": "https://creativecommons.org/licenses/by/3.0/",
     },
     {
+        "id": "madonna_russia_speech_alt",
+        "name": "Madonna",
+        "media_type": "video",
+        "commons_title": "File:Madonna speaks out in Russia about anti-gay law.webm",
+        "file": "madonna_russia_speech.webm",
+        "download_url": "https://upload.wikimedia.org/wikipedia/commons/f/fc/Madonna_speaks_out_in_Russia_about_anti-gay_law.webm",
+        "credit": "Madonna speaks out in Russia about anti-gay law, video by qlistapp, CC BY 3.0",
+        "display_credit": "qlistapp, CC BY 3.0",
+        "source": "https://commons.wikimedia.org/wiki/File:Madonna_speaks_out_in_Russia_about_anti-gay_law.webm",
+        "license": "https://creativecommons.org/licenses/by/3.0/",
+    },
+    {
         "id": "caetano_unicamp",
         "name": "Caetano Veloso",
         "media_type": "video",
@@ -205,6 +233,18 @@ ASSETS = [
     },
     {
         "id": "ronaldinho_embratur",
+        "name": "Ronaldinho Gaucho",
+        "media_type": "video",
+        "commons_title": "File:Ronaldinho Gaúcho é escolhido como Embaixador do Turismo, pela Embratur.webm",
+        "file": "ronaldinho_embratur.webm",
+        "download_url": "https://upload.wikimedia.org/wikipedia/commons/2/24/Ronaldinho_Ga%C3%BAcho_%C3%A9_escolhido_como_Embaixador_do_Turismo%2C_pela_Embratur.webm",
+        "credit": "Ronaldinho Gaucho escolhido como Embaixador do Turismo, video by TV BrasilGov, CC BY 3.0",
+        "display_credit": "TV BrasilGov, CC BY 3.0",
+        "source": "https://commons.wikimedia.org/wiki/File:Ronaldinho_Ga%C3%BAcho_%C3%A9_escolhido_como_Embaixador_do_Turismo,_pela_Embratur.webm",
+        "license": "https://creativecommons.org/licenses/by/3.0/",
+    },
+    {
+        "id": "ronaldinho_embratur_alt",
         "name": "Ronaldinho Gaucho",
         "media_type": "video",
         "commons_title": "File:Ronaldinho Gaúcho é escolhido como Embaixador do Turismo, pela Embratur.webm",

@@ -87,6 +87,15 @@ CREATE TABLE IF NOT EXISTS traffic_experiments (
     item_count  INTEGER NOT NULL,
     assigned_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS daily_video_assets (
+    run_fingerprint TEXT NOT NULL,
+    asset_id        TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    remote_id       TEXT,
+    recorded_at     TEXT NOT NULL,
+    PRIMARY KEY(run_fingerprint, asset_id)
+);
 """
 
 
@@ -484,3 +493,48 @@ class Store:
                     datetime.utcnow().isoformat(),
                 ),
             )
+
+    def record_daily_video_assets(
+        self,
+        *,
+        run_fingerprint: str,
+        asset_ids: list[str],
+        status: str,
+        remote_id: str | None = None,
+    ) -> None:
+        now = datetime.utcnow().isoformat()
+        unique_asset_ids = list(dict.fromkeys(asset_ids))
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM daily_video_assets WHERE run_fingerprint = ?",
+                (run_fingerprint,),
+            )
+            conn.executemany(
+                """INSERT INTO daily_video_assets
+                   (run_fingerprint, asset_id, status, remote_id, recorded_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                [
+                    (run_fingerprint, asset_id, status, remote_id, now)
+                    for asset_id in unique_asset_ids
+                ],
+            )
+
+    def latest_daily_video_assets(self) -> set[str]:
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT run_fingerprint
+                   FROM daily_video_assets
+                   GROUP BY run_fingerprint
+                   ORDER BY MAX(recorded_at) DESC
+                   LIMIT 1"""
+            ).fetchone()
+            if not row:
+                return set()
+            rows = conn.execute(
+                """SELECT asset_id
+                   FROM daily_video_assets
+                   WHERE run_fingerprint = ?
+                   ORDER BY asset_id""",
+                (row[0],),
+            ).fetchall()
+        return {str(asset_id) for (asset_id,) in rows}
