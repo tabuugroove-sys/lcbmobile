@@ -61,20 +61,16 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
             "caetano_unicamp",
         )
         self.assertEqual(
-            _asset_ids_for_item(item(2, "Ronaldinho Gaucho lanca album"))[0],
-            "ronaldinho_embratur",
-        )
-        self.assertNotIn(
-            "calvin_live_04",
             _asset_ids_for_item(item(2, "Ronaldinho Gaucho lanca album")),
+            ["ronaldinho_embratur", "mexico_olympic_stadium", "rock_in_rio_crowd"],
         )
         self.assertEqual(
             _asset_ids_for_item(item(3, "Mexico abre portas para a Copa do Mundo"))[0],
             "mexico_olympic_stadium",
         )
         self.assertEqual(
-            _asset_ids_for_item(item(5, "Waka Waka volta ao radar da Copa"))[0],
-            "shakira_un_imagine",
+            _asset_ids_for_item(item(5, "Waka Waka volta ao radar da Copa")),
+            ["shakira_un_imagine", "shakira_davos", "rock_in_rio_crowd"],
         )
         self.assertEqual(
             _asset_ids_for_item(item(4, "Madonna faz show surpresa"))[0],

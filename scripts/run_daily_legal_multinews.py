@@ -308,6 +308,7 @@ def _pick_assets(
     key: str,
     recent_assets: list[str],
     count: int = 3,
+    prefer_in_order: bool = False,
 ) -> list[str]:
     preferred: list[str] = []
     for asset_id in candidates:
@@ -321,16 +322,20 @@ def _pick_assets(
         return []
 
     selected: list[str] = []
-    for asset_id in preferred:
-        if not selected and recent_assets and asset_id == recent_assets[-1]:
-            continue
-        selected.append(asset_id)
-        break
+    if prefer_in_order:
+        for asset_id in preferred:
+            if not selected and recent_assets and asset_id == recent_assets[-1]:
+                continue
+            selected.append(asset_id)
+            if len(selected) >= count:
+                break
 
     offset = _stable_index(key, len(support_pool))
     ordered = support_pool[offset:] + support_pool[:offset]
     for asset_id in ordered:
         if asset_id in selected:
+            continue
+        if not selected and recent_assets and asset_id == recent_assets[-1]:
             continue
         selected.append(asset_id)
         if len(selected) >= count:
@@ -349,7 +354,12 @@ def _asset_ids_for_item(item: NewsItem, recent_assets: list[str] | None = None) 
     recent_assets = recent_assets or []
     support_key = _visual_support_key(item)
     if support_key:
-        return _pick_assets(_ENTITY_ASSETS[support_key], key=item.fingerprint(), recent_assets=recent_assets)
+        return _pick_assets(
+            _ENTITY_ASSETS[support_key],
+            key=item.fingerprint(),
+            recent_assets=recent_assets,
+            prefer_in_order=True,
+        )
     return _pick_assets(_GENERIC_STAGE_ASSETS, key=item.fingerprint(), recent_assets=recent_assets)
 
 
