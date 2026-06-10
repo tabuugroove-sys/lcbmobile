@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 
-from scripts.run_daily_legal_multinews import _build_storyboard
+from scripts.run_daily_legal_multinews import (
+    _build_storyboard,
+    _visual_support_key,
+    _youtube_metadata,
+)
 from src.analytics.traffic_experiments import choose_traffic_profile
 from src.models import NewsItem
 
@@ -37,6 +41,25 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
         for previous, current in zip(asset_ids, asset_ids[1:]):
             self.assertNotEqual(previous, current)
         self.assertGreaterEqual(len(set(asset_ids)), 5)
+
+    def test_visual_support_key_requires_direct_legal_video_bucket(self) -> None:
+        self.assertEqual(_visual_support_key(item(1, "Ronaldinho lança álbum")), "ronaldinho")
+        self.assertEqual(_visual_support_key(item(2, "Caetano Veloso participa de campanha")), "caetano")
+        self.assertEqual(_visual_support_key(item(3, "México abre portas para a Copa do Mundo")), "mexico")
+        self.assertIsNone(_visual_support_key(item(4, "Atriz comenta bastidores sem video direto")))
+
+    def test_youtube_metadata_uses_actual_item_count(self) -> None:
+        profile = choose_traffic_profile("test", "fast_countdown")
+        title, description, _ = _youtube_metadata(
+            [
+                item(1, "Ronaldinho lança álbum"),
+                item(2, "Caetano Veloso participa de campanha"),
+                item(3, "México abre portas para a Copa do Mundo"),
+            ],
+            profile,
+        )
+        self.assertIn("Top 3", title)
+        self.assertIn("Top 3", description)
 
 
 if __name__ == "__main__":

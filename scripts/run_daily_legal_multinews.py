@@ -118,6 +118,11 @@ _KNOWN_ENTITIES = (
     "Anitta",
     "Madonna",
     "Rock in Rio",
+    "Caetano Veloso",
+    "Gilberto Gil",
+    "Djavan",
+    "Ronaldinho",
+    "Mexico",
 )
 
 _GENERIC_STAGE_ASSETS = [
@@ -136,6 +141,11 @@ _ENTITY_ASSETS = {
     "calvin": ["calvin_longitude_gif", "calvin_live_05", "calvin_live_04"],
     "maroon": ["rock_in_rio_crowd", "calvin_live_01", "calvin_live_03"],
     "anitta": ["rock_in_rio_crowd", "shakira_davos", "calvin_live_02"],
+    "caetano": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_01"],
+    "gilberto": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_02"],
+    "djavan": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_03"],
+    "ronaldinho": ["ronaldinho_embratur", "rock_in_rio_crowd", "calvin_live_04"],
+    "mexico": ["mexico_olympic_stadium", "rock_in_rio_crowd", "calvin_live_05"],
 }
 
 
@@ -197,14 +207,15 @@ def _youtube_metadata(
 ) -> tuple[str, str, list[str]]:
     today = datetime.now(ZoneInfo(settings.timezone)).strftime("%d/%m/%Y")
     entities = _detected_entities(items)
+    count = len(items)
     if profile.id == "conflict_first":
-        title = f"{_clip(items[0].title, 62)} | Top 5 pop {today}"
+        title = f"{_clip(items[0].title, 62)} | Top {count} pop {today}"
     elif profile.id == "star_name_first" and entities:
         focus = ", ".join(entities[:3])
-        title = f"{focus}: as 5 noticias pop de hoje | {today}"
+        title = f"{focus}: as {count} noticias pop de hoje | {today}"
     else:
         main_topic = _clip(items[0].title, 42)
-        title = f"Top 5 noticias dos famosos hoje: {main_topic} | {today}"
+        title = f"Top {count} noticias dos famosos hoje: {main_topic} | {today}"
 
     chapters = ["00:00 Abertura e noticia 1"]
     for index, item in enumerate(items[1:], start=2):
@@ -216,7 +227,7 @@ def _youtube_metadata(
     )
     credits = (OUT / "credits.txt").read_text(encoding="utf-8")
     description = (
-        "Top 5 noticias pop do dia em formato editorial, com narracao propria, "
+        f"Top {count} noticias pop do dia em formato editorial, com narracao propria, "
         "texto na tela e videos licenciados/creditados.\n\n"
         "O que tem no video:\n"
         f"{news_lines}\n\n"
@@ -243,6 +254,32 @@ def _is_entertainment_item(item: NewsItem) -> bool:
     if item.category in {"celebridades", "fofoca", "dj"}:
         return True
     return bool(tokens & _ENTERTAINMENT_TERMS)
+
+
+def _visual_support_key(item: NewsItem) -> str | None:
+    """Return the direct legal-video support bucket for a story, if available."""
+    text = _plain(f"{item.title} {item.summary}")
+    if "shakira" in text:
+        return "shakira"
+    if "dua lipa" in text or re.search(r"\bdua\b", text):
+        return "dua"
+    if "calvin" in text or "harris" in text:
+        return "calvin"
+    if "maroon" in text or "adam levine" in text or "rock in rio" in text:
+        return "maroon"
+    if "anitta" in text:
+        return "anitta"
+    if "caetano" in text:
+        return "caetano"
+    if "gilberto gil" in text or "gilberto" in text:
+        return "gilberto"
+    if "djavan" in text:
+        return "djavan"
+    if "ronaldinho" in text:
+        return "ronaldinho"
+    if "mexico" in text or "mexico" in _plain(item.url) or "copa do mundo" in text:
+        return "mexico"
+    return None
 
 
 def _stable_index(value: str, modulo: int) -> int:
@@ -288,18 +325,10 @@ def _pick_assets(
 
 
 def _asset_ids_for_item(item: NewsItem, recent_assets: list[str] | None = None) -> list[str]:
-    text = _plain(f"{item.title} {item.summary}")
     recent_assets = recent_assets or []
-    if "shakira" in text:
-        return _pick_assets(_ENTITY_ASSETS["shakira"], key=item.fingerprint(), recent_assets=recent_assets)
-    if "dua lipa" in text or re.search(r"\bdua\b", text):
-        return _pick_assets(_ENTITY_ASSETS["dua"], key=item.fingerprint(), recent_assets=recent_assets)
-    if "calvin" in text or "harris" in text:
-        return _pick_assets(_ENTITY_ASSETS["calvin"], key=item.fingerprint(), recent_assets=recent_assets)
-    if "maroon" in text or "adam levine" in text or "rock in rio" in text:
-        return _pick_assets(_ENTITY_ASSETS["maroon"], key=item.fingerprint(), recent_assets=recent_assets)
-    if "anitta" in text:
-        return _pick_assets(_ENTITY_ASSETS["anitta"], key=item.fingerprint(), recent_assets=recent_assets)
+    support_key = _visual_support_key(item)
+    if support_key:
+        return _pick_assets(_ENTITY_ASSETS[support_key], key=item.fingerprint(), recent_assets=recent_assets)
     return _pick_assets(_GENERIC_STAGE_ASSETS, key=item.fingerprint(), recent_assets=recent_assets)
 
 
@@ -396,6 +425,9 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
         if not _is_entertainment_item(item):
             log.info("Skipping non-entertainment item: %s", item.title)
             continue
+        if not _visual_support_key(item):
+            log.info("Skipping item without direct legal video support: %s", item.title)
+            continue
         fp = item.fingerprint()
         ch = item.content_hash()
         if store.is_seen(fp) or store.already_published(fp, PLATFORM):
@@ -407,6 +439,12 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
         if len(candidates) >= max(settings.analytics_candidate_pool, limit):
             break
 
+    if len(candidates) < 2:
+        log.warning(
+            "Daily multinews skipped: only %d visually supported candidate(s)",
+            len(candidates),
+        )
+        return store, [], daily_fp
     selected = select_best_candidates(candidates, store, limit=limit, stage="daily_multinews")
     return store, selected, daily_fp
 
