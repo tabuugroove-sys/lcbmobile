@@ -38,6 +38,7 @@ from src.storage import Store  # noqa: E402
 OUT = ROOT / "out" / "daily_legal_multinews"
 PLATFORM = "youtube_daily_multinews"
 YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+MIN_DAILY_MULTINEWS_ITEMS = 5
 log = logging.getLogger(__name__)
 
 _ENTERTAINMENT_TERMS = {
@@ -137,15 +138,15 @@ _GENERIC_STAGE_ASSETS = [
 
 _ENTITY_ASSETS = {
     "shakira": ["shakira_un_imagine", "shakira_davos", "shakira_goat"],
-    "dua": ["dua_radical", "dua_grammys", "rock_in_rio_crowd"],
+    "dua": ["dua_radical", "dua_grammys"],
     "calvin": ["calvin_longitude_gif", "calvin_live_05", "calvin_live_04"],
-    "maroon": ["rock_in_rio_crowd", "calvin_live_01", "calvin_live_03"],
-    "madonna": ["madonna_russia_speech", "madonna_russia_speech_alt", "rock_in_rio_crowd"],
-    "caetano": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_01"],
-    "gilberto": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_02"],
-    "djavan": ["caetano_unicamp", "rock_in_rio_crowd", "calvin_live_03"],
-    "ronaldinho": ["ronaldinho_embratur", "ronaldinho_embratur_alt", "mexico_olympic_stadium"],
-    "mexico": ["mexico_olympic_stadium", "rock_in_rio_crowd", "mexico_olympic_stadium_alt"],
+    "maroon": [],
+    "madonna": ["madonna_russia_speech", "madonna_russia_speech_alt"],
+    "caetano": ["caetano_unicamp"],
+    "gilberto": ["caetano_unicamp"],
+    "djavan": [],
+    "ronaldinho": ["ronaldinho_embratur", "ronaldinho_embratur_alt"],
+    "mexico": ["mexico_olympic_stadium", "mexico_olympic_stadium_alt"],
 }
 
 
@@ -495,10 +496,12 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
         if len(candidates) >= max(settings.analytics_candidate_pool, limit):
             break
 
-    if len(candidates) < 2:
+    required_count = max(MIN_DAILY_MULTINEWS_ITEMS, limit)
+    if len(candidates) < required_count:
         log.warning(
-            "Daily multinews skipped: only %d visually supported candidate(s)",
+            "Daily multinews skipped: only %d quality-supported candidate(s), need %d",
             len(candidates),
+            required_count,
         )
         return store, [], daily_fp, avoid_assets
     selected = select_best_candidates(candidates, store, limit=limit, stage="daily_multinews")

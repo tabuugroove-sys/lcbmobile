@@ -65,11 +65,11 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
         )
         self.assertEqual(
             _asset_ids_for_item(item(2, "Ronaldinho Gaucho lanca album")),
-            ["ronaldinho_embratur", "ronaldinho_embratur_alt", "mexico_olympic_stadium"],
+            ["ronaldinho_embratur", "ronaldinho_embratur_alt"],
         )
         self.assertEqual(
             _asset_ids_for_item(item(3, "Mexico abre portas para a Copa do Mundo")),
-            ["mexico_olympic_stadium", "rock_in_rio_crowd", "mexico_olympic_stadium_alt"],
+            ["mexico_olympic_stadium", "mexico_olympic_stadium_alt"],
         )
         self.assertEqual(
             _asset_ids_for_item(item(5, "Waka Waka volta ao radar da Copa")),
@@ -79,6 +79,11 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
             _asset_ids_for_item(item(4, "Madonna faz show surpresa"))[0],
             "madonna_russia_speech",
         )
+
+    def test_weakly_supported_stories_do_not_fill_with_generic_broll(self) -> None:
+        self.assertLess(len(_asset_ids_for_item(item(1, "Ronaldinho Gaucho lanca album"))), 3)
+        self.assertLess(len(_asset_ids_for_item(item(2, "Mexico abre portas para a Copa do Mundo"))), 3)
+        self.assertLess(len(_asset_ids_for_item(item(3, "Madonna faz show surpresa"))), 3)
 
     def test_daily_package_requires_today_local_date(self) -> None:
         tz = ZoneInfo("America/Sao_Paulo")
