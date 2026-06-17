@@ -499,7 +499,7 @@ def build_video() -> Path:
     total_duration = sum(scene_durations)
     video = OUT / "legal_star_horizontal.mp4"
     music = ROOT / "assets" / "audio" / "travel_todos_momentos.wav"
-    music_volume = max(0.0, float(os.getenv("BACKGROUND_MUSIC_VOLUME", "0.15")))
+    music_volume = max(0.0, float(os.getenv("BACKGROUND_MUSIC_VOLUME", "0.20")))
 
     for index, scene in enumerate(SCENES, start=1):
         asset = assets_by_id[str(scene["asset_id"])]
