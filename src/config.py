@@ -133,7 +133,7 @@ def load_settings() -> Settings:
         db_path=db_path,
         output_dir=output_dir,
         background_music_path=background_music_path,
-        background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 0.20),
+        background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 0.0),
         max_items_per_run=_int(os.getenv("MAX_ITEMS_PER_RUN"), 3),
         max_attempts_per_item=_int(os.getenv("MAX_ATTEMPTS_PER_ITEM"), 5),
         retry_delay_seconds=_int(os.getenv("RETRY_DELAY_SECONDS"), 200),
