@@ -135,7 +135,7 @@ def load_settings() -> Settings:
         output_dir=output_dir,
         background_music_path=background_music_path,
         # Neutral trim (1.0). Actual bed level is set relative to the voice via
-        # background_music_db_under_voice; use this only for a small ± nudge.
+        # background_music_db_under_voice; use this only for a small +/- nudge.
         background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 1.0),
         # Music bed sits this many dB below the narration (RMS-relative).
         # -20 dB = the news-bed default we settled on; -16..-18 = louder/punchier,

@@ -9,6 +9,7 @@ This is a workflow-only smoke test for the future media whitelist layer:
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -79,6 +80,17 @@ ASSETS = [
         "license": "https://creativecommons.org/licenses/by/3.0/",
     },
 ]
+
+
+def background_music_volume() -> float:
+    db_under_voice = os.getenv("BACKGROUND_MUSIC_DB_UNDER_VOICE")
+    if db_under_voice:
+        try:
+            db = float(db_under_voice)
+        except ValueError:
+            db = -20.0
+        return max(0.0, math.pow(10.0, db / 20.0))
+    return max(0.0, float(os.getenv("BACKGROUND_MUSIC_VOLUME", "0.0")))
 
 SCENES = [
     {
@@ -498,8 +510,11 @@ def build_video() -> Path:
     scene_durations[-1] += max(target_duration - planned_duration, 0.0)
     total_duration = sum(scene_durations)
     video = OUT / "legal_star_horizontal.mp4"
-    music = ROOT / "assets" / "audio" / "travel_todos_momentos.wav"
-    music_volume = max(0.0, float(os.getenv("BACKGROUND_MUSIC_VOLUME", "0.0")))
+    music_path = os.getenv("BACKGROUND_MUSIC_PATH", "assets/audio/unico_momento_loop.m4a")
+    music = Path(music_path)
+    if not music.is_absolute():
+        music = ROOT / music
+    music_volume = background_music_volume()
 
     for index, scene in enumerate(SCENES, start=1):
         asset = assets_by_id[str(scene["asset_id"])]
