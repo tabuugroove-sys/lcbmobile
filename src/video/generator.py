@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import logging
 import math
+import re
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -121,25 +123,69 @@ def _text_clip(text: str, duration: float, font: str | None) -> CompositeVideoCl
     return clip
 
 
-def _mix_voice_with_background(voice: AudioFileClip, duration: float) -> CompositeAudioClip | AudioFileClip:
+_MEAN_VOL_RE = re.compile(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB")
+
+
+def _mean_volume_db(path: str) -> float | None:
+    """Average (RMS) level of an audio file in dBFS, via ffmpeg volumedetect.
+
+    Returns None if ffmpeg fails or the value can't be parsed. Used as a
+    loudness proxy to level the music bed relative to the narration without
+    moviepy's to_soundarray (which breaks on newer numpy).
+    """
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-nostats", "-i", path,
+             "-af", "volumedetect", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover
+        log.warning("volumedetect failed for %s: %s", path, exc)
+        return None
+    match = _MEAN_VOL_RE.search(proc.stderr or "")
+    return float(match.group(1)) if match else None
+
+
+def _mix_voice_with_background(
+    voice: AudioFileClip, duration: float, voice_path: str | None = None
+) -> CompositeAudioClip | AudioFileClip:
     music_path = settings.background_music_path
-    volume = max(0.0, settings.background_music_volume)
-    if volume <= 0 or not music_path.exists():
-        if volume > 0:
+    trim = max(0.0, settings.background_music_volume)
+    if trim <= 0 or not music_path.exists():
+        if trim > 0:
             log.warning("Background music not found: %s", music_path)
         return voice
 
-    music = AudioFileClip(str(music_path)).volumex(volume)
+    music = AudioFileClip(str(music_path))
+    # Loop the bed to cover the full narration instead of truncating the video
+    # (the track is a short loop; a longer voiceover must not cut the Short).
     if music.duration < duration:
-        log.warning(
-            "Background music is shorter than the video (%.2fs < %.2fs); "
-            "using available music without looping",
-            music.duration,
-            duration,
-        )
-        duration = music.duration
+        from moviepy.audio.fx.audio_loop import audio_loop
+
+        music = audio_loop(music, duration=duration)
     music = music.subclip(0, duration).set_duration(duration)
-    log.info("Background music: %s at %.0f%% voice volume", music_path.name, volume * 100)
+
+    # Level the bed RELATIVE TO THE VOICE: target N dB below the narration, so
+    # the mix is consistent regardless of how hot the TTS or the track is.
+    voice_path = voice_path or getattr(voice, "filename", None)
+    voice_db = _mean_volume_db(voice_path) if voice_path else None
+    music_db = _mean_volume_db(str(music_path))
+    if voice_db is not None and music_db is not None:
+        gain_db = (voice_db - music_db) + settings.background_music_db_under_voice
+        gain = (10 ** (gain_db / 20.0)) * trim
+    else:
+        # Fallback: -20 dB on the track's own level (old behaviour) x trim.
+        gain = 0.1 * trim
+        log.warning("Could not measure levels; using fallback music gain %.3f", gain)
+    music = music.volumex(gain)
+    log.info(
+        "Background music: %s -> %.1f dB under voice (gain=%.3f, voice=%s dB, music=%s dB)",
+        music_path.name,
+        settings.background_music_db_under_voice,
+        gain,
+        voice_db,
+        music_db,
+    )
     return CompositeAudioClip([music, voice]).set_duration(duration)
 
 
@@ -171,7 +217,7 @@ def build_short(
         safe_audio_duration = max(0.5, audio.duration - 0.05)
         audio = audio.set_duration(safe_audio_duration)
         duration = max(8.0, min(60.0, safe_audio_duration))
-        audio = _mix_voice_with_background(audio, duration)
+        audio = _mix_voice_with_background(audio, duration, voice_path=str(audio_path))
 
         bg_clip = ImageClip(str(bg_path)).set_duration(duration)
         # Subtle Ken-Burns zoom for life.

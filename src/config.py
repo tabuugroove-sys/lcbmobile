@@ -44,6 +44,7 @@ class Settings:
     output_dir: Path
     background_music_path: Path
     background_music_volume: float
+    background_music_db_under_voice: float
     max_items_per_run: int
     max_attempts_per_item: int
     retry_delay_seconds: int
@@ -116,7 +117,7 @@ def load_settings() -> Settings:
     if not output_dir.is_absolute():
         output_dir = ROOT / output_dir
     background_music_path = Path(
-        _str("BACKGROUND_MUSIC_PATH", "assets/audio/travel_todos_momentos.wav")
+        _str("BACKGROUND_MUSIC_PATH", "assets/audio/unico_momento_loop.m4a")
     )
     if not background_music_path.is_absolute():
         background_music_path = ROOT / background_music_path
@@ -133,7 +134,15 @@ def load_settings() -> Settings:
         db_path=db_path,
         output_dir=output_dir,
         background_music_path=background_music_path,
-        background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 0.0),
+        # Neutral trim (1.0). Actual bed level is set relative to the voice via
+        # background_music_db_under_voice; use this only for a small ± nudge.
+        background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 1.0),
+        # Music bed sits this many dB below the narration (RMS-relative).
+        # -20 dB = the news-bed default we settled on; -16..-18 = louder/punchier,
+        # -22..-24 = quieter when speech gets buried.
+        background_music_db_under_voice=_float(
+            os.getenv("BACKGROUND_MUSIC_DB_UNDER_VOICE"), -20.0
+        ),
         max_items_per_run=_int(os.getenv("MAX_ITEMS_PER_RUN"), 3),
         max_attempts_per_item=_int(os.getenv("MAX_ATTEMPTS_PER_ITEM"), 5),
         retry_delay_seconds=_int(os.getenv("RETRY_DELAY_SECONDS"), 200),
