@@ -59,7 +59,7 @@ jobs:
           DB_PATH: data/state.db
           OUTPUT_DIR: out
           MAX_ITEMS_PER_RUN: ${{ vars.MAX_ITEMS_PER_RUN || '2' }}
-          OPTIONAL_PUBLISHERS: ${{ vars.OPTIONAL_PUBLISHERS || 'telegram' }}
+          OPTIONAL_PUBLISHERS: ${{ vars.OPTIONAL_PUBLISHERS || 'telegram,instagram' }}
 
           TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
