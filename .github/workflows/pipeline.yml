@@ -182,7 +182,7 @@ jobs:
           CONTENT_LANG: pt-BR
           DB_PATH: data/state.db
           OUTPUT_DIR: out
-          BACKGROUND_MUSIC_DB_UNDER_VOICE: ${{ vars.BACKGROUND_MUSIC_DB_UNDER_VOICE || '-20' }}
+          BACKGROUND_MUSIC_DB_UNDER_VOICE: ${{ vars.BACKGROUND_MUSIC_DB_UNDER_VOICE || '-14' }}
           MAX_ITEMS_PER_RUN: ${{ inputs.limit || '1' }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
           OPTIONAL_PUBLISHERS: ${{ vars.OPTIONAL_PUBLISHERS || 'telegram,instagram' }}
