@@ -610,41 +610,70 @@ def build_video() -> Path:
             str(silent_video),
         ]
     )
-    run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(silent_video),
-            "-i",
-            str(OUT / "voiceover.mp3"),
-            "-stream_loop",
-            "-1",
-            "-i",
-            str(music),
-            "-t",
-            f"{total_duration:.3f}",
-            "-filter_complex",
-            (
-                f"[2:a]atrim=0:{total_duration:.3f},asetpts=PTS-STARTPTS,volume={music_volume:.3f}[m];"
-                f"[1:a]atrim=0:{total_duration:.3f},adelay=200|200,volume=1.0[vo];"
-                "[m][vo]amix=inputs=2:duration=first:dropout_transition=0[a]"
-            ),
-            "-map",
-            "0:v",
-            "-map",
-            "[a]",
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-movflags",
-            "+faststart",
-            str(video),
-        ]
-    )
+    if music_volume <= 0:
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(silent_video),
+                "-i",
+                str(OUT / "voiceover.mp3"),
+                "-t",
+                f"{total_duration:.3f}",
+                "-filter_complex",
+                f"[1:a]atrim=0:{total_duration:.3f},adelay=200|200,volume=1.0[a]",
+                "-map",
+                "0:v",
+                "-map",
+                "[a]",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                str(video),
+            ]
+        )
+    else:
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(silent_video),
+                "-i",
+                str(OUT / "voiceover.mp3"),
+                "-stream_loop",
+                "-1",
+                "-i",
+                str(music),
+                "-t",
+                f"{total_duration:.3f}",
+                "-filter_complex",
+                (
+                    f"[2:a]atrim=0:{total_duration:.3f},asetpts=PTS-STARTPTS,volume={music_volume:.3f}[m];"
+                    f"[1:a]atrim=0:{total_duration:.3f},adelay=200|200,volume=1.0[vo];"
+                    "[m][vo]amix=inputs=2:duration=first:dropout_transition=0[a]"
+                ),
+                "-map",
+                "0:v",
+                "-map",
+                "[a]",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                str(video),
+            ]
+        )
     run(
         [
             "ffmpeg",

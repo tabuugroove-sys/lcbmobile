@@ -136,12 +136,12 @@ def load_settings() -> Settings:
         background_music_path=background_music_path,
         # Neutral trim (1.0). Actual bed level is set relative to the voice via
         # background_music_db_under_voice; use this only for a small +/- nudge.
-        background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 1.0),
+        background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 0.0),
         # Music bed sits this many dB below the narration (RMS-relative).
         # -14 dB = louder Content ID test level; -20 dB was too quiet to match,
         # -22..-24 = quieter when speech gets buried.
         background_music_db_under_voice=_float(
-            os.getenv("BACKGROUND_MUSIC_DB_UNDER_VOICE"), -14.0
+            os.getenv("BACKGROUND_MUSIC_DB_UNDER_VOICE"), -20.0
         ),
         max_items_per_run=_int(os.getenv("MAX_ITEMS_PER_RUN"), 3),
         max_attempts_per_item=_int(os.getenv("MAX_ATTEMPTS_PER_ITEM"), 5),
