@@ -174,8 +174,8 @@ def _mix_voice_with_background(
         gain_db = (voice_db - music_db) + settings.background_music_db_under_voice
         gain = (10 ** (gain_db / 20.0)) * trim
     else:
-        # Fallback: -20 dB on the track's own level (old behaviour) x trim.
-        gain = 0.1 * trim
+        # Fallback: honor BACKGROUND_MUSIC_VOLUME directly when RMS probing fails.
+        gain = trim
         log.warning("Could not measure levels; using fallback music gain %.3f", gain)
     music = music.volumex(gain)
     log.info(

@@ -510,7 +510,7 @@ def build_video() -> Path:
     scene_durations[-1] += max(target_duration - planned_duration, 0.0)
     total_duration = sum(scene_durations)
     video = OUT / "legal_star_horizontal.mp4"
-    music_path = os.getenv("BACKGROUND_MUSIC_PATH", "assets/audio/unico_momento_loop.m4a")
+    music_path = os.getenv("BACKGROUND_MUSIC_PATH", "assets/audio/primeira_for_youtube.wav")
     music = Path(music_path)
     if not music.is_absolute():
         music = ROOT / music
