@@ -100,7 +100,7 @@ jobs:
           DB_PATH: data/state.db
           OUTPUT_DIR: out
           BACKGROUND_MUSIC_PATH: ${{ vars.BACKGROUND_MUSIC_PATH || 'assets/audio/primeira_for_youtube.wav' }}
-          BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.15' }}
+          BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.25' }}
           YOUTUBE_TRAFFIC_PROFILE: ${{ github.event.inputs.traffic_profile || vars.YOUTUBE_TRAFFIC_PROFILE || 'auto' }}
 
           TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}

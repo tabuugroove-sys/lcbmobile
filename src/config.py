@@ -134,9 +134,9 @@ def load_settings() -> Settings:
         db_path=db_path,
         output_dir=output_dir,
         background_music_path=background_music_path,
-        background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 0.15),
+        background_music_volume=_float(os.getenv("BACKGROUND_MUSIC_VOLUME"), 0.25),
         # 0 dB means match voice RMS before applying BACKGROUND_MUSIC_VOLUME.
-        # With BACKGROUND_MUSIC_VOLUME=0.15 this yields a quiet 15% bed.
+        # With BACKGROUND_MUSIC_VOLUME=0.25 this yields a 25% bed.
         background_music_db_under_voice=_float(
             os.getenv("BACKGROUND_MUSIC_DB_UNDER_VOICE"), 0.0
         ),
