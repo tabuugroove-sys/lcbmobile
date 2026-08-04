@@ -19,7 +19,9 @@ env/
 .env.local
 *.secret
 client_secret*.json
+looxx_client_secret.json
 youtube_token.json
+looxx_youtube_token.json
 tiktok_token.json
 instagram_token.json
 twitter_token.json

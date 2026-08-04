@@ -1,0 +1,86 @@
+name: LOOXX Suno autopost
+
+on:
+  schedule:
+    # Check morning, afternoon and evening in Brazil. Each slot has a retry
+    # 30 minutes later because GitHub can drop scheduled jobs under load.
+    # The SQLite + remote-YouTube gate still permits only one success per BRT day.
+    - cron: "17,47 12,17,22 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Render the next track without publishing"
+        required: false
+        type: choice
+        default: "true"
+        options:
+          - "true"
+          - "false"
+
+concurrency:
+  group: looxx-suno-autopost
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.LOOXX_SUNO_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore LOOXX publication state
+        uses: actions/cache@v4
+        with:
+          path: data/suno
+          key: looxx-suno-state-${{ github.run_id }}
+          restore-keys: |
+            looxx-suno-state-
+
+      - name: Materialize isolated YouTube token
+        env:
+          LOOXX_YOUTUBE_TOKEN: ${{ secrets.LOOXX_YOUTUBE_TOKEN }}
+        run: |
+          if [ -n "${LOOXX_YOUTUBE_TOKEN}" ]; then
+            printf '%s' "${LOOXX_YOUTUBE_TOKEN}" > looxx_youtube_token.json
+          fi
+
+      - name: Poll Suno and publish at most one track
+        env:
+          SUNO_PLAYLIST_URL: https://suno.com/playlist/344579d1-5a04-45f8-aa71-a48f9da326a3
+          SUNO_STATE_DB: data/suno/state.db
+          SUNO_OUTPUT_DIR: out/looxx
+          TIMEZONE: America/Sao_Paulo
+          YOUTUBE_TOKEN_FILE: looxx_youtube_token.json
+          YOUTUBE_PRIVACY_STATUS: ${{ vars.LOOXX_YOUTUBE_PRIVACY || 'public' }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run || 'false' }}
+        run: |
+          ARGS="-v"
+          if [ "${DRY_RUN_INPUT}" = "true" ]; then
+            ARGS="${ARGS} --dry-run"
+          fi
+          python -m scripts.run_suno_playlist ${ARGS}
+
+      - name: Upload render for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: looxx-suno-${{ github.run_id }}
+          path: out/looxx/
+          if-no-files-found: ignore
+          retention-days: 3
