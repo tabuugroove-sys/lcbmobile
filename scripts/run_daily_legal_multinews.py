@@ -31,6 +31,7 @@ from src.analytics.traffic_experiments import (  # noqa: E402
     order_items_for_profile,
 )
 from src.config import ROOT, settings  # noqa: E402
+from src.editorial import is_music_news  # noqa: E402
 from src.models import NewsItem  # noqa: E402
 from src.storage import Store  # noqa: E402
 
@@ -478,6 +479,9 @@ def _select_top_items(limit: int, force: bool) -> tuple[Store, list[NewsItem], s
             continue
         if not _is_entertainment_item(item):
             log.info("Skipping non-entertainment item: %s", item.title)
+            continue
+        if not is_music_news(item):
+            log.info("Skipping non-music item: %s", item.title)
             continue
         if not _visual_support_key(item):
             log.info("Skipping item without direct legal video support: %s", item.title)

@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from statistics import mean
 
 from ..config import settings
+from ..editorial import is_music_news
 from ..models import NewsItem
 from ..storage import Store
 
@@ -190,7 +191,13 @@ def select_best_candidates(
 ) -> list[NewsItem]:
     if not candidates:
         return []
-    pool = candidates[: max(settings.analytics_candidate_pool, limit)]
+    music_candidates = [item for item in candidates if is_music_news(item)]
+    rejected = len(candidates) - len(music_candidates)
+    if rejected:
+        log.info("Editorial music filter rejected %d candidate(s)", rejected)
+    pool = music_candidates[: max(settings.analytics_candidate_pool, limit)]
+    if not pool:
+        return []
     if not settings.analytics_enabled:
         return pool[:limit]
 

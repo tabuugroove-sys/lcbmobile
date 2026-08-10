@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from .analytics import refresh_youtube_metrics, select_best_candidates
 from .config import ROOT, settings
+from .editorial import is_music_news
 from .models import GeneratedAssets, NewsItem, RewrittenPost
 from .notify import notify, notify_error, notify_summary
 from .processor import rewrite
@@ -128,6 +129,9 @@ def run(
     # with the same headline (mirror sites, dupe feeds) collapse to one.
     seen_hashes_this_run: set[str] = set()
     for item in items:
+        if not is_music_news(item):
+            log.info("Skipping non-music item: %s", item.title)
+            continue
         fp = item.fingerprint()
         ch = item.content_hash()
         if store.is_seen(fp):
