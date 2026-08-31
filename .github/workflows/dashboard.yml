@@ -1,18 +1,12 @@
 name: Dashboard
 
 on:
-  workflow_run:
-    workflows:
-      - Autopost pipeline
-      - Post URL (ad-hoc)
-      - Telegram only (one tap)
-      - Cloud publish (Telegram + Make.com)
-    types:
-      - completed
   workflow_dispatch:
   schedule:
-    # Keep the dashboard fresh even if no posting workflow ran recently.
-    - cron: "7 * * * *"
+    # A snapshot every six hours is enough for an operational summary.  Running
+    # after every posting attempt created a Pages deployment even when nothing
+    # had been published.
+    - cron: "17 */6 * * *"
 
 concurrency:
   group: dashboard-pages

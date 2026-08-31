@@ -7,21 +7,14 @@ on:
     #   - 13:13 BRT (16:13 UTC) — lunch break peak
     #   - 20:13 BRT (23:13 UTC) — evening prime time (primary engagement)
     #
-    # Each slot fires THREE TIMES (20 min apart at :13/:33/:53) for resilience
-    # against GHA dropping scheduled runs. Pipeline checks
-    # Store.hours_since_last_post() and 2nd/3rd attempts no-op once the slot
-    # already produced a post. Net: 3 posts/day, ~9 chances to fire.
-    #
-    # Off-peak minutes (:13/:33/:53) avoid the GHA load spike at the top of
-    # every hour, which is a documented cause of dropped schedule events.
-    - cron: "13,33,53 11,16,23 * * *"
+    # One deliberate run per publishing window.  The previous triple retries
+    # started nine heavyweight runners daily, even when the first attempt had
+    # already posted successfully.
+    - cron: "13 11,16,23 * * *"
     # Daily catch-up at 13:13 UTC (10:13 BRT — between morning and lunch slots).
     # Publishes ONE post only if nothing has been posted in the last 10h —
     # last-line defense against a full slot silently failing.
     - cron: "13 13 * * *"
-    # Backup slots 15 minutes after each primary slot. These only run when
-    # today's YouTube post count is still behind the expected 1/2/3 cadence.
-    - cron: "28 11,16,23 * * *"
   workflow_dispatch:
     inputs:
       platforms:
@@ -92,48 +85,6 @@ jobs:
           schedule = os.environ.get("GITHUB_EVENT_SCHEDULE", "")
           should_run = "true"
           reason = "primary schedule or manual trigger"
-
-          if event == "schedule" and schedule == "28 11,16,23 * * *":
-              target_by_hour = {11: 1, 16: 2, 23: 3}
-              now_utc = datetime.now(tz=ZoneInfo("UTC"))
-              target = target_by_hour.get(now_utc.hour, 0)
-              tz = ZoneInfo(os.environ.get("TIMEZONE", "America/Sao_Paulo"))
-              today_local = now_utc.astimezone(tz).date()
-              db_path = Path("data/state.db")
-              youtube_posts = 0
-
-              if db_path.exists():
-                  conn = sqlite3.connect(db_path)
-                  rows = conn.execute(
-                      """
-                      SELECT fingerprint, posted_at
-                      FROM publications
-                      WHERE platform = 'youtube' AND status = 'ok'
-                      """
-                  ).fetchall()
-                  conn.close()
-
-                  seen = set()
-                  for fingerprint, posted_at in rows:
-                      if not posted_at:
-                          continue
-                      dt = datetime.fromisoformat(posted_at)
-                      dt = dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
-                      if dt.date() == today_local:
-                          seen.add(fingerprint)
-                  youtube_posts = len(seen)
-
-              if youtube_posts >= target:
-                  should_run = "false"
-                  reason = (
-                      f"backup slot skipped: youtube_posts_today={youtube_posts} "
-                      f"target={target}"
-                  )
-              else:
-                  reason = (
-                      f"backup slot needed: youtube_posts_today={youtube_posts} "
-                      f"target={target}"
-                  )
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"should_run={should_run}\n")

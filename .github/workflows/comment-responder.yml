@@ -7,8 +7,9 @@ name: YouTube comment responder
 
 on:
   schedule:
-    # Every 2 hours, off the top of the hour to dodge the GHA load spike.
-    - cron: "47 */2 * * *"
+    # Four reviews per day keep response latency reasonable without starting
+    # twelve Python environments every day.
+    - cron: "47 */6 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
