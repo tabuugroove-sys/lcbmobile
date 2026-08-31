@@ -18,5 +18,13 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+if [[ "${TTS_PROVIDER:-}" == "elevenlabs" && -z "${ELEVENLABS_API_KEY:-}" ]]; then
+  ELEVENLABS_API_KEY="$(/usr/bin/security find-generic-password \
+    -a lcbmobile \
+    -s lcbmobile-elevenlabs-api \
+    -w)"
+  export ELEVENLABS_API_KEY
+fi
+
 cd "${REPO_DIR}"
 exec "${PYTHON_BIN}" -m scripts.local_backup_runner

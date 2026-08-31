@@ -17,8 +17,10 @@ the cloud rewrite providers are unavailable.
   cooldown. The normal pipeline still performs up to five item attempts.
 
 The local route uses the signed-in Claude CLI (`LOCAL_CLAUDE_FALLBACK=true`), so
-it does not depend on Anthropic API credits or Gemini free-tier quota. It posts
-to YouTube only. Telegram and Instagram remain optional cloud publishers.
+it does not depend on Anthropic API credits or Gemini free-tier quota. Voiceover
+uses the same ElevenLabs pt-BR profile as the cloud workflow; the API key is read
+from macOS Keychain service `lcbmobile-elevenlabs-api`. It posts to YouTube only.
+Telegram and Instagram remain optional cloud publishers.
 
 ## Local-only files
 
