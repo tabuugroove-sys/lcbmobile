@@ -3,6 +3,14 @@ $ErrorActionPreference = "Stop"
 $RepoDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Python = Join-Path $RepoDir ".venv\Scripts\python.exe"
 $SecretsDir = Join-Path $RepoDir "secrets"
+$LogsDir = Join-Path $RepoDir "logs"
+$LogFile = Join-Path $LogsDir ("server-primary-{0}.log" -f (Get-Date -Format "yyyy-MM-dd"))
+
+New-Item -ItemType Directory -Force $LogsDir | Out-Null
+Start-Transcript -Path $LogFile -Append | Out-Null
+$ExitCode = 1
+
+try {
 
 if (-not (Test-Path $Python)) {
     throw "Missing server virtualenv: $Python"
@@ -34,4 +42,14 @@ $env:ELEVENLABS_API_KEY = (Get-Content (Join-Path $SecretsDir "elevenlabs_api_ke
 
 Set-Location $RepoDir
 & $Python -m scripts.local_backup_runner
-exit $LASTEXITCODE
+$ExitCode = $LASTEXITCODE
+}
+catch {
+    Write-Error $_
+    $ExitCode = 1
+}
+finally {
+    Stop-Transcript | Out-Null
+}
+
+exit $ExitCode
