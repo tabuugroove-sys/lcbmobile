@@ -9,6 +9,7 @@ if (-not (Test-Path $Python)) {
 }
 
 $env:PATH = "C:\ProgramData\chocolatey\bin;C:\Python311;C:\Python311\Scripts;$env:PATH"
+$env:IMAGEMAGICK_BINARY = "C:\Program Files\ImageMagick-7.1.2-Q16-HDRI\magick.exe"
 $env:LOCAL_BACKUP_PYTHON = $Python
 $env:RUNNER_ROLE = "server-primary"
 $env:PUBLISH_SLOTS = "08:13=1,13:13=2,20:13=3"
