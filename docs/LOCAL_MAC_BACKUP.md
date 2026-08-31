@@ -1,7 +1,6 @@
 # Local Mac publishing backup
 
-This is the emergency path when scheduled GitHub Actions runs are missing or
-the cloud rewrite providers are unavailable.
+This is the emergency path when the Windows primary publisher misses a slot.
 
 ## How it works
 
@@ -9,7 +8,7 @@ the cloud rewrite providers are unavailable.
 - `scripts/local_backup_runner.py` reads the authenticated channel's uploads
   playlist through YouTube Data API.
 - The runner expects 1/2/3 Shorts after 08:28, 13:28 and 20:28 BRT. These are
-  15 minutes after the primary cloud slots.
+  15 minutes after the primary server slots.
 - If the channel already has the expected count, it exits without rendering.
 - If a Short is missing, it syncs recent source URLs into local SQLite, runs one
   pipeline item and verifies that a new Short actually appears on YouTube.
@@ -21,6 +20,8 @@ it does not depend on Anthropic API credits or Gemini free-tier quota. Voiceover
 uses the same ElevenLabs pt-BR profile as the cloud workflow; the API key is read
 from macOS Keychain service `lcbmobile-elevenlabs-api`. It posts to YouTube only.
 Telegram and Instagram remain optional cloud publishers.
+
+Server operations are documented in [`SERVER_PRIMARY.md`](SERVER_PRIMARY.md).
 
 ## Local-only files
 

@@ -158,10 +158,12 @@ ganha crédito só porque caiu em uma pauta naturalmente mais forte.
 
 ## Executando 24/7
 
-`/.github/workflows/pipeline.yml` roda a pipeline a cada 3 horas via
-`schedule:` do GitHub Actions. Configure os mesmos nomes de secret no
-repositório (Settings → Secrets and variables → Actions) e o estado de
-deduplicação fica em cache entre execuções.
+O publisher primário roda no Windows Server nos horários 08:13, 13:13 e 20:13
+BRT. O Mac verifica o canal 15 minutos depois e publica apenas quando o servidor
+não atingiu a contagem esperada. `/.github/workflows/pipeline.yml` é somente um
+fallback manual e não tem cron, evitando uploads concorrentes. Veja
+[`docs/SERVER_PRIMARY.md`](docs/SERVER_PRIMARY.md) e
+[`docs/LOCAL_MAC_BACKUP.md`](docs/LOCAL_MAC_BACKUP.md).
 
 ## Estrutura
 
