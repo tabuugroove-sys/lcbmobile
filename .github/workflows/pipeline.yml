@@ -1,20 +1,8 @@
 name: Autopost pipeline
 
 on:
-  schedule:
-    # 3 posts/day distributed across Brazilian audience peak hours (BRT = UTC-3):
-    #   - 08:13 BRT (11:13 UTC) — morning scroll, pre-work
-    #   - 13:13 BRT (16:13 UTC) — lunch break peak
-    #   - 20:13 BRT (23:13 UTC) — evening prime time (primary engagement)
-    #
-    # One deliberate run per publishing window.  The previous triple retries
-    # started nine heavyweight runners daily, even when the first attempt had
-    # already posted successfully.
-    - cron: "13 11,16,23 * * *"
-    # Daily catch-up at 13:13 UTC (10:13 BRT — between morning and lunch slots).
-    # Publishes ONE post only if nothing has been posted in the last 10h —
-    # last-line defense against a full slot silently failing.
-    - cron: "13 13 * * *"
+  # Scheduled Shorts now run on the Windows server. Keep this workflow as a
+  # manual cloud fallback only, so GitHub cannot race the server at a slot.
   workflow_dispatch:
     inputs:
       platforms:
