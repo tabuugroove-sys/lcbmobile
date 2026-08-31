@@ -1,7 +1,6 @@
 """Mac fallback scheduler for missed or failed GitHub Actions publishing slots."""
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
@@ -9,7 +8,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, time as clock_time, timezone
+from datetime import datetime, time as clock_time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -34,21 +33,69 @@ SCOPES = [
 ]
 SOURCE_RE = re.compile(r"^Fonte:\s*(https?://\S+)", re.IGNORECASE | re.MULTILINE)
 
-# These are 15 minutes after the primary GitHub slots in America/Sao_Paulo.
-BACKUP_SLOTS = (
+# Default Mac backup slots are 15 minutes after the primary server slots.
+DEFAULT_SLOTS = (
     (clock_time(8, 28), 1),
     (clock_time(13, 28), 2),
     (clock_time(20, 28), 3),
 )
 
 
-def expected_posts(now: datetime) -> int:
+def parse_publish_slots(raw: str | None) -> tuple[tuple[clock_time, int], ...]:
+    """Parse ``HH:MM=count`` entries used by both Mac and Windows runners."""
+    if not raw:
+        return DEFAULT_SLOTS
+    slots: list[tuple[clock_time, int]] = []
+    for entry in raw.split(","):
+        try:
+            raw_time, raw_count = entry.strip().split("=", 1)
+            hour, minute = (int(part) for part in raw_time.split(":", 1))
+            count = int(raw_count)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59 and count >= 0):
+                raise ValueError
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid PUBLISH_SLOTS entry {entry!r}; expected HH:MM=count"
+            ) from exc
+        slots.append((clock_time(hour, minute), count))
+    return tuple(sorted(slots))
+
+
+def expected_posts(
+    now: datetime, slots: tuple[tuple[clock_time, int], ...] | None = None
+) -> int:
     current = now.timetz().replace(tzinfo=None)
     target = 0
-    for slot, count in BACKUP_SLOTS:
+    for slot, count in slots or parse_publish_slots(os.getenv("PUBLISH_SLOTS")):
         if current >= slot:
             target = count
     return target
+
+
+def _lock_nonblocking(handle) -> bool:
+    """Acquire a one-byte process lock on Unix or Windows."""
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(0)
+        if not handle.read(1):
+            handle.seek(0)
+            handle.write("0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        return True
+
+    import fcntl
+
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
 
 
 def extract_source_url(description: str) -> str | None:
@@ -175,9 +222,7 @@ def main() -> int:
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     lock_handle = LOCK_FILE.open("a+")
-    try:
-        fcntl.flock(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+    if not _lock_nonblocking(lock_handle):
         LOG.info("Another local backup run is active; skipping")
         return 0
 

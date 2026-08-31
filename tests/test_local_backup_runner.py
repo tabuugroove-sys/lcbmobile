@@ -4,7 +4,11 @@ import unittest
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from scripts.local_backup_runner import expected_posts, extract_source_url
+from scripts.local_backup_runner import (
+    expected_posts,
+    extract_source_url,
+    parse_publish_slots,
+)
 
 
 class LocalBackupRunnerTests(unittest.TestCase):
@@ -20,6 +24,16 @@ class LocalBackupRunnerTests(unittest.TestCase):
         self.assertEqual(expected_posts(self._at(13, 27)), 1)
         self.assertEqual(expected_posts(self._at(13, 28)), 2)
         self.assertEqual(expected_posts(self._at(20, 28)), 3)
+
+    def test_primary_server_slots_are_configurable(self) -> None:
+        slots = parse_publish_slots("08:13=1,13:13=2,20:13=3")
+        self.assertEqual(expected_posts(self._at(8, 12), slots), 0)
+        self.assertEqual(expected_posts(self._at(8, 13), slots), 1)
+        self.assertEqual(expected_posts(self._at(20, 13), slots), 3)
+
+    def test_invalid_slot_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_publish_slots("25:99=1")
 
     def test_extract_source_url(self) -> None:
         description = "Texto\n\nFonte: https://example.com/news?utm_source=x\n\n#Shorts"

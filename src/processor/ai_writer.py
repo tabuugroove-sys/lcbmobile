@@ -112,6 +112,11 @@ def _is_credit_or_auth_error(exc: BaseException) -> bool:
 
 
 def rewrite(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
+    if os.getenv("REWRITE_PROVIDER", "").strip().lower() == "template":
+        from .template_writer import rewrite_via_template
+
+        log.info("Using deterministic template writer for %s", item.url)
+        return rewrite_via_template(item)
     if _local_claude_enabled():
         return _rewrite_via_local_claude(item)
     try:
