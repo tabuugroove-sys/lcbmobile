@@ -109,16 +109,54 @@ def _next_payloads(html: str) -> Iterator[str]:
 
 
 def _playlist_object(payload: str) -> dict[str, Any] | None:
+    """Find the playlist record, skipping unrelated objects named ``playlist``.
+
+    Recent Suno pages put translation dictionaries before the playlist record
+    in one React Flight payload.  Both have a ``playlist`` key, so accepting
+    the first matching JSON object silently selects a string rather than the
+    actual playlist.
+    """
     marker = '{"playlist":'
-    start = payload.find(marker)
-    if start < 0:
-        return None
-    try:
-        value = json.loads(_balanced_json(payload, start))
-    except (ValueError, json.JSONDecodeError):
-        return None
-    playlist = value.get("playlist") if isinstance(value, dict) else None
-    return playlist if isinstance(playlist, dict) else None
+    cursor = 0
+    while True:
+        start = payload.find(marker, cursor)
+        if start < 0:
+            return None
+        try:
+            value = json.loads(_balanced_json(payload, start))
+        except (ValueError, json.JSONDecodeError):
+            cursor = start + len(marker)
+            continue
+        playlist = value.get("playlist") if isinstance(value, dict) else None
+        if isinstance(playlist, dict) and isinstance(playlist.get("playlist_clips"), list):
+            return playlist
+        cursor = start + len(marker)
+
+
+def _audio_url(clip: dict[str, Any]) -> str:
+    """Prefer the public media URL when Suno masks the legacy ``audio_url``."""
+    legacy = str(clip.get("audio_url") or "").strip()
+    if legacy.startswith("https://") and "/api/forbidden" not in legacy:
+        return legacy
+    media_urls = clip.get("media_urls")
+    if not isinstance(media_urls, list):
+        return ""
+    # The encrypted M4A is the stable progressive source. Its per-request
+    # content key comes from Suno's public rights endpoint and is handled by
+    # ``src.suno.video`` before rendering.
+    for media in media_urls:
+        if not isinstance(media, dict) or str(media.get("content_type") or "").lower() != "m4a-opus":
+            continue
+        url = str(media.get("url") or "").strip()
+        if url.startswith("https://"):
+            return url
+    for media in media_urls:
+        if not isinstance(media, dict):
+            continue
+        url = str(media.get("url") or "").strip()
+        if url.startswith("https://"):
+            return url
+    return ""
 
 
 def _parse_datetime(value: object) -> datetime | None:
@@ -146,7 +184,7 @@ def parse_playlist_html(html: str) -> list[SunoTrack]:
         if not isinstance(clip, dict):
             continue
         song_id = str(clip.get("id") or "").strip()
-        audio_url = str(clip.get("audio_url") or "").strip()
+        audio_url = _audio_url(clip)
         if (
             not song_id
             or song_id in seen

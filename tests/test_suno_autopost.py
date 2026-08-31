@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 
 from src.suno.playlist import SunoTrack, parse_playlist_html
 from src.suno.state import SunoState, next_unpublished_track
+from src.suno.video import _audio_destination, _is_encrypted_suno_audio
 from src.suno.youtube import video_body, video_description
 
 
@@ -64,6 +65,50 @@ class SunoAutopostTests(unittest.TestCase):
         self.assertEqual([item.song_id for item in parsed], [first.song_id, second.song_id])
         self.assertEqual(parsed[0].description, first.description)
         self.assertEqual(parsed[0].duration_seconds, first.duration_seconds)
+
+    def test_parser_skips_translation_playlist_key_and_uses_media_url(self) -> None:
+        playlist = {
+            "playlist": {
+                "id": "playlist-id",
+                "playlist_clips": [{"clip": {
+                    "id": "song-1",
+                    "status": "complete",
+                    "title": "Public Media",
+                    "audio_url": "https://studio-api.prod.suno.com/api/forbidden",
+                    "media_urls": [{
+                        "url": "https://cdn.suno.ai/clip/song-1.m4a",
+                        "content_type": "m4a-opus",
+                    }, {
+                        "url": "https://cdn.suno.ai/clip/song-1.mp3",
+                        "content_type": "mp3",
+                    }],
+                }}],
+            }
+        }
+        flight = (
+            '1:{"translations":{"playlist":"Playlist"}}\\n'
+            + "2:" + json.dumps(["$", "$L1", None, playlist], separators=(",", ":"))
+        )
+        html = "<script>self.__next_f.push(" + json.dumps([1, flight]) + ")</script>"
+
+        parsed = parse_playlist_html(html)
+
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].audio_url, "https://cdn.suno.ai/clip/song-1.m4a")
+
+    def test_renderer_keeps_suno_media_extension(self) -> None:
+        m4a = SunoTrack(
+            song_id="song-1",
+            title="Media",
+            audio_url="https://media.cloudfront.net/1/clip/song-1.m4a",
+            image_url="",
+            duration_seconds=1.0,
+        )
+        mp3 = track("song-2", "Legacy")
+        self.assertEqual(_audio_destination(m4a, Path("out")), Path("out/track.m4a"))
+        self.assertEqual(_audio_destination(mp3, Path("out")), Path("out/track.mp3"))
+        self.assertTrue(_is_encrypted_suno_audio(m4a.audio_url))
+        self.assertFalse(_is_encrypted_suno_audio(mp3.audio_url))
 
     def test_next_track_drains_existing_playlist_backlog_in_order(self) -> None:
         tracks = [
