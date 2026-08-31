@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import shutil
+import subprocess
 from typing import Any
 
 import anthropic
@@ -109,6 +112,8 @@ def _is_credit_or_auth_error(exc: BaseException) -> bool:
 
 
 def rewrite(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
+    if _local_claude_enabled():
+        return _rewrite_via_local_claude(item)
     try:
         return _rewrite_via_anthropic(item, max_tokens=max_tokens)
     except Exception as exc:  # noqa: BLE001
@@ -125,6 +130,41 @@ def rewrite(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
             raise
         log.warning("Anthropic unavailable (%s) — falling back to Gemini", exc)
         return rewrite_via_gemini(item, max_tokens=max_tokens)
+
+
+def _local_claude_enabled() -> bool:
+    return os.getenv("LOCAL_CLAUDE_FALLBACK", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _rewrite_via_local_claude(item: NewsItem) -> RewrittenPost:
+    """Use the signed-in Claude CLI for the Mac-only emergency runner."""
+    binary = os.getenv("CLAUDE_CLI_PATH", "claude").strip() or "claude"
+    resolved = shutil.which(binary) if "/" not in binary else binary
+    if not resolved:
+        raise RuntimeError(f"Claude CLI not found: {binary}")
+
+    model = os.getenv("LOCAL_CLAUDE_MODEL", "sonnet").strip() or "sonnet"
+    prompt = f"{SYSTEM_PROMPT}\n\n{_user_prompt(item)}"
+    completed = subprocess.run(
+        [resolved, "-p", "--model", model, "--output-format", "text"],
+        input=prompt,
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if completed.returncode != 0:
+        error = (completed.stderr or completed.stdout or "unknown error").strip()
+        raise RuntimeError(f"Claude CLI failed ({completed.returncode}): {error[:500]}")
+
+    payload = _extract_json(completed.stdout)
+    payload.setdefault("category", item.category or "geral")
+    return RewrittenPost(source_url=item.url, **payload)
 
 
 def _rewrite_via_anthropic(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:

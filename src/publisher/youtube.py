@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -17,7 +18,10 @@ from .base import PublishResult
 
 log = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+]
 
 
 class YouTubePublisher:
@@ -85,3 +89,35 @@ class YouTubePublisher:
         except Exception as exc:  # noqa: BLE001
             log.exception("YouTube publish failed")
             return PublishResult(platform=self.name, ok=False, error=str(exc))
+
+
+def hours_since_latest_short() -> float | None:
+    """Read the channel itself so local and GitHub runners share one gap gate."""
+    if not Path(settings.youtube_token_file).exists():
+        return None
+    service = YouTubePublisher()._service()
+    channel_response = service.channels().list(
+        part="contentDetails", mine=True
+    ).execute()
+    channels = channel_response.get("items") or []
+    if not channels:
+        return None
+    playlist_id = channels[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    response = service.playlistItems().list(
+        part="snippet", playlistId=playlist_id, maxResults=10
+    ).execute()
+    for row in response.get("items") or []:
+        snippet = row.get("snippet") or {}
+        text = f"{snippet.get('title', '')} {snippet.get('description', '')}".lower()
+        if "#shorts" not in text:
+            continue
+        raw = str(snippet.get("publishedAt") or "")
+        if not raw:
+            continue
+        published = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return max(
+            0.0,
+            (datetime.now(timezone.utc) - published.astimezone(timezone.utc)).total_seconds()
+            / 3600.0,
+        )
+    return None

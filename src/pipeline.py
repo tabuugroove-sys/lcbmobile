@@ -15,6 +15,7 @@ from .models import GeneratedAssets, NewsItem, RewrittenPost
 from .notify import notify, notify_error, notify_summary
 from .processor import rewrite
 from .publisher import build_publishers, PublishResult
+from .publisher.youtube import hours_since_latest_short
 from .scraper import collect_news, load_sources
 from .storage import Store
 from .video import build_short
@@ -99,6 +100,20 @@ def run(
     # posted, this run becomes a no-op. Configurable via env.
     import os as _os
     min_gap_h = float(_os.getenv("MIN_HOURS_BETWEEN_POSTS", "3.5"))
+    youtube_requested = not only_publishers or "youtube" in only_publishers
+    if youtube_requested:
+        try:
+            remote_last = hours_since_latest_short()
+        except Exception as exc:  # noqa: BLE001
+            remote_last = None
+            log.warning("Remote YouTube gap check failed; using local DB: %s", exc)
+        if remote_last is not None and remote_last < min_gap_h:
+            log.info(
+                "Skipping run: channel's latest Short was %.2fh ago, min gap is %.2fh.",
+                remote_last,
+                min_gap_h,
+            )
+            return RunReport()
     last = store.hours_since_last_post()
     if last is not None and last < min_gap_h:
         # Silent skip — this is a redundant cron twin, completely expected.
