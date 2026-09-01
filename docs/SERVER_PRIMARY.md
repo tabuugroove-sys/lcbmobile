@@ -1,13 +1,14 @@
 # Windows server primary publisher
 
-The primary Shorts runtime is deployed at `C:\lcbmobile-news` on
-`209.126.1.234`. It is isolated from the LCBand services on the same host.
+The primary Shorts runtime is deployed at `C:\lcbmobile-news` on the configured
+Windows publishing host. It is isolated from the LCBand services on that host.
 
 ## Schedule and ownership
 
 - Windows Scheduled Task: `LCBMobile News Primary`
 - Account: `NT AUTHORITY\SYSTEM`
 - Poll interval: every five minutes
+- Pipeline timeout: 45 minutes
 - Due slots in `America/Sao_Paulo`: 08:13, 13:13 and 20:13
 - Expected daily count after each slot: 1, 2 and 3 Shorts
 - Mac backup checks the same channel 15 minutes later at 08:28, 13:28 and 20:28

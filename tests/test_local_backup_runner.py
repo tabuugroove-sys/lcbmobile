@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import unittest
+import subprocess
 from datetime import datetime
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from scripts.local_backup_runner import (
+    _run_pipeline,
     expected_posts,
     extract_source_url,
     parse_publish_slots,
@@ -44,6 +47,12 @@ class LocalBackupRunnerTests(unittest.TestCase):
 
     def test_missing_source_url(self) -> None:
         self.assertIsNone(extract_source_url("Sem link de fonte"))
+
+    @patch("scripts.local_backup_runner.subprocess.run")
+    def test_pipeline_timeout_returns_standard_timeout_code(self, run) -> None:
+        run.side_effect = subprocess.TimeoutExpired(["python", "pipeline"], 9)
+        with patch.dict("os.environ", {"PIPELINE_TIMEOUT_SECONDS": "9"}):
+            self.assertEqual(_run_pipeline(), 124)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,18 @@ def _clip_words(value: str, limit: int) -> str:
     return " ".join(words[:limit]).rstrip(".,;:") + "."
 
 
+def _clip_chars(value: str, limit: int) -> str:
+    """Shorten text without leaving a partial word at the boundary."""
+    if len(value) <= limit:
+        return value
+    if limit <= 3:
+        return value[:limit]
+    candidate = value[: limit - 3].rstrip()
+    if " " in candidate:
+        candidate = candidate.rsplit(" ", 1)[0]
+    return candidate.rstrip(".,;:") + "..."
+
+
 def rewrite_via_template(item: NewsItem) -> RewrittenPost:
     """Build a factual post strictly from title, summary and source metadata."""
     title = _plain(item.title).strip(" .") or "Noticia da musica"
@@ -42,7 +54,7 @@ def rewrite_via_template(item: NewsItem) -> RewrittenPost:
     )
     script = _clip_words(f"{script} {outro}", 88)
 
-    headline = _clip_words(title, 11)[:70].rstrip()
+    headline = _clip_chars(_clip_words(title, 11), 70)
     category = item.category if item.category in _CATEGORIES else "geral"
     hashtags = ["Musica", "Noticias", "Famosos", "Brasil", "Shorts"]
     short_caption = _clip_words(f"{headline} 🎵 Saiba o que aconteceu. #Musica #Noticias #Shorts", 30)

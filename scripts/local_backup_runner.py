@@ -211,7 +211,18 @@ def _run_pipeline() -> int:
     ]
     env = os.environ.copy()
     env["MIN_HOURS_BETWEEN_POSTS"] = "0"
-    completed = subprocess.run(command, cwd=ROOT, env=env, check=False)
+    timeout = int(os.getenv("PIPELINE_TIMEOUT_SECONDS", "2700"))
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        LOG.error("Publishing pipeline exceeded %ds and was terminated", timeout)
+        return 124
     return completed.returncode
 
 

@@ -41,6 +41,24 @@ class TemplateWriterTests(unittest.TestCase):
         self.assertNotIn("<p>", post.script_voiceover)
         self.assertEqual(post.category, "geral")
 
+    def test_headline_is_shortened_at_a_word_boundary(self) -> None:
+        item = NewsItem(
+            source_id="rss",
+            source_name="Fonte",
+            category="celebridades",
+            url="https://example.com/noticia",
+            title=(
+                "Cantora internacional revela detalhes emocionantes sobre o "
+                "proximo album aguardadissimo"
+            ),
+        )
+
+        post = rewrite_via_template(item)
+
+        self.assertLessEqual(len(post.headline), 70)
+        self.assertTrue(post.headline.endswith("..."))
+        self.assertNotIn(" alb...", post.headline)
+
 
 if __name__ == "__main__":
     unittest.main()

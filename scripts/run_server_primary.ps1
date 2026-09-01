@@ -22,6 +22,7 @@ $env:LOCAL_BACKUP_PYTHON = $Python
 $env:RUNNER_ROLE = "server-primary"
 $env:PUBLISH_SLOTS = "08:13=1,13:13=2,20:13=3"
 $env:LOCAL_BACKUP_COOLDOWN_MINUTES = "15"
+$env:PIPELINE_TIMEOUT_SECONDS = "2700"
 $env:TIMEZONE = "America/Sao_Paulo"
 $env:REWRITE_PROVIDER = "template"
 $env:TTS_PROVIDER = "elevenlabs"

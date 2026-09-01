@@ -17,6 +17,7 @@ env/
 # Secrets / env
 .env
 .env.local
+secrets/
 *.secret
 client_secret*.json
 looxx_client_secret.json
@@ -28,6 +29,7 @@ twitter_token.json
 
 # Generated content
 data/
+logs/
 out/
 site/
 *.db
