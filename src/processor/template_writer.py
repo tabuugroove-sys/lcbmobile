@@ -50,8 +50,18 @@ def _clip_chars(value: str, limit: int) -> str:
 
 def _screen_beats(title: str, summary_sentences: list[str]) -> list[str]:
     """Build short factual overlays instead of repeating full RSS sentences."""
-    artist = find_known_music_act(f"{title} {' '.join(summary_sentences)}")
-    seeds = [artist or ""]
+    combined = f"{title} {' '.join(summary_sentences)}"
+    artist = find_known_music_act(combined)
+    normalized = combined.casefold()
+    fact_beats: list[str] = []
+    if "melhor show" in normalized and "rock" in normalized:
+        fact_beats.append("Melhor show do rock")
+    if "batiz" in normalized and "tim maia" in normalized:
+        fact_beats.append("Batizado por Tim Maia")
+    if "ganhou o nome" in normalized or "origem do nome" in normalized:
+        fact_beats.append("Origem do nome")
+
+    seeds = [artist or "", *fact_beats]
     seeds.extend(part.strip(" .;:'\"") for part in re.split(r"[,;:–—]", title))
     seeds.extend(summary_sentences[:2])
     seeds.append("Fonte confirmada")

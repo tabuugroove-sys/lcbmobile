@@ -71,7 +71,7 @@ class TemplateWriterTests(unittest.TestCase):
             ),
             summary=(
                 "Tim Maia em festival no RS; veja VÍDEO do momento. "
-                "A banda relembrou a história."
+                "A banda ganhou o nome naquela noite."
             ),
         )
 
@@ -79,6 +79,15 @@ class TemplateWriterTests(unittest.TestCase):
 
         self.assertNotIn("veja vídeo", post.script_voiceover.casefold())
         self.assertEqual(post.on_screen_text[0], "jota quest")
+        self.assertEqual(
+            post.on_screen_text[:4],
+            [
+                "jota quest",
+                "Melhor show do rock",
+                "Batizado por Tim Maia",
+                "Origem do nome",
+            ],
+        )
         self.assertTrue(all(len(beat.split()) <= 5 for beat in post.on_screen_text))
 
 
