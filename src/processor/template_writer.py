@@ -64,16 +64,17 @@ def _screen_beats(title: str, summary_sentences: list[str]) -> list[str]:
     seeds = [artist or "", *fact_beats]
     seeds.extend(part.strip(" .;:'\"") for part in re.split(r"[,;:–—]", title))
     seeds.extend(summary_sentences[:2])
-    seeds.append("Fonte confirmada")
 
     beats: list[str] = []
     for seed in seeds:
         beat = _clip_words(_plain(seed), 4).rstrip(".")
         if beat and beat.casefold() not in {item.casefold() for item in beats}:
             beats.append(beat)
-        if len(beats) >= 5:
+        if len(beats) >= 4:
             break
-    return beats or ["Notícia da música"]
+    if "fonte confirmada" not in {item.casefold() for item in beats}:
+        beats.append("Fonte confirmada")
+    return beats[:5] or ["Notícia da música"]
 
 
 def rewrite_via_template(item: NewsItem) -> RewrittenPost:

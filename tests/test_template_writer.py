@@ -80,12 +80,13 @@ class TemplateWriterTests(unittest.TestCase):
         self.assertNotIn("veja vídeo", post.script_voiceover.casefold())
         self.assertEqual(post.on_screen_text[0], "jota quest")
         self.assertEqual(
-            post.on_screen_text[:4],
+            post.on_screen_text,
             [
                 "jota quest",
                 "Melhor show do rock",
                 "Batizado por Tim Maia",
                 "Origem do nome",
+                "Fonte confirmada",
             ],
         )
         self.assertTrue(all(len(beat.split()) <= 5 for beat in post.on_screen_text))
