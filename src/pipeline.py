@@ -18,7 +18,7 @@ from .publisher import build_publishers, PublishResult
 from .publisher.youtube import hours_since_latest_short
 from .scraper import collect_news, load_sources
 from .storage import Store
-from .video import build_short
+from .video import build_short, visual_media_ready
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +78,13 @@ def _yesterday_fallback_items(
         if len(fallback) >= settings.analytics_candidate_pool:
             break
 
-    return select_best_candidates(fallback, store, limit=limit, stage="fallback")
+    return select_best_candidates(
+        fallback,
+        store,
+        limit=limit,
+        stage="fallback",
+        eligibility=lambda item: visual_media_ready(item, settings.output_dir),
+    )
 
 
 def run(
@@ -163,7 +169,13 @@ def run(
         candidates.append(item)
         if len(candidates) >= settings.analytics_candidate_pool:
             break
-    fresh = select_best_candidates(candidates, store, limit=limit, stage="fresh")
+    fresh = select_best_candidates(
+        candidates,
+        store,
+        limit=limit,
+        stage="fresh",
+        eligibility=lambda item: visual_media_ready(item, settings.output_dir),
+    )
 
     if not fresh:
         fresh = _yesterday_fallback_items(items, store, limit)

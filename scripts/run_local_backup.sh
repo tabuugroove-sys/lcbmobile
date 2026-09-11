@@ -21,6 +21,8 @@ set +a
 export CONTENT_LANG="${CONTENT_LANG:-pt-BR}"
 export DRAMA_SIGNAL_WEIGHT="${DRAMA_SIGNAL_WEIGHT:-1.8}"
 export AUTO_CUTOUT_ENABLED="${AUTO_CUTOUT_ENABLED:-false}"
+export REQUIRE_VISUAL_MEDIA="${REQUIRE_VISUAL_MEDIA:-true}"
+export MIN_VISUAL_MEDIA_ASSETS="${MIN_VISUAL_MEDIA_ASSETS:-3}"
 
 if [[ "${TTS_PROVIDER:-}" == "elevenlabs" && -z "${ELEVENLABS_API_KEY:-}" ]]; then
   ELEVENLABS_API_KEY="$(/usr/bin/security find-generic-password \

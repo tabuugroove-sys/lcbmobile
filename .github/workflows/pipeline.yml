@@ -107,6 +107,8 @@ jobs:
           ANALYTICS_CANDIDATE_POOL: ${{ vars.ANALYTICS_CANDIDATE_POOL || '40' }}
           ANALYTICS_HISTORY_LIMIT: ${{ vars.ANALYTICS_HISTORY_LIMIT || '250' }}
           DRAMA_SIGNAL_WEIGHT: ${{ vars.DRAMA_SIGNAL_WEIGHT || '1.8' }}
+          REQUIRE_VISUAL_MEDIA: 'true'
+          MIN_VISUAL_MEDIA_ASSETS: '3'
           YOUTUBE_METRICS_REFRESH_HOURS: ${{ vars.YOUTUBE_METRICS_REFRESH_HOURS || '6' }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           # Editorial: how many hours of virtual freshness to give DJ-category

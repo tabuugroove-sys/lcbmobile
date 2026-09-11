@@ -56,6 +56,11 @@ historical YouTube reaction, freshness, a known-artist signal and confirmed
 drama terms. Server `DRAMA_SIGNAL_WEIGHT=1.8`. Drama can change priority and
 the factual hook; it must never invent or intensify an unsupported claim.
 
+Reference-style visuals are a publication gate. `REQUIRE_VISUAL_MEDIA=true`
+and `MIN_VISUAL_MEDIA_ASSETS=3` make ranking continue to the next candidate
+when the current story has no identified artist or too few verified images.
+Do not restore the graphic-only circle fallback as a publishable main Short.
+
 Automatic GrabCut is present only as an experimental path and remains disabled
 with `AUTO_CUTOUT_ENABLED=false`; automated masking was rejected in QA when a
 concert crowd could be mistaken for a subject. Framed-photo fallback is the

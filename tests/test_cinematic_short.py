@@ -9,7 +9,7 @@ import httpx
 from PIL import Image
 
 from src.video.commons_media import LicensedImage, _candidate, fetch_licensed_artist_images
-from src.video.generator import HEIGHT, WIDTH, _make_scene
+from src.video.generator import HEIGHT, WIDTH, _make_scene, visual_media_ready
 
 
 def commons_page(license_name: str) -> dict[str, object]:
@@ -79,6 +79,24 @@ class CommonsMediaTests(unittest.TestCase):
 
 
 class SceneRenderTests(unittest.TestCase):
+    def test_reference_style_requires_multiple_verified_visuals(self) -> None:
+        news = type(
+            "Item",
+            (),
+            {"title": "Shakira anuncia novidade", "summary": ""},
+        )()
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.resolve_visual_media",
+            return_value=("shakira", [mock.sentinel.asset] * 3),
+        ):
+            self.assertTrue(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.resolve_visual_media",
+            return_value=(None, []),
+        ):
+            self.assertFalse(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
+
     def test_scene_is_vertical_and_contains_safe_editorial_layout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

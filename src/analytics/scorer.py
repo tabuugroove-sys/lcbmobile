@@ -13,6 +13,7 @@ import unicodedata
 from collections import defaultdict
 from datetime import datetime, timezone
 from statistics import mean
+from typing import Callable
 
 from ..config import settings
 from ..editorial import find_known_music_act, is_music_news
@@ -210,6 +211,7 @@ def select_best_candidates(
     *,
     limit: int,
     stage: str,
+    eligibility: Callable[[NewsItem], bool] | None = None,
 ) -> list[NewsItem]:
     if not candidates:
         return []
@@ -221,7 +223,13 @@ def select_best_candidates(
     if not pool:
         return []
     if not settings.analytics_enabled:
-        return pool[:limit]
+        selected = []
+        for item in pool:
+            if eligibility is None or eligibility(item):
+                selected.append(item)
+            if len(selected) >= limit:
+                break
+        return selected
 
     examples = store.analytics_examples(settings.analytics_history_limit)
     if len(examples) < 3:
@@ -230,7 +238,12 @@ def select_best_candidates(
             len(examples),
         )
         scored = _cold_start_scores(pool)
-        selected = [item for item, _, _ in scored[:limit]]
+        selected = []
+        for item, _, _ in scored:
+            if eligibility is None or eligibility(item):
+                selected.append(item)
+            if len(selected) >= limit:
+                break
         store.record_candidate_scores(
             stage=stage,
             scores=scored[: min(len(scored), 50)],
@@ -286,7 +299,12 @@ def select_best_candidates(
         scored.append((item, score, reason))
 
     scored.sort(key=lambda row: row[1], reverse=True)
-    selected = [item for item, _, _ in scored[:limit]]
+    selected = []
+    for item, _, _ in scored:
+        if eligibility is None or eligibility(item):
+            selected.append(item)
+        if len(selected) >= limit:
+            break
     store.record_candidate_scores(
         stage=stage,
         scores=scored[: min(len(scored), 50)],

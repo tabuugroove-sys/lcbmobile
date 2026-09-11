@@ -564,6 +564,44 @@ def _write_render_manifest(
     )
 
 
+def _item_output_dir(item: NewsItem, output_dir: Path) -> Path:
+    base = output_dir / item.fingerprint().replace("/", "_").replace(":", "_")[-80:]
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def resolve_visual_media(
+    item: NewsItem,
+    output_dir: Path,
+) -> tuple[str | None, list[LicensedImage]]:
+    """Resolve reusable artist visuals into the item's persistent render cache."""
+    base = _item_output_dir(item, output_dir)
+    artist_query = find_known_music_act(f"{item.title} {item.summary}")
+    media = fetch_licensed_artist_images(
+        artist_query,
+        base / "licensed_media",
+        limit=max(6, settings.min_visual_media_assets),
+    )
+    return artist_query, media
+
+
+def visual_media_ready(item: NewsItem, output_dir: Path) -> bool:
+    """Return whether the story can reproduce the approved visual reference."""
+    if not settings.require_visual_media:
+        return True
+    artist_query, media = resolve_visual_media(item, output_dir)
+    ready = bool(artist_query) and len(media) >= settings.min_visual_media_assets
+    if not ready:
+        log.info(
+            "Skipping visual-poor candidate: artist=%r assets=%d required=%d title=%s",
+            artist_query,
+            len(media),
+            settings.min_visual_media_assets,
+            item.title,
+        )
+    return ready
+
+
 def build_short(
     item: NewsItem,
     post: RewrittenPost,
@@ -572,12 +610,14 @@ def build_short(
     lang: str = "pt-BR",
 ) -> GeneratedAssets:
     output_dir.mkdir(parents=True, exist_ok=True)
-    base = output_dir / item.fingerprint().replace("/", "_").replace(":", "_")[-80:]
-    base.mkdir(parents=True, exist_ok=True)
-
-    artist_query = find_known_music_act(f"{item.title} {item.summary}")
-    media_dir = base / "licensed_media"
-    media = fetch_licensed_artist_images(artist_query, media_dir, limit=6)
+    base = _item_output_dir(item, output_dir)
+    artist_query, media = resolve_visual_media(item, output_dir)
+    if settings.require_visual_media and len(media) < settings.min_visual_media_assets:
+        raise RuntimeError(
+            "Reference-style render blocked: "
+            f"artist={artist_query!r} has {len(media)} verified visual(s), "
+            f"requires {settings.min_visual_media_assets}"
+        )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp = Path(temp_dir)
