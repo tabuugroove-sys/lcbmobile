@@ -53,6 +53,11 @@ class CommonsMediaTests(unittest.TestCase):
         page["title"] = "File:Opening Act - 20 Years of Shakira.jpg"
         self.assertIsNone(_candidate(page, "shakira"))
 
+    def test_rejects_signature_even_when_title_has_punctuation(self) -> None:
+        page = commons_page("CC BY 2.0")
+        page["title"] = "File:Shakira signature, Billboard letter.png"
+        self.assertIsNone(_candidate(page, "shakira"))
+
     def test_retries_transient_api_rejection(self) -> None:
         class Client:
             def __init__(self) -> None:

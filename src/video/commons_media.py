@@ -17,15 +17,19 @@ log = logging.getLogger(__name__)
 
 API_URL = "https://commons.wikimedia.org/w/api.php"
 USER_AGENT = "LCBMobileNews/1.1 (https://github.com/tabuugroove-sys/lcbmobile)"
+MANIFEST_POLICY_VERSION = 2
 ALLOWED_LICENSE_PREFIXES = ("CC BY ", "CC0", "Public domain")
 BLOCKED_TITLE_TERMS = {
     "album",
+    "artwork",
     "cover",
+    "featuring",
     "gear",
     "logo",
     "poster",
     "signature",
     "single",
+    "soundtrack",
     "svg",
     "ticket",
 }
@@ -90,7 +94,8 @@ def _candidate(page: dict[str, object], query: str) -> dict[str, object] | None:
         or compact_title.startswith(plain_query.replace(" ", ""))
     ):
         return None
-    if set(plain_title.split()) & BLOCKED_TITLE_TERMS:
+    title_tokens = set(re.findall(r"[a-z0-9]+", plain_title))
+    if title_tokens & BLOCKED_TITLE_TERMS:
         return None
     description = " ".join(
         [
@@ -136,7 +141,16 @@ def fetch_licensed_artist_images(
     manifest_path = output_dir / "rights_manifest.json"
     if not query:
         manifest_path.write_text(
-            json.dumps({"query": None, "status": "no_known_artist", "assets": []}, indent=2) + "\n"
+            json.dumps(
+                {
+                    "policy_version": MANIFEST_POLICY_VERSION,
+                    "query": None,
+                    "status": "no_known_artist",
+                    "assets": [],
+                },
+                indent=2,
+            )
+            + "\n"
         )
         return []
 
@@ -146,6 +160,7 @@ def fetch_licensed_artist_images(
             cached_assets = [LicensedImage(**row) for row in cached.get("assets", [])]
             if (
                 cached.get("query") == query
+                and cached.get("policy_version") == MANIFEST_POLICY_VERSION
                 and cached.get("status") == "verified"
                 and cached_assets
                 and all(Path(asset.path).exists() for asset in cached_assets)
@@ -223,7 +238,12 @@ def fetch_licensed_artist_images(
         status = "verified" if assets else "no_verified_media"
         manifest_path.write_text(
             json.dumps(
-                {"query": query, "status": status, "assets": [asset.as_manifest() for asset in assets]},
+                {
+                    "policy_version": MANIFEST_POLICY_VERSION,
+                    "query": query,
+                    "status": status,
+                    "assets": [asset.as_manifest() for asset in assets],
+                },
                 ensure_ascii=False,
                 indent=2,
             )
@@ -235,7 +255,13 @@ def fetch_licensed_artist_images(
         log.warning("Commons media resolver failed for %r: %s", query, exc)
         manifest_path.write_text(
             json.dumps(
-                {"query": query, "status": "resolver_error", "error": str(exc), "assets": []},
+                {
+                    "policy_version": MANIFEST_POLICY_VERSION,
+                    "query": query,
+                    "status": "resolver_error",
+                    "error": str(exc),
+                    "assets": [],
+                },
                 ensure_ascii=False,
                 indent=2,
             )
