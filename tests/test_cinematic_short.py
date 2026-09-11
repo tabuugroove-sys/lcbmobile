@@ -9,7 +9,13 @@ import httpx
 from PIL import Image
 
 from src.video.commons_media import LicensedImage, _candidate, fetch_licensed_artist_images
-from src.video.generator import HEIGHT, WIDTH, _make_scene, visual_media_ready
+from src.video.generator import (
+    HEIGHT,
+    WIDTH,
+    _make_scene,
+    resolve_visual_media,
+    visual_media_ready,
+)
 
 
 def commons_page(license_name: str) -> dict[str, object]:
@@ -84,6 +90,27 @@ class CommonsMediaTests(unittest.TestCase):
 
 
 class SceneRenderTests(unittest.TestCase):
+    def test_visual_lookup_requires_artist_in_headline(self) -> None:
+        news = type(
+            "Item",
+            (),
+            {
+                "title": "Shows ao vivo: programação e ingressos",
+                "summary": "A programação inclui Calvin Harris neste fim de semana.",
+                "fingerprint": lambda self: "https://example.com/festival",
+            },
+        )()
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.fetch_licensed_artist_images",
+            return_value=[],
+        ) as fetch:
+            artist, media = resolve_visual_media(news, Path(temp_dir))  # type: ignore[arg-type]
+
+        self.assertIsNone(artist)
+        self.assertEqual(media, [])
+        fetch.assert_called_once()
+        self.assertIsNone(fetch.call_args.args[0])
+
     def test_reference_style_requires_multiple_verified_visuals(self) -> None:
         news = type(
             "Item",

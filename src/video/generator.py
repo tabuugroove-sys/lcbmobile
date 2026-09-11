@@ -576,7 +576,9 @@ def resolve_visual_media(
 ) -> tuple[str | None, list[LicensedImage]]:
     """Resolve reusable artist visuals into the item's persistent render cache."""
     base = _item_output_dir(item, output_dir)
-    artist_query = find_known_music_act(f"{item.title} {item.summary}")
+    # The artist must be the explicit subject of the headline. A name buried in
+    # a festival roundup cannot safely determine the visuals for the whole story.
+    artist_query = find_known_music_act(item.title)
     media = fetch_licensed_artist_images(
         artist_query,
         base / "licensed_media",
