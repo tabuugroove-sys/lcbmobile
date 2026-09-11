@@ -85,6 +85,7 @@ _KNOWN_MUSIC_ACTS = (
     "ivete sangalo",
     "iza",
     "j balvin",
+    "jota quest",
     "joao gomes",
     "justin bieber",
     "katy perry",
@@ -110,6 +111,7 @@ _KNOWN_MUSIC_ACTS = (
     "sidney magal",
     "taylor swift",
     "the weeknd",
+    "tim maia",
     "wesley safadao",
     "ze felipe",
     "ze neto",
@@ -148,7 +150,11 @@ def _plain(text: str) -> str:
 def find_known_music_act(text: str) -> str | None:
     """Return the longest known music-act name present in editorial text."""
     plain = _plain(text)
-    matches = [name for name in _KNOWN_MUSIC_ACTS if name in plain]
+    matches = [
+        name
+        for name in _KNOWN_MUSIC_ACTS
+        if re.search(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", plain)
+    ]
     return max(matches, key=len) if matches else None
 
 

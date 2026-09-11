@@ -3,10 +3,12 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import httpx
 from PIL import Image
 
-from src.video.commons_media import LicensedImage, _candidate
+from src.video.commons_media import LicensedImage, _candidate, fetch_licensed_artist_images
 from src.video.generator import HEIGHT, WIDTH, _make_scene
 
 
@@ -50,6 +52,30 @@ class CommonsMediaTests(unittest.TestCase):
         page = commons_page("CC BY 2.0")
         page["title"] = "File:Opening Act - 20 Years of Shakira.jpg"
         self.assertIsNone(_candidate(page, "shakira"))
+
+    def test_retries_transient_api_rejection(self) -> None:
+        class Client:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def get(self, url: str, **kwargs: object) -> httpx.Response:
+                self.calls += 1
+                request = httpx.Request("GET", url)
+                if self.calls == 1:
+                    return httpx.Response(403, request=request)
+                return httpx.Response(200, request=request, json={"query": {"pages": []}})
+
+        client = Client()
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.commons_media.time.sleep"
+        ):
+            assets = fetch_licensed_artist_images(
+                "shakira",
+                Path(temp_dir),
+                client=client,  # type: ignore[arg-type]
+            )
+        self.assertEqual(assets, [])
+        self.assertEqual(client.calls, 2)
 
 
 class SceneRenderTests(unittest.TestCase):

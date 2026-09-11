@@ -5,6 +5,7 @@ import html
 import json
 import logging
 import re
+import time
 import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -15,7 +16,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 API_URL = "https://commons.wikimedia.org/w/api.php"
-USER_AGENT = "LCBMobileNews/1.0 (editorial media resolver)"
+USER_AGENT = "LCBMobileNews/1.1 (https://github.com/tabuugroove-sys/lcbmobile)"
 ALLOWED_LICENSE_PREFIXES = ("CC BY ", "CC0", "Public domain")
 BLOCKED_TITLE_TERMS = {
     "album",
@@ -161,21 +162,31 @@ def fetch_licensed_artist_images(
         headers={"User-Agent": USER_AGENT},
     )
     try:
-        response = client.get(
-            API_URL,
-            params={
-                "action": "query",
-                "generator": "search",
-                "gsrsearch": f'"{query}" filetype:bitmap',
-                "gsrnamespace": "6",
-                "gsrlimit": "35",
-                "prop": "imageinfo",
-                "iiprop": "url|size|mime|extmetadata",
-                "iiurlwidth": "1600",
-                "format": "json",
-                "formatversion": "2",
-            },
-        )
+        params = {
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": f'"{query}" filetype:bitmap',
+            "gsrnamespace": "6",
+            "gsrlimit": "35",
+            "prop": "imageinfo",
+            "iiprop": "url|size|mime|extmetadata",
+            "iiurlwidth": "1600",
+            "format": "json",
+            "formatversion": "2",
+        }
+        response = None
+        for attempt in range(3):
+            response = client.get(API_URL, params=params)
+            if response.status_code not in {403, 429, 500, 502, 503, 504}:
+                break
+            if attempt < 2:
+                log.warning(
+                    "Commons API returned %d for %r; retrying",
+                    response.status_code,
+                    query,
+                )
+                time.sleep(1.5 * (attempt + 1))
+        assert response is not None
         response.raise_for_status()
         pages = response.json().get("query", {}).get("pages", [])
         candidates = [row for page in pages if (row := _candidate(page, query))]
