@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from src.editorial import is_music_news
+from src.editorial import find_known_music_act, is_music_news
 from src.models import NewsItem
 
 
@@ -42,6 +42,14 @@ class MusicFilterTests(unittest.TestCase):
 
     def test_allows_music_that_is_connected_to_a_movie(self) -> None:
         self.assertTrue(is_music_news(item("Lady Gaga lança música para novo filme")))
+
+    def test_finds_longest_known_music_act_for_media_search(self) -> None:
+        self.assertEqual(
+            find_known_music_act("Adam Levine fala sobre o Maroon 5"),
+            "adam levine",
+        )
+        self.assertEqual(find_known_music_act("Bloc Party lança disco"), "bloc party")
+        self.assertIsNone(find_known_music_act("Artista independente lança single"))
 
 
 if __name__ == "__main__":

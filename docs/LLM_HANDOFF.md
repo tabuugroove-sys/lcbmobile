@@ -4,7 +4,7 @@ Updated: 2026-09-01, America/Sao_Paulo.
 
 ## Start here
 
-- Source checkout: `/Users/a1111/Documents/Codex/2026-04-29/github/lcbmobile`
+- Source checkout: `/Users/a1111/Documents/Codex/2026-09-11/lcbmobile-production`
 - Repository: `tabuugroove-sys/lcbmobile`
 - Active branch: `claude/create-news-feed-yMBpb`
 - Last verified source commit: `4494e45`
@@ -12,10 +12,19 @@ Updated: 2026-09-01, America/Sao_Paulo.
 - Recheck runtime state before making a current operational claim. A commit,
   successful task exit or dashboard row is not proof of a YouTube publication.
 
-The project collects music-adjacent Brazilian entertainment news from RSS,
+The project collects Brazilian music news from RSS,
 deduplicates and scores candidates, generates a narrated vertical Short and
 publishes it through the YouTube Data API. Selection is intentionally kept near
 music, musicians, DJs, concerts, releases and personal drama involving artists.
+
+The regular Short renderer uses `cinematic_music_news_v1`: several verified
+Wikimedia Commons photographs when an exact known artist can be resolved,
+alternating framed/full compositions, short centered headlines, pt-BR
+subtitles, archive labels and a visible Creative Commons credit on the final
+scene. Only `Public domain`, `CC0` and `CC BY` media are accepted automatically;
+`CC BY-SA`, unclear rights and ambiguous identities are rejected. If no safe
+media is found, the renderer produces a graphic-only video rather than using an
+unverified RSS image.
 
 ## Current ownership model
 
@@ -41,6 +50,16 @@ The server currently uses `REWRITE_PROVIDER=template`, because the Anthropic
 credit balance and Gemini quota were unavailable during deployment. The
 template writer uses only RSS title, summary and source; it is conservative but
 less polished than an LLM rewrite.
+
+Editorial ranking keeps the music filter as a hard gate and then combines
+historical YouTube reaction, freshness, a known-artist signal and confirmed
+drama terms. Server `DRAMA_SIGNAL_WEIGHT=1.8`. Drama can change priority and
+the factual hook; it must never invent or intensify an unsupported claim.
+
+Automatic GrabCut is present only as an experimental path and remains disabled
+with `AUTO_CUTOUT_ENABLED=false`; automated masking was rejected in QA when a
+concert crowd could be mistaken for a subject. Framed-photo fallback is the
+current production-safe behavior.
 
 Voice and mix configuration:
 
@@ -128,7 +147,9 @@ For publication proof, find all of these together:
 
 ## Tests and known limits
 
-- Local source verification after review fixes: `32/32` unit tests passed.
+- Previous local source verification after review fixes: `32/32` unit tests passed.
+- Cinematic/selection targeted verification on 2026-09-11: `21/21` passed;
+  the pt-BR dry-run rendered six licensed images at 1080x1920, 30 fps, 30 s.
 - Windows targeted verification: `9/9` scheduler/template tests passed.
 - A clean Windows full `unittest discover` can fail the existing horizontal
   metadata test when generated `out/daily_legal_multinews/credits.txt` is not

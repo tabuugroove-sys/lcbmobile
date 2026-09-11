@@ -69,6 +69,7 @@ _KNOWN_MUSIC_ACTS = (
     "belo",
     "beyonce",
     "billie eilish",
+    "bloc party",
     "bruno mars",
     "caetano veloso",
     "calvin harris",
@@ -144,6 +145,13 @@ def _plain(text: str) -> str:
     return decomposed.encode("ascii", "ignore").decode("ascii").lower()
 
 
+def find_known_music_act(text: str) -> str | None:
+    """Return the longest known music-act name present in editorial text."""
+    plain = _plain(text)
+    matches = [name for name in _KNOWN_MUSIC_ACTS if name in plain]
+    return max(matches, key=len) if matches else None
+
+
 def is_music_news(item: NewsItem) -> bool:
     """Return whether a story belongs in a music-focused news feed.
 
@@ -156,7 +164,7 @@ def is_music_news(item: NewsItem) -> bool:
     has_music_subject = bool(tokens & _MUSIC_SUBJECTS) or any(
         phrase in text for phrase in _MUSIC_PHRASES
     )
-    has_known_act = any(name in text for name in _KNOWN_MUSIC_ACTS)
+    has_known_act = find_known_music_act(text) is not None
     has_screen_subject = bool(tokens & _SCREEN_TERMS) or any(
         phrase in text for phrase in _SCREEN_PHRASES
     )

@@ -147,7 +147,7 @@ def load_settings() -> Settings:
         analytics_enabled=_bool(os.getenv("ANALYTICS_ENABLED"), True),
         analytics_candidate_pool=_int(os.getenv("ANALYTICS_CANDIDATE_POOL"), 40),
         analytics_history_limit=_int(os.getenv("ANALYTICS_HISTORY_LIMIT"), 250),
-        drama_signal_weight=_float(os.getenv("DRAMA_SIGNAL_WEIGHT"), 0.9),
+        drama_signal_weight=_float(os.getenv("DRAMA_SIGNAL_WEIGHT"), 1.4),
         youtube_api_key=_str("YOUTUBE_API_KEY"),
         youtube_metrics_refresh_hours=_int(os.getenv("YOUTUBE_METRICS_REFRESH_HOURS"), 6),
         dry_run=_bool(os.getenv("DRY_RUN"), False),

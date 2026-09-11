@@ -1,103 +1,58 @@
-"""Generate a 1080x1920 vertical Short:
-
-- Background = blurred Ken-Burns-zoomed source image (or solid color fallback).
-- Overlay = bold on-screen text chunks rotating with the narration.
-- Audio = narration of the script_voiceover (pt-BR), provider-selectable
-  (ElevenLabs premium or gTTS fallback - see src/video/tts.py).
-
-Designed to run in a stock Python container without GPU. Requires `ffmpeg`
-available on PATH.
-"""
+"""Render a cinematic, source-traceable vertical music-news Short."""
 from __future__ import annotations
 
+import json
 import logging
 import math
+import os
 import re
 import subprocess
 import tempfile
 from pathlib import Path
 
-import httpx
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+import numpy as np
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 from moviepy.editor import (
     AudioFileClip,
     CompositeAudioClip,
     CompositeVideoClip,
     ImageClip,
-    TextClip,
+    concatenate_videoclips,
 )
 
 from ..config import settings
+from ..editorial import find_known_music_act
 from ..models import GeneratedAssets, NewsItem, RewrittenPost
+from .commons_media import LicensedImage, fetch_licensed_artist_images
 from .tts import get_tts_provider
 
 log = logging.getLogger(__name__)
 
 WIDTH, HEIGHT = 1080, 1920
+ACCENTS = ("#ff335c", "#ffd34d", "#29d3ff")
 DEFAULT_FONT_CANDIDATES = [
+    "C:/Windows/Fonts/arialbd.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "/Library/Fonts/Arial Bold.ttf",
-    "C:/Windows/Fonts/arialbd.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
 ]
+CONDENSED_FONT_CANDIDATES = [
+    "C:/Windows/Fonts/arialnb.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Narrow Bold.ttf",
+]
+MEAN_VOL_RE = re.compile(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB")
+SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
 
-def _find_font() -> str | None:
-    for path in DEFAULT_FONT_CANDIDATES:
-        if Path(path).exists():
-            return path
-    return None
+def _find_font(candidates: list[str]) -> str | None:
+    return next((path for path in candidates if Path(path).exists()), None)
 
 
-def _download_image(url: str, dest: Path) -> Path | None:
-    try:
-        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
-            resp = client.get(url)
-            resp.raise_for_status()
-            dest.write_bytes(resp.content)
-            return dest
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Image download failed (%s): %s", url, exc)
-        return None
-
-
-def _make_background(image_path: Path | None, out_path: Path) -> Path:
-    """Build a 1080x1920 blurred-cover background image."""
-    if image_path and image_path.exists():
-        try:
-            img = Image.open(image_path).convert("RGB")
-        except Exception:  # noqa: BLE001
-            img = None
-    else:
-        img = None
-
-    if img is None:
-        bg = Image.new("RGB", (WIDTH, HEIGHT), (18, 12, 28))
-    else:
-        # Cover-fit and blur for the background.
-        ratio = max(WIDTH / img.width, HEIGHT / img.height)
-        new_size = (int(img.width * ratio), int(img.height * ratio))
-        cover = img.resize(new_size, Image.LANCZOS)
-        left = (cover.width - WIDTH) // 2
-        top = (cover.height - HEIGHT) // 2
-        bg = cover.crop((left, top, left + WIDTH, top + HEIGHT))
-        bg = bg.filter(ImageFilter.GaussianBlur(radius=22))
-
-        # Foreground: same image fitted into a centered card.
-        card_w = int(WIDTH * 0.82)
-        card_h = int(card_w * img.height / img.width)
-        fg = img.resize((card_w, card_h), Image.LANCZOS)
-        bg.paste(fg, ((WIDTH - card_w) // 2, int(HEIGHT * 0.18)))
-
-    # Vignette / dark gradient at the bottom for legibility.
-    overlay = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    for i in range(400):
-        alpha = int(180 * (i / 400))
-        draw.rectangle([0, HEIGHT - 400 + i, WIDTH, HEIGHT - 399 + i], fill=(0, 0, 0, alpha))
-    bg = Image.alpha_composite(bg.convert("RGBA"), overlay).convert("RGB")
-    bg.save(out_path, "JPEG", quality=88)
-    return out_path
+def _font(path: str | None, size: int) -> ImageFont.ImageFont:
+    if path:
+        return ImageFont.truetype(path, size=size)
+    return ImageFont.load_default(size=size)
 
 
 def _tts(text: str, lang: str, dest: Path) -> Path:
@@ -106,43 +61,29 @@ def _tts(text: str, lang: str, dest: Path) -> Path:
     return provider.synthesize(text, dest, lang=lang)
 
 
-def _text_clip(text: str, duration: float, font: str | None) -> CompositeVideoClip:
-    kwargs = dict(
-        txt=text.upper(),
-        fontsize=92,
-        color="white",
-        stroke_color="black",
-        stroke_width=4,
-        method="caption",
-        size=(int(WIDTH * 0.86), None),
-        align="center",
-    )
-    if font:
-        kwargs["font"] = font
-    clip = TextClip(**kwargs).set_duration(duration).set_position(("center", int(HEIGHT * 0.66)))
-    return clip
-
-
-_MEAN_VOL_RE = re.compile(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB")
-
-
 def _mean_volume_db(path: str) -> float | None:
-    """Average (RMS) level of an audio file in dBFS, via ffmpeg volumedetect.
-
-    Returns None if ffmpeg fails or the value can't be parsed. Used as a
-    loudness proxy to level the music bed relative to the narration without
-    moviepy's to_soundarray (which breaks on newer numpy).
-    """
     try:
         proc = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-nostats", "-i", path,
-             "-af", "volumedetect", "-f", "null", "-"],
-            capture_output=True, text=True, timeout=120,
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-nostats",
+                "-i",
+                path,
+                "-af",
+                "volumedetect",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
     except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover
         log.warning("volumedetect failed for %s: %s", path, exc)
         return None
-    match = _MEAN_VOL_RE.search(proc.stderr or "")
+    match = MEAN_VOL_RE.search(proc.stderr or "")
     return float(match.group(1)) if match else None
 
 
@@ -157,16 +98,11 @@ def _mix_voice_with_background(
         return voice
 
     music = AudioFileClip(str(music_path))
-    # Loop the bed to cover the full narration instead of truncating the video
-    # (the track is a short loop; a longer voiceover must not cut the Short).
     if music.duration < duration:
         from moviepy.audio.fx.audio_loop import audio_loop
 
         music = audio_loop(music, duration=duration)
     music = music.subclip(0, duration).set_duration(duration)
-
-    # Level the bed RELATIVE TO THE VOICE: target N dB below the narration, so
-    # the mix is consistent regardless of how hot the TTS or the track is.
     voice_path = voice_path or getattr(voice, "filename", None)
     voice_db = _mean_volume_db(voice_path) if voice_path else None
     music_db = _mean_volume_db(str(music_path))
@@ -174,19 +110,458 @@ def _mix_voice_with_background(
         gain_db = (voice_db - music_db) + settings.background_music_db_under_voice
         gain = (10 ** (gain_db / 20.0)) * trim
     else:
-        # Fallback: honor BACKGROUND_MUSIC_VOLUME directly when RMS probing fails.
         gain = trim
         log.warning("Could not measure levels; using fallback music gain %.3f", gain)
     music = music.volumex(gain)
     log.info(
-        "Background music: %s -> %.1f dB under voice (gain=%.3f, voice=%s dB, music=%s dB)",
+        "Background music: %s -> %.1f dB under voice (gain=%.3f)",
         music_path.name,
         settings.background_music_db_under_voice,
         gain,
-        voice_db,
-        music_db,
     )
     return CompositeAudioClip([music, voice]).set_duration(duration)
+
+
+def _fit_cover(image: Image.Image, size: tuple[int, int], focus_y: float = 0.5) -> Image.Image:
+    image = image.convert("RGB")
+    ratio = max(size[0] / image.width, size[1] / image.height)
+    resized = image.resize(
+        (round(image.width * ratio), round(image.height * ratio)),
+        Image.Resampling.LANCZOS,
+    )
+    left = max(0, (resized.width - size[0]) // 2)
+    top = round(max(0, resized.height - size[1]) * max(0.0, min(1.0, focus_y)))
+    return resized.crop((left, top, left + size[0], top + size[1]))
+
+
+def _gradient(accent: str) -> Image.Image:
+    rgb = tuple(int(accent[index : index + 2], 16) for index in (1, 3, 5))
+    array = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+    for y in range(HEIGHT):
+        factor = y / (HEIGHT - 1)
+        array[y, :, 0] = int(12 + rgb[0] * 0.22 * (1 - factor))
+        array[y, :, 1] = int(9 + rgb[1] * 0.12 * (1 - factor))
+        array[y, :, 2] = int(20 + rgb[2] * 0.18 * (1 - factor))
+    return Image.fromarray(array, "RGB").convert("RGBA")
+
+
+def _add_filmstrip(image: Image.Image, accent: str) -> None:
+    draw = ImageDraw.Draw(image, "RGBA")
+    color = tuple(int(accent[index : index + 2], 16) for index in (1, 3, 5)) + (38,)
+    for x in (-270, 830):
+        draw.rounded_rectangle((x, -140, x + 410, 2070), 24, outline=color, width=25)
+        for y in range(-100, 2020, 145):
+            draw.rounded_rectangle((x + 18, y, x + 82, y + 98), 10, fill=color)
+            draw.rounded_rectangle((x + 328, y, x + 392, y + 98), 10, fill=color)
+
+
+def _wrap_text(
+    text: str, draw: ImageDraw.ImageDraw, font: ImageFont.ImageFont, max_width: int
+) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    for word in text.split():
+        candidate = f"{current} {word}".strip()
+        if current and draw.textbbox((0, 0), candidate, font=font)[2] > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _fit_headline_font(
+    lines: list[str], draw: ImageDraw.ImageDraw, font_path: str | None, max_width: int
+) -> ImageFont.ImageFont:
+    size = 86
+    font = _font(font_path, size)
+    while max(draw.textbbox((0, 0), line, font=font)[2] for line in lines) > max_width and size > 38:
+        size -= 3
+        font = _font(font_path, size)
+    return font
+
+
+def _headline_lines(text: str) -> list[str]:
+    words = text.split()
+    if len(words) <= 4:
+        return [text]
+    line_count = 2 if len(words) <= 9 else 3
+    lines = []
+    for index in range(line_count):
+        start = round(index * len(words) / line_count)
+        end = round((index + 1) * len(words) / line_count)
+        lines.append(" ".join(words[start:end]))
+    return lines
+
+
+def _draw_centered(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[int, int],
+    text: str,
+    font: ImageFont.ImageFont,
+    *,
+    fill: str = "white",
+    stroke: int = 4,
+) -> None:
+    draw.text(
+        xy,
+        text,
+        font=font,
+        fill=fill,
+        anchor="mm",
+        align="center",
+        stroke_width=stroke,
+        stroke_fill="#100b13",
+    )
+
+
+def _try_cutout(source: Path, target: Path) -> Image.Image | None:
+    """Create a foreground alpha; return None when the mask is not credible."""
+    try:
+        import cv2
+    except ImportError:
+        log.warning("OpenCV unavailable; using framed-photo layouts only")
+        return None
+    bgr = cv2.imread(str(source), cv2.IMREAD_COLOR)
+    if bgr is None:
+        return None
+    height, width = bgr.shape[:2]
+    if height < width * 1.2:
+        log.info("Cutout skipped: source is not a portrait")
+        return None
+    border = np.concatenate(
+        [
+            bgr[: max(4, height // 40), :, :].reshape(-1, 3),
+            bgr[-max(4, height // 40) :, :, :].reshape(-1, 3),
+            bgr[:, : max(4, width // 40), :].reshape(-1, 3),
+            bgr[:, -max(4, width // 40) :, :].reshape(-1, 3),
+        ]
+    )
+    if float(border.std(axis=0).mean()) > 58.0:
+        log.info("Cutout skipped: border is too visually complex")
+        return None
+    mask = np.zeros((height, width), np.uint8)
+    background = np.zeros((1, 65), np.float64)
+    foreground = np.zeros((1, 65), np.float64)
+    margin_x = max(8, round(width * 0.025))
+    margin_y = max(8, round(height * 0.012))
+    rectangle = (margin_x, margin_y, width - 2 * margin_x, height - 2 * margin_y)
+    try:
+        cv2.grabCut(
+            bgr,
+            mask,
+            rectangle,
+            background,
+            foreground,
+            7,
+            cv2.GC_INIT_WITH_RECT,
+        )
+    except cv2.error:
+        return None
+    alpha = np.where(
+        (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0
+    ).astype(np.uint8)
+    foreground_ratio = float(np.count_nonzero(alpha)) / float(alpha.size)
+    if not 0.10 <= foreground_ratio <= 0.82:
+        log.warning("Cutout rejected: implausible foreground ratio %.3f", foreground_ratio)
+        return None
+    alpha = cv2.morphologyEx(alpha, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+    alpha = cv2.GaussianBlur(alpha, (0, 0), 1.7)
+    rgba = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGBA)
+    rgba[:, :, 3] = alpha
+    result = Image.fromarray(rgba)
+    if bbox := result.getbbox():
+        result = result.crop(bbox)
+    result.save(target)
+    return result
+
+
+def _subtitle_chunks(text: str, count: int) -> list[str]:
+    sentences = [part.strip() for part in SENTENCE_RE.split(text) if part.strip()]
+    if len(sentences) >= count:
+        chunks = sentences[: count - 1]
+        chunks.append(" ".join(sentences[count - 1 :]))
+        return chunks
+    words = text.split()
+    chunks = []
+    for index in range(count):
+        start = round(index * len(words) / count)
+        end = round((index + 1) * len(words) / count)
+        chunks.append(" ".join(words[start:end]))
+    return chunks
+
+
+def _headline_chunks(post: RewrittenPost, count: int) -> list[str]:
+    source = [post.headline, *post.on_screen_text]
+    clean: list[str] = []
+    for value in source:
+        value = re.sub(r"\s+", " ", value or "").strip()
+        if value and value.casefold() not in {item.casefold() for item in clean}:
+            clean.append(value)
+    if not clean:
+        clean = ["NOTÍCIA DA MÚSICA"]
+    return [clean[index % len(clean)] for index in range(count)]
+
+
+def _creator_credit(media: list[LicensedImage]) -> str:
+    creators: list[str] = []
+    for asset in media:
+        creator = re.sub(r"\s+", " ", asset.creator).strip()
+        if creator and creator.casefold() not in {item.casefold() for item in creators}:
+            creators.append(creator)
+    joined = " • ".join(creators[:4])
+    return f"FOTOS: {joined} / CC BY" if joined else ""
+
+
+def _make_scene(
+    *,
+    index: int,
+    count: int,
+    headline: str,
+    subtitle: str,
+    source_name: str,
+    media: LicensedImage | None,
+    cutout: Image.Image | None,
+    credits: str,
+    output: Path,
+) -> Path:
+    accent = ACCENTS[index % len(ACCENTS)]
+    canvas = _gradient(accent)
+    _add_filmstrip(canvas, accent)
+    draw = ImageDraw.Draw(canvas, "RGBA")
+
+    source_image: Image.Image | None = None
+    if media:
+        try:
+            source_image = Image.open(media.path).convert("RGB")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Cannot open licensed media %s: %s", media.path, exc)
+
+    if source_image:
+        background = _fit_cover(source_image, (WIDTH, HEIGHT), 0.4)
+        background = ImageEnhance.Color(background).enhance(0.50)
+        background = background.filter(ImageFilter.GaussianBlur(24)).convert("RGBA")
+        background.putalpha(105)
+        canvas.alpha_composite(background)
+    draw.rectangle((0, 0, WIDTH, HEIGHT), fill=(4, 4, 9, 62))
+
+    layout = "cutout" if cutout is not None and index == 1 else ("card" if index % 2 else "full")
+    if layout == "cutout" and cutout is not None:
+        person = cutout.copy()
+        target_height = 1330
+        ratio = target_height / person.height
+        person = person.resize(
+            (round(person.width * ratio), target_height), Image.Resampling.LANCZOS
+        )
+        if person.width > 1000:
+            ratio = 1000 / person.width
+            person = person.resize(
+                (1000, round(person.height * ratio)), Image.Resampling.LANCZOS
+            )
+        alpha = person.getchannel("A")
+        shadow = Image.new("RGBA", person.size, (0, 0, 0, 190))
+        shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(14)))
+        x = WIDTH - person.width + 70
+        y = 270
+        canvas.alpha_composite(shadow, (x + 20, y + 28))
+        canvas.alpha_composite(person, (x, y))
+    elif source_image and layout == "card":
+        picture = _fit_cover(source_image, (760, 1050), 0.34)
+        card = Image.new("RGBA", (820, 1110), (248, 246, 242, 255))
+        card.alpha_composite(picture.convert("RGBA"), (30, 30))
+        card = card.rotate(
+            -2.0 if index % 4 == 1 else 2.0,
+            expand=True,
+            resample=Image.Resampling.BICUBIC,
+        )
+        shadow = Image.new("RGBA", card.size, (0, 0, 0, 170)).filter(
+            ImageFilter.GaussianBlur(18)
+        )
+        canvas.alpha_composite(shadow, ((WIDTH - card.width) // 2 + 20, 330))
+        canvas.alpha_composite(card, ((WIDTH - card.width) // 2, 300))
+    elif source_image:
+        picture = _fit_cover(source_image, (860, 1180), 0.34)
+        x, y = 110, 245
+        shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle(
+            (x + 20, y + 28, x + 880, y + 1208), 22, fill=(0, 0, 0, 150)
+        )
+        canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(20)))
+        canvas.alpha_composite(picture.convert("RGBA"), (x, y))
+        draw.rounded_rectangle(
+            (x, y, x + 860, y + 1180), 18, outline=(255, 255, 255, 185), width=5
+        )
+    else:
+        draw.ellipse((180, 310, 900, 1030), outline=accent, width=18)
+        draw.ellipse((250, 380, 830, 960), outline=(255, 255, 255, 34), width=3)
+
+    bold_path = _find_font(DEFAULT_FONT_CANDIDATES)
+    narrow_path = _find_font(CONDENSED_FONT_CANDIDATES) or bold_path
+    draw = ImageDraw.Draw(canvas, "RGBA")
+    draw.rounded_rectangle(
+        (60, 66, 392, 130), 20, fill=(10, 9, 14, 225), outline=accent, width=3
+    )
+    draw.text(
+        (80, 98),
+        "MÚSICA  •  AGORA",
+        font=_font(bold_path, 27),
+        fill="white",
+        anchor="lm",
+    )
+    badge = "FOTOS DE ARQUIVO" if source_image else "ARTE EDITORIAL"
+    draw.rounded_rectangle((760, 66, 1020, 130), 20, fill=(10, 9, 14, 225))
+    draw.text(
+        (890, 98),
+        badge,
+        font=_font(bold_path, 20),
+        fill=(232, 232, 232),
+        anchor="mm",
+    )
+
+    headline = headline.upper()
+    headline_lines = _headline_lines(headline)
+    headline_font = _fit_headline_font(headline_lines, draw, narrow_path, 930)
+    line_height = getattr(headline_font, "size", 60) + 10
+    title_y = 820 - (len(headline_lines) - 1) * line_height // 2
+    for line_no, line in enumerate(headline_lines[:3]):
+        _draw_centered(
+            draw,
+            (WIDTH // 2, title_y + line_no * line_height),
+            line,
+            headline_font,
+            stroke=6,
+        )
+
+    subtitle_font = _font(bold_path, 42)
+    subtitle_lines = _wrap_text(subtitle, draw, subtitle_font, 900)
+    while len(subtitle_lines) > 3 and getattr(subtitle_font, "size", 34) > 34:
+        subtitle_font = _font(bold_path, getattr(subtitle_font, "size", 37) - 2)
+        subtitle_lines = _wrap_text(subtitle, draw, subtitle_font, 900)
+    sub_size = getattr(subtitle_font, "size", 40)
+    box_height = 50 + len(subtitle_lines) * (sub_size + 12)
+    box_top = 1645 - box_height // 2
+    draw.rounded_rectangle(
+        (60, box_top, 1020, box_top + box_height),
+        22,
+        fill=(5, 5, 8, 224),
+        outline=(255, 255, 255, 55),
+        width=2,
+    )
+    for line_no, line in enumerate(subtitle_lines):
+        _draw_centered(
+            draw,
+            (WIDTH // 2, box_top + 42 + line_no * (sub_size + 12)),
+            line,
+            subtitle_font,
+            stroke=2,
+        )
+
+    if index == count - 1 and credits:
+        credit_font = _font(bold_path, 19)
+        credit_lines = _wrap_text(credits.upper(), draw, credit_font, 900)
+        for line_no, line in enumerate(credit_lines[:2]):
+            _draw_centered(
+                draw,
+                (WIDTH // 2, 1780 + line_no * 29),
+                line,
+                credit_font,
+                fill="#dedede",
+                stroke=1,
+            )
+
+    draw.rectangle((0, 1888, WIDTH, HEIGHT), fill=(6, 5, 10, 238))
+    draw.rectangle((0, 1888, round(WIDTH * (index + 1) / count), 1902), fill=accent)
+    source_label = re.sub(r"\s+", " ", source_name).strip().upper()[:48]
+    draw.text(
+        (60, 1911),
+        f"FONTE DA NOTÍCIA: {source_label}",
+        font=_font(bold_path, 22),
+        fill=(230, 230, 230),
+        anchor="ls",
+    )
+    draw.text(
+        (1020, 1911),
+        f"{index + 1:02d}/{count:02d}",
+        font=_font(bold_path, 22),
+        fill=(230, 230, 230),
+        anchor="rs",
+    )
+    canvas.convert("RGB").save(output, "JPEG", quality=92)
+    return output
+
+
+def _build_scene_images(
+    item: NewsItem,
+    post: RewrittenPost,
+    media: list[LicensedImage],
+    output_dir: Path,
+) -> list[Path]:
+    scene_count = min(7, max(5, len(media)))
+    subtitles = _subtitle_chunks(post.script_voiceover, scene_count)
+    headlines = _headline_chunks(post, scene_count)
+    cutout = None
+    auto_cutout = os.getenv("AUTO_CUTOUT_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if auto_cutout:
+        for asset in sorted(
+            media, key=lambda row: row.height / max(row.width, 1), reverse=True
+        ):
+            cutout = _try_cutout(Path(asset.path), output_dir / "subject-cutout.png")
+            if cutout is not None:
+                break
+    credits = _creator_credit(media)
+    scenes = []
+    for index in range(scene_count):
+        asset = media[index % len(media)] if media else None
+        scenes.append(
+            _make_scene(
+                index=index,
+                count=scene_count,
+                headline=headlines[index],
+                subtitle=subtitles[index],
+                source_name=item.source_name,
+                media=asset,
+                cutout=cutout,
+                credits=credits,
+                output=output_dir / f"scene-{index + 1:02d}.jpg",
+            )
+        )
+    return scenes
+
+
+def _write_render_manifest(
+    *,
+    base: Path,
+    item: NewsItem,
+    artist_query: str | None,
+    media: list[LicensedImage],
+    scenes: list[Path],
+    duration: float,
+) -> None:
+    (base / "render_manifest.json").write_text(
+        json.dumps(
+            {
+                "style": "cinematic_music_news_v1",
+                "language": settings.content_lang,
+                "source_url": item.url,
+                "artist_query": artist_query,
+                "licensed_media_count": len(media),
+                "rights_status": "verified" if media else "graphic_only_no_external_media",
+                "scene_count": len(scenes),
+                "duration_seconds": round(duration, 3),
+                "auto_publish_decision": "owned_by_pipeline_not_renderer",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n"
+    )
 
 
 def build_short(
@@ -200,56 +575,40 @@ def build_short(
     base = output_dir / item.fingerprint().replace("/", "_").replace(":", "_")[-80:]
     base.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        image_path: Path | None = None
-        if item.image_url:
-            image_path = _download_image(item.image_url, tmp_path / "src.jpg")
+    artist_query = find_known_music_act(f"{item.title} {item.summary}")
+    media_dir = base / "licensed_media"
+    media = fetch_licensed_artist_images(artist_query, media_dir, limit=6)
 
-        bg_path = _make_background(image_path, base / "bg.jpg")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp = Path(temp_dir)
         audio_path = _tts(post.script_voiceover, lang, base / "voice.mp3")
-
-        audio = AudioFileClip(str(audio_path))
-        # Stay strictly within the audio file: moviepy 1.x raises IOError if
-        # the composite duration runs even a hair past the actual audio frames.
-        # We trim 0.05s off the reported duration as a safety margin against
-        # mp3 frame-boundary off-by-ones.
-        safe_audio_duration = max(0.5, audio.duration - 0.05)
-        audio = audio.set_duration(safe_audio_duration)
+        voice = AudioFileClip(str(audio_path))
+        safe_audio_duration = max(0.5, voice.duration - 0.05)
         duration = max(8.0, min(60.0, safe_audio_duration))
-        audio = _mix_voice_with_background(audio, duration, voice_path=str(audio_path))
+        if 29.9 <= duration < 30.0:
+            duration = 30.0
+        voice = voice.set_duration(duration)
+        audio = _mix_voice_with_background(voice, duration, voice_path=str(audio_path))
 
-        bg_clip = ImageClip(str(bg_path)).set_duration(duration)
-        # Subtle Ken-Burns zoom for life.
-        bg_clip = bg_clip.resize(lambda t: 1 + 0.04 * math.sin(t / duration * math.pi))
-
-        font = _find_font()
-        chunks = post.on_screen_text or [post.headline]
-        per_chunk = duration / max(1, len(chunks))
-        text_clips = [
-            _text_clip(chunk, per_chunk, font).set_start(i * per_chunk)
-            for i, chunk in enumerate(chunks)
-        ]
-
-        # Source attribution badge in the corner.
-        badge_kwargs = dict(
-            txt=f"via {item.source_name}",
-            fontsize=36,
-            color="white",
-            method="label",
-        )
-        if font:
-            badge_kwargs["font"] = font
-        badge = (
-            TextClip(**badge_kwargs)
-            .set_duration(duration)
-            .margin(left=20, right=20, top=10, bottom=10, color=(0, 0, 0), opacity=0.6)
-            .set_position(("center", int(HEIGHT * 0.06)))
-        )
-
-        composite = CompositeVideoClip(
-            [bg_clip, badge, *text_clips], size=(WIDTH, HEIGHT)
-        ).set_audio(audio).set_duration(duration)
+        scene_paths = _build_scene_images(item, post, media, base)
+        per_scene = duration / len(scene_paths)
+        clips = []
+        for index, scene_path in enumerate(scene_paths):
+            still = ImageClip(str(scene_path)).set_duration(per_scene)
+            direction = 1 if index % 2 else -1
+            animated = still.resize(
+                lambda time, d=per_scene: 1.0 + 0.025 * min(1.0, time / max(d, 0.1))
+            ).set_position(
+                lambda time, d=per_scene, sign=direction: (
+                    "center",
+                    int(-8 + sign * 6 * math.sin(time / max(d, 0.1) * math.pi)),
+                )
+            )
+            clips.append(
+                CompositeVideoClip([animated], size=(WIDTH, HEIGHT)).set_duration(per_scene)
+            )
+        composite = concatenate_videoclips(clips, method="compose")
+        composite = composite.set_audio(audio).set_duration(duration)
 
         video_path = base / "short.mp4"
         composite.write_videofile(
@@ -262,14 +621,19 @@ def build_short(
             verbose=False,
             logger=None,
         )
-
-        # Thumbnail = first frame (RGBA->RGB for JPEG compat).
         thumb_path = base / "thumb.jpg"
-        frame = composite.get_frame(0.3)
-        thumb_img = Image.fromarray(frame)
-        if thumb_img.mode != "RGB":
-            thumb_img = thumb_img.convert("RGB")
-        thumb_img.save(str(thumb_path), "JPEG", quality=88)
+        Image.open(scene_paths[0]).convert("RGB").save(thumb_path, "JPEG", quality=90)
+        _write_render_manifest(
+            base=base,
+            item=item,
+            artist_query=artist_query,
+            media=media,
+            scenes=scene_paths,
+            duration=duration,
+        )
+        composite.close()
+        for clip in clips:
+            clip.close()
 
     return GeneratedAssets(
         video_path=str(video_path),

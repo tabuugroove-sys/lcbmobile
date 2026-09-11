@@ -1,9 +1,10 @@
 # LCB Mobile — pipeline de fofoca BR
 
-Pipeline automatizado em Python para um canal de "imprensa amarela" focado em
-**shows, novelas, celebridades e cena DJ/eletrônica do Brasil**. Lê fontes
-brasileiras, reescreve no estilo tabloide com a Anthropic API, gera Shorts
-verticais (1080×1920) e publica em todos os canais com tráfego orgânico.
+Pipeline automatizado em Python para notícias de **música, artistas, shows,
+festivais e cena DJ/eletrônica**, incluindo a vida pessoal dos músicos. Lê fontes
+brasileiras, mantém somente pautas ligadas à música, ranqueia potencial de
+interesse sem inventar drama, gera Shorts verticais em pt-BR (1080×1920) e
+publica nos canais configurados.
 
 ```
 RSS (Quem, Ego, Extra, TV Foco, Hugo Gloss, Léo Dias, House Mag, Mixmag BR)
@@ -99,7 +100,9 @@ outros.
 Antes de escolher a notícia do run, o pipeline atualiza métricas dos Shorts já
 publicados no YouTube (`views`, `likes`, `comments`) e ranqueia os candidatos de
 RSS por fonte, categoria e palavras do título que historicamente performaram
-melhor. Se ainda houver pouca amostra, ele mantém a ordem normal do RSS.
+melhor. Frescor, presença de um artista conhecido e sinais factuais de conflito,
+separação, saúde, cancelamento, processo ou escândalo entram no score. Se ainda
+houver pouca amostra, o cold start usa esses sinais junto com a ordem do RSS.
 
 Variáveis úteis:
 
@@ -110,6 +113,19 @@ Variáveis úteis:
 | `ANALYTICS_HISTORY_LIMIT` | Quantos posts antigos entram no aprendizado |
 | `YOUTUBE_API_KEY` | Opcional; busca métricas públicas sem depender do OAuth |
 | `YOUTUBE_METRICS_REFRESH_HOURS` | Intervalo mínimo para atualizar métricas |
+| `DRAMA_SIGNAL_WEIGHT` | Peso adicional para drama confirmado na fonte |
+
+## Visual dos Shorts regulares
+
+O template `cinematic_music_news_v1` alterna fotos em tela cheia e cartões,
+headlines curtas, legendas em pt-BR, movimento leve e créditos no quadro final.
+Ele pesquisa várias fotos pelo nome exato do artista no Wikimedia Commons e
+aceita automaticamente apenas `Public domain`, `CC0` e `CC BY`. Identidade
+ambígua, `CC BY-SA` e direitos não verificados são bloqueados. Quando não há
+foto segura, o vídeo usa arte editorial sem imagem externa.
+
+`AUTO_CUTOUT_ENABLED` permanece `false`: a composição recorre a cartões quando
+a máscara automática não pode ser confiável.
 
 ## Respostas automáticas no YouTube
 

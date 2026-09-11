@@ -42,7 +42,9 @@ texto-fonte. Se a fonte nao confirma algo, use linguagem de rumor ("teria", \
 
 Idioma: portugues brasileiro coloquial, com girias atuais e emojis pontuais.
 Publico: jovens 18-35, consumidores de Shorts/Reels/TikTok.
-Foco editorial: shows, novelas, BBB, fofocas de famosos, DJs/produtores e festas no Brasil.
+Foco editorial: musica, artistas, DJs, bandas, shows, festivais, lancamentos e a vida pessoal de quem trabalha com musica. Cinema, novela e BBB so entram quando o fato principal for musical.
+
+Quando a fonte confirmar conflito, separacao, choro, problema de saude, cancelamento, processo, prisao, morte ou escandalo, abra com esse fato concreto. Priorize o impacto humano e a tensao real, sem exagerar gravidade, atribuir culpa ou transformar rumor em certeza.
 
 Cobertura DJ/eletronica e prioridade igual a vocalistas:
 - Quando a fonte for sobre DJ, produtor, festival/rave, line-up, lancamento de \

@@ -11,6 +11,12 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 _CATEGORIES = {"fofoca", "celebridades", "dj", "televisao", "geral"}
+_DRAMA_RE = re.compile(
+    r"\b(acidente|acusad[oa]|barraco|briga|cancelad[oa]|chora|chorou|crise|"
+    r"desabafa|divorcio|escandalo|grave|hospital|internad[oa]|luto|morreu|"
+    r"morte|pres[oa]|processad[oa]|separacao|surto|termino|traicao|treta)\b",
+    re.IGNORECASE,
+)
 
 
 def _plain(value: str) -> str:
@@ -43,7 +49,12 @@ def rewrite_via_template(item: NewsItem) -> RewrittenPost:
     sentences = [part.strip() for part in _SENTENCE_RE.split(summary) if part.strip()]
     facts = " ".join(sentences[:2])
 
-    intro = f"Atencao para esta noticia da musica: {title}."
+    is_drama = bool(_DRAMA_RE.search(f"{title} {summary}"))
+    intro = (
+        f"O mundo da musica parou com esta noticia: {title}."
+        if is_drama
+        else f"Atencao para esta noticia da musica: {title}."
+    )
     if facts and facts.casefold() not in title.casefold():
         script = f"{intro} {facts}"
     else:
@@ -67,7 +78,12 @@ def rewrite_via_template(item: NewsItem) -> RewrittenPost:
             f"\n\nFonte: {item.source_name}"
         ),
         script_voiceover=script,
-        on_screen_text=[headline, "Noticia da musica", "Veja os detalhes", "Fonte confirmada"],
+        on_screen_text=[
+            headline,
+            "O que aconteceu" if is_drama else "Noticia da musica",
+            "Caso ganha repercussao" if is_drama else "Veja os detalhes",
+            "Fonte confirmada",
+        ],
         hashtags=hashtags,
         category=category,
     )

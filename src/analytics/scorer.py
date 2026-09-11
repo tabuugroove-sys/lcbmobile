@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from statistics import mean
 
 from ..config import settings
-from ..editorial import is_music_news
+from ..editorial import find_known_music_act, is_music_news
 from ..models import NewsItem
 from ..storage import Store
 
@@ -56,6 +56,10 @@ _DRAMA_TERMS = {
     "ameaca",
     "ameacado",
     "ameacada",
+    "acusacao",
+    "acusado",
+    "acusada",
+    "barraco",
     "briga",
     "cancelado",
     "cancelada",
@@ -68,12 +72,16 @@ _DRAMA_TERMS = {
     "desaba",
     "desabafa",
     "desespero",
+    "demissao",
+    "divorcio",
     "doenca",
     "doente",
     "dor",
     "emergencia",
     "enterro",
     "escandalo",
+    "falencia",
+    "faliu",
     "exposto",
     "exposta",
     "grave",
@@ -92,25 +100,34 @@ _DRAMA_TERMS = {
     "preso",
     "presa",
     "processo",
+    "processado",
+    "processada",
     "revoltado",
     "revoltada",
     "separacao",
+    "surto",
     "termino",
     "tragedia",
     "traicao",
     "treta",
+    "vaiado",
+    "vaiada",
 }
 
 _DRAMA_PHRASES = (
     "aos prantos",
     "climao",
     "estado grave",
+    "fim do casamento",
     "foi preso",
     "foi presa",
     "foi internado",
     "foi internada",
     "passa mal",
     "passou mal",
+    "quebra o silencio",
+    "show cancelado",
+    "troca de farpas",
     "perdeu tudo",
     "risco de morte",
 )
@@ -170,13 +187,18 @@ def _cold_start_scores(pool: list[NewsItem]) -> list[tuple[NewsItem, float, str]
     for idx, item in enumerate(pool):
         freshness = _freshness_score(item)
         drama = _drama_score(item)
+        star = 1.0 if find_known_music_act(f"{item.title} {item.summary}") else 0.0
         rss_order = 1.0 - (idx / max(len(pool), 1))
         score = (
             0.60 * rss_order
             + 0.75 * freshness
             + settings.drama_signal_weight * drama
+            + 0.35 * star
         )
-        reason = f"rss={rss_order:.2f} fresh={freshness:.2f} drama={drama:.2f}"
+        reason = (
+            f"rss={rss_order:.2f} fresh={freshness:.2f} "
+            f"drama={drama:.2f} star={star:.2f}"
+        )
         scored.append((item, score, reason))
     scored.sort(key=lambda row: row[1], reverse=True)
     return scored
@@ -246,6 +268,7 @@ def select_best_candidates(
         token_part = _avg(token_values, baseline)
         freshness = _freshness_score(item)
         drama = _drama_score(item)
+        star = 1.0 if find_known_music_act(f"{item.title} {item.summary}") else 0.0
 
         score = (
             0.45 * source_part
@@ -253,10 +276,12 @@ def select_best_candidates(
             + 0.20 * token_part
             + 0.75 * freshness
             + settings.drama_signal_weight * drama
+            + 0.35 * star
         )
         reason = (
             f"source={source_part:.2f} category={category_part:.2f} "
-            f"tokens={token_part:.2f} fresh={freshness:.2f} drama={drama:.2f}"
+            f"tokens={token_part:.2f} fresh={freshness:.2f} "
+            f"drama={drama:.2f} star={star:.2f}"
         )
         scored.append((item, score, reason))
 
