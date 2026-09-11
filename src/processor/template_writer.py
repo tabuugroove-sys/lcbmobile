@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import re
 
+from ..editorial import find_known_music_act
 from ..models import NewsItem, RewrittenPost
 
 
@@ -17,10 +18,15 @@ _DRAMA_RE = re.compile(
     r"morte|pres[oa]|processad[oa]|separacao|surto|termino|traicao|treta)\b",
     re.IGNORECASE,
 )
+_SITE_CTA_RE = re.compile(
+    r"\b(?:veja|assista)(?:\s+o)?\s+v[ií]deo(?:\s+do\s+momento)?[.!;:]?",
+    re.IGNORECASE,
+)
 
 
 def _plain(value: str) -> str:
-    return _SPACE_RE.sub(" ", _TAG_RE.sub(" ", html.unescape(value or ""))).strip()
+    plain = _SPACE_RE.sub(" ", _TAG_RE.sub(" ", html.unescape(value or ""))).strip()
+    return _SPACE_RE.sub(" ", _SITE_CTA_RE.sub(" ", plain)).strip(" .;:")
 
 
 def _clip_words(value: str, limit: int) -> str:
@@ -40,6 +46,24 @@ def _clip_chars(value: str, limit: int) -> str:
     if " " in candidate:
         candidate = candidate.rsplit(" ", 1)[0]
     return candidate.rstrip(".,;:") + "..."
+
+
+def _screen_beats(title: str, summary_sentences: list[str]) -> list[str]:
+    """Build short factual overlays instead of repeating full RSS sentences."""
+    artist = find_known_music_act(f"{title} {' '.join(summary_sentences)}")
+    seeds = [artist or ""]
+    seeds.extend(part.strip(" .;:'\"") for part in re.split(r"[,;:–—]", title))
+    seeds.extend(summary_sentences[:2])
+    seeds.append("Fonte confirmada")
+
+    beats: list[str] = []
+    for seed in seeds:
+        beat = _clip_words(_plain(seed), 4).rstrip(".")
+        if beat and beat.casefold() not in {item.casefold() for item in beats}:
+            beats.append(beat)
+        if len(beats) >= 5:
+            break
+    return beats or ["Notícia da música"]
 
 
 def rewrite_via_template(item: NewsItem) -> RewrittenPost:
@@ -78,12 +102,7 @@ def rewrite_via_template(item: NewsItem) -> RewrittenPost:
             f"\n\nFonte: {item.source_name}"
         ),
         script_voiceover=script,
-        on_screen_text=[
-            headline,
-            "O que aconteceu" if is_drama else "Noticia da musica",
-            "Caso ganha repercussao" if is_drama else "Veja os detalhes",
-            "Fonte confirmada",
-        ],
+        on_screen_text=_screen_beats(title, sentences),
         hashtags=hashtags,
         category=category,
     )

@@ -59,6 +59,28 @@ class TemplateWriterTests(unittest.TestCase):
         self.assertTrue(post.headline.endswith("..."))
         self.assertNotIn(" alb...", post.headline)
 
+    def test_removes_source_video_cta_and_builds_short_visual_beats(self) -> None:
+        item = NewsItem(
+            source_id="rss",
+            source_name="Fonte",
+            category="musica",
+            url="https://example.com/jota",
+            title=(
+                "Considerado melhor show do Rock in Rio, "
+                "Jota Quest foi batizado por Tim Maia"
+            ),
+            summary=(
+                "Tim Maia em festival no RS; veja VÍDEO do momento. "
+                "A banda relembrou a história."
+            ),
+        )
+
+        post = rewrite_via_template(item)
+
+        self.assertNotIn("veja vídeo", post.script_voiceover.casefold())
+        self.assertEqual(post.on_screen_text[0], "jota quest")
+        self.assertTrue(all(len(beat.split()) <= 5 for beat in post.on_screen_text))
+
 
 if __name__ == "__main__":
     unittest.main()

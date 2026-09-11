@@ -294,7 +294,7 @@ def _subtitle_chunks(text: str, count: int) -> list[str]:
 
 
 def _headline_chunks(post: RewrittenPost, count: int) -> list[str]:
-    source = [post.headline, *post.on_screen_text]
+    source = [*post.on_screen_text, post.headline]
     clean: list[str] = []
     for value in source:
         value = re.sub(r"\s+", " ", value or "").strip()
