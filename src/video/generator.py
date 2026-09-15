@@ -436,7 +436,7 @@ def _build_video_scene(
     overlay_path: Path,
     duration: float,
 ) -> tuple[CompositeVideoClip, VideoFileClip]:
-    """Fit a landscape archive clip into vertical space without face cropping."""
+    """Present archive footage as a square editorial crop inside the Short."""
     source = VideoFileClip(media.path, audio=False)
     latest_start = max(0.0, source.duration - duration - 0.1)
     start = min(max(0.0, media.seek_seconds), latest_start)
@@ -454,8 +454,20 @@ def _build_video_scene(
         )
         .set_opacity(0.38)
     )
-    foreground_scale = min(WIDTH / segment.w, 900 / segment.h)
-    foreground = segment.resize(foreground_scale).set_position(("center", 500))
+    crop_size = min(segment.w, segment.h)
+    square = segment.crop(
+        x_center=segment.w / 2,
+        y_center=segment.h / 2,
+        width=crop_size,
+        height=crop_size,
+    )
+    foreground = square.resize((960, 960)).set_position(("center", 500))
+    frame = (
+        ColorClip((976, 976), color=(238, 238, 238))
+        .set_opacity(0.82)
+        .set_duration(duration)
+        .set_position(("center", 492))
+    )
     matte = ColorClip((WIDTH, HEIGHT), color=(4, 4, 8)).set_duration(duration)
     shade = (
         ColorClip((WIDTH, HEIGHT), color=(0, 0, 0))
@@ -464,7 +476,7 @@ def _build_video_scene(
     )
     overlay = ImageClip(str(overlay_path), transparent=True).set_duration(duration)
     clip = CompositeVideoClip(
-        [matte, background, shade, foreground, overlay], size=(WIDTH, HEIGHT)
+        [matte, background, shade, frame, foreground, overlay], size=(WIDTH, HEIGHT)
     ).set_duration(duration)
     return clip, source
 
