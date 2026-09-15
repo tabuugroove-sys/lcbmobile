@@ -55,6 +55,8 @@ class Settings:
     drama_signal_weight: float
     require_visual_media: bool
     min_visual_media_assets: int
+    require_video_media: bool
+    min_video_media_assets: int
     youtube_api_key: str
     youtube_metrics_refresh_hours: int
     dry_run: bool
@@ -153,6 +155,10 @@ def load_settings() -> Settings:
         require_visual_media=_bool(os.getenv("REQUIRE_VISUAL_MEDIA"), True),
         min_visual_media_assets=max(
             1, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 3)
+        ),
+        require_video_media=_bool(os.getenv("REQUIRE_VIDEO_MEDIA"), True),
+        min_video_media_assets=max(
+            1, _int(os.getenv("MIN_VIDEO_MEDIA_ASSETS"), 2)
         ),
         youtube_api_key=_str("YOUTUBE_API_KEY"),
         youtube_metrics_refresh_hours=_int(os.getenv("YOUTUBE_METRICS_REFRESH_HOURS"), 6),

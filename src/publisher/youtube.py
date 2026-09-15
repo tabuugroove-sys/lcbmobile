@@ -50,14 +50,20 @@ class YouTubePublisher:
         try:
             yt = self._service()
             tags = post.hashtags + ["Shorts", "fofoca", "celebridades", "Brasil"]
+            credits_path = Path(assets.video_path).parent / "media_credits.txt"
+            media_credits = ""
+            if credits_path.exists():
+                media_credits = credits_path.read_text(encoding="utf-8").strip()
             description_parts = [
                 post.long_caption,
                 "",
                 f"Fonte: {post.source_url}",
-                "",
-                " ".join(f"#{tag}" for tag in tags),
-                "#Shorts",
             ]
+            if media_credits:
+                description_parts.extend(["", media_credits])
+            description_parts.extend(
+                ["", " ".join(f"#{tag}" for tag in tags), "#Shorts"]
+            )
             body = {
                 "snippet": {
                     "title": post.headline[:95] + " #Shorts",

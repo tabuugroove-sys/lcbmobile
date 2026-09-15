@@ -14,9 +14,11 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 from moviepy.editor import (
     AudioFileClip,
+    ColorClip,
     CompositeAudioClip,
     CompositeVideoClip,
     ImageClip,
+    VideoFileClip,
     concatenate_videoclips,
 )
 
@@ -24,6 +26,7 @@ from ..config import settings
 from ..editorial import find_known_music_act
 from ..models import GeneratedAssets, NewsItem, RewrittenPost
 from .commons_media import LicensedImage, fetch_licensed_artist_images
+from .commons_video import LicensedVideo, fetch_licensed_artist_videos
 from .tts import get_tts_provider
 
 log = logging.getLogger(__name__)
@@ -315,6 +318,157 @@ def _creator_credit(media: list[LicensedImage]) -> str:
     return f"FOTOS: {joined} / CC BY" if joined else ""
 
 
+def _video_creator_credit(media: LicensedVideo) -> str:
+    creator = re.sub(r"\s+", " ", media.creator).strip()
+    return f"VÍDEO: {creator} / {media.license}".upper()
+
+
+def _make_video_overlay(
+    *,
+    index: int,
+    count: int,
+    headline: str,
+    subtitle: str,
+    source_name: str,
+    credits: str,
+    output: Path,
+) -> Path:
+    """Render transparent editorial chrome around a live video window."""
+    accent = ACCENTS[index % len(ACCENTS)]
+    canvas = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas, "RGBA")
+    bold_path = _find_font(DEFAULT_FONT_CANDIDATES)
+    narrow_path = _find_font(CONDENSED_FONT_CANDIDATES) or bold_path
+
+    draw.rectangle((0, 0, WIDTH, 472), fill=(5, 5, 9, 212))
+    draw.rounded_rectangle(
+        (60, 54, 392, 118), 20, fill=(10, 9, 14, 238), outline=accent, width=3
+    )
+    draw.text(
+        (80, 86),
+        "MÚSICA  •  AGORA",
+        font=_font(bold_path, 27),
+        fill="white",
+        anchor="lm",
+    )
+    draw.rounded_rectangle((746, 54, 1020, 118), 20, fill=(10, 9, 14, 238))
+    draw.text(
+        (883, 86),
+        "VÍDEO DE ARQUIVO",
+        font=_font(bold_path, 19),
+        fill=(232, 232, 232),
+        anchor="mm",
+    )
+
+    headline_lines = _headline_lines(headline.upper())
+    headline_font = _fit_headline_font(headline_lines, draw, narrow_path, 930)
+    line_height = getattr(headline_font, "size", 60) + 8
+    title_y = 245 - (len(headline_lines) - 1) * line_height // 2
+    for line_no, line in enumerate(headline_lines[:3]):
+        _draw_centered(
+            draw,
+            (WIDTH // 2, title_y + line_no * line_height),
+            line,
+            headline_font,
+            stroke=6,
+        )
+
+    subtitle_font = _font(bold_path, 42)
+    subtitle_lines = _wrap_text(subtitle, draw, subtitle_font, 900)
+    while len(subtitle_lines) > 3 and getattr(subtitle_font, "size", 34) > 34:
+        subtitle_font = _font(bold_path, getattr(subtitle_font, "size", 37) - 2)
+        subtitle_lines = _wrap_text(subtitle, draw, subtitle_font, 900)
+    sub_size = getattr(subtitle_font, "size", 40)
+    box_height = 58 + len(subtitle_lines) * (sub_size + 12)
+    box_top = 1585 - box_height // 2
+    draw.rounded_rectangle(
+        (60, box_top, 1020, box_top + box_height),
+        22,
+        fill=(5, 5, 8, 232),
+        outline=(255, 255, 255, 70),
+        width=2,
+    )
+    for line_no, line in enumerate(subtitle_lines):
+        _draw_centered(
+            draw,
+            (WIDTH // 2, box_top + 46 + line_no * (sub_size + 12)),
+            line,
+            subtitle_font,
+            stroke=2,
+        )
+
+    credit_font = _font(bold_path, 18)
+    credit_lines = _wrap_text(credits, draw, credit_font, 900)
+    for line_no, line in enumerate(credit_lines[:2]):
+        _draw_centered(
+            draw,
+            (WIDTH // 2, 1772 + line_no * 26),
+            line,
+            credit_font,
+            fill="#dedede",
+            stroke=1,
+        )
+
+    draw.rectangle((0, 1888, WIDTH, HEIGHT), fill=(6, 5, 10, 242))
+    draw.rectangle((0, 1888, round(WIDTH * (index + 1) / count), 1902), fill=accent)
+    source_label = re.sub(r"\s+", " ", source_name).strip().upper()[:48]
+    draw.text(
+        (60, 1911),
+        f"FONTE DA NOTÍCIA: {source_label}",
+        font=_font(bold_path, 22),
+        fill=(230, 230, 230),
+        anchor="ls",
+    )
+    draw.text(
+        (1020, 1911),
+        f"{index + 1:02d}/{count:02d}",
+        font=_font(bold_path, 22),
+        fill=(230, 230, 230),
+        anchor="rs",
+    )
+    canvas.save(output, "PNG")
+    return output
+
+
+def _build_video_scene(
+    *,
+    media: LicensedVideo,
+    overlay_path: Path,
+    duration: float,
+) -> tuple[CompositeVideoClip, VideoFileClip]:
+    """Fit a landscape archive clip into vertical space without face cropping."""
+    source = VideoFileClip(media.path, audio=False)
+    latest_start = max(0.0, source.duration - duration - 0.1)
+    start = min(max(0.0, media.seek_seconds), latest_start)
+    segment = source.subclip(start, min(source.duration, start + duration))
+    segment = segment.set_duration(duration)
+
+    background_scale = max(WIDTH / segment.w, HEIGHT / segment.h)
+    background = (
+        segment.resize(background_scale)
+        .crop(
+            x_center=segment.w * background_scale / 2,
+            y_center=segment.h * background_scale / 2,
+            width=WIDTH,
+            height=HEIGHT,
+        )
+        .set_opacity(0.38)
+    )
+    foreground_scale = min(WIDTH / segment.w, 900 / segment.h)
+    foreground = segment.resize(foreground_scale).set_position(("center", 500))
+    matte = ColorClip((WIDTH, HEIGHT), color=(4, 4, 8)).set_duration(duration)
+    shade = (
+        ColorClip((WIDTH, HEIGHT), color=(0, 0, 0))
+        .set_opacity(0.24)
+        .set_duration(duration)
+    )
+    overlay = ImageClip(str(overlay_path), transparent=True).set_duration(duration)
+    clip = CompositeVideoClip(
+        [matte, background, shade, foreground, overlay], size=(WIDTH, HEIGHT)
+    ).set_duration(duration)
+    return clip, source
+
+
 def _make_scene(
     *,
     index: int,
@@ -498,7 +652,10 @@ def _build_scene_images(
     media: list[LicensedImage],
     output_dir: Path,
 ) -> list[Path]:
-    scene_count = min(7, max(5, len(media)))
+    # Mixed-media Shorts have exactly two video beats and three photo beats.
+    # Keeping five scenes prevents a third video slot from repeating one of the
+    # two curated source files merely because Commons returned six photographs.
+    scene_count = 5 if settings.require_video_media else min(7, max(5, len(media)))
     subtitles = _subtitle_chunks(post.script_voiceover, scene_count)
     headlines = _headline_chunks(post, scene_count)
     cutout = None
@@ -540,19 +697,21 @@ def _write_render_manifest(
     base: Path,
     item: NewsItem,
     artist_query: str | None,
-    media: list[LicensedImage],
+    photos: list[LicensedImage],
+    videos: list[LicensedVideo],
     scenes: list[Path],
     duration: float,
 ) -> None:
     (base / "render_manifest.json").write_text(
         json.dumps(
             {
-                "style": "cinematic_music_news_v1",
+                "style": "cinematic_mixed_media_v2",
                 "language": settings.content_lang,
                 "source_url": item.url,
                 "artist_query": artist_query,
-                "licensed_media_count": len(media),
-                "rights_status": "verified" if media else "graphic_only_no_external_media",
+                "licensed_photo_count": len(photos),
+                "licensed_video_count": len(videos),
+                "rights_status": "verified" if photos and videos else "incomplete",
                 "scene_count": len(scenes),
                 "duration_seconds": round(duration, 3),
                 "auto_publish_decision": "owned_by_pipeline_not_renderer",
@@ -564,6 +723,36 @@ def _write_render_manifest(
     )
 
 
+def _write_media_credits(
+    base: Path,
+    photos: list[LicensedImage],
+    videos: list[LicensedVideo],
+) -> None:
+    lines = [
+        "CRÉDITOS DE MÍDIA",
+        "Trechos editados, redimensionados e legendados por LCB Mobile.",
+    ]
+    for asset in videos:
+        lines.extend(
+            [
+                f"Vídeo: {asset.title}",
+                f"Autor: {asset.creator}",
+                f"Licença: {asset.license} - {asset.license_url}",
+                f"Origem: {asset.source_page}",
+            ]
+        )
+    for asset in photos:
+        lines.extend(
+            [
+                f"Foto: {asset.title}",
+                f"Autor: {asset.creator}",
+                f"Licença: {asset.license} - {asset.license_url}",
+                f"Origem: {asset.source_page}",
+            ]
+        )
+    (base / "media_credits.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _item_output_dir(item: NewsItem, output_dir: Path) -> Path:
     base = output_dir / item.fingerprint().replace("/", "_").replace(":", "_")[-80:]
     base.mkdir(parents=True, exist_ok=True)
@@ -573,32 +762,47 @@ def _item_output_dir(item: NewsItem, output_dir: Path) -> Path:
 def resolve_visual_media(
     item: NewsItem,
     output_dir: Path,
-) -> tuple[str | None, list[LicensedImage]]:
+) -> tuple[str | None, list[LicensedImage], list[LicensedVideo]]:
     """Resolve reusable artist visuals into the item's persistent render cache."""
     base = _item_output_dir(item, output_dir)
     # The artist must be the explicit subject of the headline. A name buried in
     # a festival roundup cannot safely determine the visuals for the whole story.
     artist_query = find_known_music_act(item.title)
-    media = fetch_licensed_artist_images(
+    photos = fetch_licensed_artist_images(
         artist_query,
         base / "licensed_media",
         limit=max(6, settings.min_visual_media_assets),
     )
-    return artist_query, media
+    videos = fetch_licensed_artist_videos(
+        artist_query,
+        base / "licensed_video",
+        limit=max(2, settings.min_video_media_assets),
+    )
+    return artist_query, photos, videos
 
 
 def visual_media_ready(item: NewsItem, output_dir: Path) -> bool:
     """Return whether the story can reproduce the approved visual reference."""
-    if not settings.require_visual_media:
+    if not settings.require_visual_media and not settings.require_video_media:
         return True
-    artist_query, media = resolve_visual_media(item, output_dir)
-    ready = bool(artist_query) and len(media) >= settings.min_visual_media_assets
+    artist_query, photos, videos = resolve_visual_media(item, output_dir)
+    photo_ready = (
+        not settings.require_visual_media
+        or len(photos) >= settings.min_visual_media_assets
+    )
+    video_ready = (
+        not settings.require_video_media
+        or len(videos) >= settings.min_video_media_assets
+    )
+    ready = bool(artist_query) and photo_ready and video_ready
     if not ready:
         log.info(
-            "Skipping visual-poor candidate: artist=%r assets=%d required=%d title=%s",
+            "Skipping visual-poor candidate: artist=%r photos=%d/%d videos=%d/%d title=%s",
             artist_query,
-            len(media),
+            len(photos),
             settings.min_visual_media_assets,
+            len(videos),
+            settings.min_video_media_assets if settings.require_video_media else 0,
             item.title,
         )
     return ready
@@ -613,12 +817,18 @@ def build_short(
 ) -> GeneratedAssets:
     output_dir.mkdir(parents=True, exist_ok=True)
     base = _item_output_dir(item, output_dir)
-    artist_query, media = resolve_visual_media(item, output_dir)
-    if settings.require_visual_media and len(media) < settings.min_visual_media_assets:
+    artist_query, photos, videos = resolve_visual_media(item, output_dir)
+    if settings.require_visual_media and len(photos) < settings.min_visual_media_assets:
         raise RuntimeError(
             "Reference-style render blocked: "
-            f"artist={artist_query!r} has {len(media)} verified visual(s), "
+            f"artist={artist_query!r} has {len(photos)} verified photo(s), "
             f"requires {settings.min_visual_media_assets}"
+        )
+    if settings.require_video_media and len(videos) < settings.min_video_media_assets:
+        raise RuntimeError(
+            "Mixed-media render blocked: "
+            f"artist={artist_query!r} has {len(videos)} verified video(s), "
+            f"requires {settings.min_video_media_assets}"
         )
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -632,10 +842,32 @@ def build_short(
         voice = voice.set_duration(duration)
         audio = _mix_voice_with_background(voice, duration, voice_path=str(audio_path))
 
-        scene_paths = _build_scene_images(item, post, media, base)
+        scene_paths = _build_scene_images(item, post, photos, base)
         per_scene = duration / len(scene_paths)
         clips = []
+        source_clips: list[VideoFileClip] = []
+        subtitles = _subtitle_chunks(post.script_voiceover, len(scene_paths))
+        headlines = _headline_chunks(post, len(scene_paths))
         for index, scene_path in enumerate(scene_paths):
+            if index % 2 == 1 and videos:
+                video_asset = videos[(index // 2) % len(videos)]
+                overlay_path = _make_video_overlay(
+                    index=index,
+                    count=len(scene_paths),
+                    headline=headlines[index],
+                    subtitle=subtitles[index],
+                    source_name=item.source_name,
+                    credits=_video_creator_credit(video_asset),
+                    output=base / f"scene-{index + 1:02d}-video-overlay.png",
+                )
+                clip, source_clip = _build_video_scene(
+                    media=video_asset,
+                    overlay_path=overlay_path,
+                    duration=per_scene,
+                )
+                clips.append(clip)
+                source_clips.append(source_clip)
+                continue
             still = ImageClip(str(scene_path)).set_duration(per_scene)
             direction = 1 if index % 2 else -1
             animated = still.resize(
@@ -669,12 +901,16 @@ def build_short(
             base=base,
             item=item,
             artist_query=artist_query,
-            media=media,
+            photos=photos,
+            videos=videos,
             scenes=scene_paths,
             duration=duration,
         )
+        _write_media_credits(base, photos, videos)
         composite.close()
         for clip in clips:
+            clip.close()
+        for clip in source_clips:
             clip.close()
 
     return GeneratedAssets(

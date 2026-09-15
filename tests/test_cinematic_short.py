@@ -9,10 +9,12 @@ import httpx
 from PIL import Image
 
 from src.video.commons_media import LicensedImage, _candidate, fetch_licensed_artist_images
+from src.video.commons_video import LicensedVideo, fetch_licensed_artist_videos
 from src.video.generator import (
     HEIGHT,
     WIDTH,
     _make_scene,
+    _make_video_overlay,
     resolve_visual_media,
     visual_media_ready,
 )
@@ -101,15 +103,19 @@ class SceneRenderTests(unittest.TestCase):
             },
         )()
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
-            "src.video.generator.fetch_licensed_artist_images",
-            return_value=[],
-        ) as fetch:
-            artist, media = resolve_visual_media(news, Path(temp_dir))  # type: ignore[arg-type]
+            "src.video.generator.fetch_licensed_artist_images", return_value=[]
+        ) as fetch_photos, mock.patch(
+            "src.video.generator.fetch_licensed_artist_videos", return_value=[]
+        ) as fetch_videos:
+            artist, photos, videos = resolve_visual_media(news, Path(temp_dir))  # type: ignore[arg-type]
 
         self.assertIsNone(artist)
-        self.assertEqual(media, [])
-        fetch.assert_called_once()
-        self.assertIsNone(fetch.call_args.args[0])
+        self.assertEqual(photos, [])
+        self.assertEqual(videos, [])
+        fetch_photos.assert_called_once()
+        fetch_videos.assert_called_once()
+        self.assertIsNone(fetch_photos.call_args.args[0])
+        self.assertIsNone(fetch_videos.call_args.args[0])
 
     def test_reference_style_requires_multiple_verified_visuals(self) -> None:
         news = type(
@@ -119,13 +125,29 @@ class SceneRenderTests(unittest.TestCase):
         )()
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
             "src.video.generator.resolve_visual_media",
-            return_value=("shakira", [mock.sentinel.asset] * 3),
+            return_value=(
+                "shakira",
+                [mock.sentinel.photo] * 3,
+                [mock.sentinel.video] * 2,
+            ),
         ):
             self.assertTrue(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
             "src.video.generator.resolve_visual_media",
-            return_value=(None, []),
+            return_value=(None, [], []),
+        ):
+            self.assertFalse(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
+
+    def test_reference_style_rejects_photo_only_candidate(self) -> None:
+        news = type(
+            "Item",
+            (),
+            {"title": "Shakira anuncia novidade", "summary": ""},
+        )()
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.resolve_visual_media",
+            return_value=("shakira", [mock.sentinel.photo] * 6, []),
         ):
             self.assertFalse(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
@@ -161,6 +183,59 @@ class SceneRenderTests(unittest.TestCase):
 
             with Image.open(output) as rendered:
                 self.assertEqual(rendered.size, (WIDTH, HEIGHT))
+
+    def test_video_overlay_is_vertical_and_keeps_video_window_transparent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "overlay.png"
+            _make_video_overlay(
+                index=1,
+                count=5,
+                headline="Lady Gaga vira mãe",
+                subtitle="A cantora não confirmou publicamente a informação.",
+                source_name="G1",
+                credits="VÍDEO: SMP ENTERTAINMENT / CC BY 3.0",
+                output=output,
+            )
+
+            with Image.open(output) as rendered:
+                self.assertEqual(rendered.size, (WIDTH, HEIGHT))
+                self.assertEqual(rendered.mode, "RGBA")
+                self.assertEqual(rendered.getpixel((WIDTH // 2, 900))[3], 0)
+
+
+class CommonsVideoTests(unittest.TestCase):
+    def test_unknown_artist_is_not_downloaded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            assets = fetch_licensed_artist_videos("artista desconhecido", Path(temp_dir))
+            manifest = (Path(temp_dir) / "rights_manifest.json").read_text()
+        self.assertEqual(assets, [])
+        self.assertIn('"status": "no_curated_video"', manifest)
+
+    def test_reuses_verified_cached_video(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "artist-video-01.webm"
+            path.write_bytes(b"x" * 100_001)
+            asset = LicensedVideo(
+                path=str(path),
+                title="Cached.webm",
+                creator="Example",
+                license="CC BY 3.0",
+                license_url="https://creativecommons.org/licenses/by/3.0/",
+                source_page="https://commons.wikimedia.org/example",
+                source_url="https://upload.wikimedia.org/example.webm",
+                width=1280,
+                height=720,
+                duration=30.0,
+                seek_seconds=2.0,
+                sha256="abc",
+            )
+            from src.video import commons_video
+
+            commons_video._write_manifest(root / "rights_manifest.json", "lady gaga", "verified", [asset])
+            assets = fetch_licensed_artist_videos("lady gaga", root, limit=1)
+
+        self.assertEqual(assets, [asset])
 
 
 if __name__ == "__main__":

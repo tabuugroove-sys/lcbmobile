@@ -109,6 +109,8 @@ jobs:
           DRAMA_SIGNAL_WEIGHT: ${{ vars.DRAMA_SIGNAL_WEIGHT || '1.8' }}
           REQUIRE_VISUAL_MEDIA: 'true'
           MIN_VISUAL_MEDIA_ASSETS: '3'
+          REQUIRE_VIDEO_MEDIA: 'true'
+          MIN_VIDEO_MEDIA_ASSETS: '2'
           YOUTUBE_METRICS_REFRESH_HOURS: ${{ vars.YOUTUBE_METRICS_REFRESH_HOURS || '6' }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           # Editorial: how many hours of virtual freshness to give DJ-category
