@@ -7,7 +7,7 @@ Updated: 2026-09-17, America/Sao_Paulo.
 - Source checkout: `/Users/a1111/Documents/Codex/2026-04-29/github/lcbmobile`
 - Repository: `tabuugroove-sys/lcbmobile`
 - Active branch: `claude/create-news-feed-yMBpb`
-- Last verified source commit: `9ce3db1`
+- Last verified behavior commit: `6cc3142`
 - Never print, commit or copy credential values into chat or logs.
 - Recheck runtime state before making a current operational claim. A commit,
   successful task exit or dashboard row is not proof of a YouTube publication.
@@ -108,15 +108,23 @@ historical YouTube reaction, freshness, a known-artist signal and confirmed
 drama terms. Server `DRAMA_SIGNAL_WEIGHT=1.8`. Drama can change priority and
 the factual hook; it must never invent or intensify an unsupported claim.
 
-Reference-style visuals are best-effort on every runtime. The production
-defaults are now `REQUIRE_VISUAL_MEDIA=false`, `MIN_VISUAL_MEDIA_ASSETS=0`,
-`REQUIRE_VIDEO_MEDIA=false` and `MIN_VIDEO_MEDIA_ASSETS=0` on Windows, Mac,
-GitHub Actions and bare `load_settings()` calls. The renderer still resolves and
-uses reusable Commons media when available, but its absence cannot reject a
-story or suppress a post. The old strict mode remains available only as an
-explicit environment override for a manual quality test. If strict mode is
-enabled and every candidate fails, `_select_with_classic_fallback()` in
-`src/pipeline.py:52-80` still reranks without the gate.
+Reference-style visuals are best-effort in source configuration. Commit
+`6cc3142` sets `REQUIRE_VISUAL_MEDIA=false`, `MIN_VISUAL_MEDIA_ASSETS=0`,
+`REQUIRE_VIDEO_MEDIA=false` and `MIN_VIDEO_MEDIA_ASSETS=0` in bare
+`load_settings()` calls and in the Windows, Mac and GitHub entrypoints. The
+renderer still resolves and uses reusable Commons media when available, but its
+absence cannot reject a story or suppress a post. The old strict mode remains
+available only as an explicit environment override for a manual quality test.
+If strict mode is enabled and every candidate fails,
+`_select_with_classic_fallback()` in `src/pipeline.py:52-80` still reranks
+without the gate.
+
+Deployment status at 2026-09-17 15:16 BRT: GitHub shows the new workflow and
+the Mac backup runtime has the new defaults with LaunchAgent exit code `0`.
+The copied Windows runtime is **not yet verified or updated** because both SSH
+attempts to `capytime` timed out during banner exchange. Reconnect, copy
+`src/config.py` and `scripts/run_server_primary.ps1`, then inspect the four
+effective environment values before claiming Windows deployment.
 
 Automatic GrabCut is present only as an experimental path and remains disabled
 with `AUTO_CUTOUT_ENABLED=false`; automated masking was rejected in QA when a
@@ -214,13 +222,16 @@ For publication proof, find all of these together:
 
 ## Tests and known limits
 
-- Latest targeted source verification after failover fixes: `34/34` unit tests passed.
+- Media-gate and failover targeted verification: `31/31` unit tests passed.
 - Cinematic/selection targeted verification on 2026-09-11: `21/21` passed;
   the pt-BR dry-run rendered six licensed images at 1080x1920, 30 fps, 30 s.
 - Windows targeted verification: `9/9` scheduler/template tests passed.
 - A clean Windows full `unittest discover` can fail the existing horizontal
   metadata test when generated `out/daily_legal_multinews/credits.txt` is not
   present. That fixture issue is unrelated to regular Shorts publishing.
+- The local full discovery reached 64 tests but also could not import the
+  YouTube publisher test because `python-telegram-bot` is absent from the local
+  interpreter. The targeted media-gate suite does not depend on that package.
 - Server and Mac have separate SQLite databases. Cross-runtime duplicate safety
   therefore depends on the real YouTube count check and remote source URL sync,
   not on a shared local DB.
