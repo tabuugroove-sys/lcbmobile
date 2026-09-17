@@ -948,8 +948,15 @@ def resolve_visual_media(
     return artist_query, photos, videos
 
 
-def visual_media_ready(item: NewsItem, output_dir: Path) -> bool:
+def visual_media_ready(
+    item: NewsItem,
+    output_dir: Path,
+    *,
+    enforce_requirements: bool = True,
+) -> bool:
     """Return whether the story can reproduce the approved visual reference."""
+    if not enforce_requirements:
+        return True
     if not settings.require_visual_media and not settings.require_video_media:
         return True
     artist_query, photos, videos = resolve_visual_media(item, output_dir)
@@ -981,17 +988,26 @@ def build_short(
     output_dir: Path,
     *,
     lang: str = "pt-BR",
+    enforce_media_requirements: bool = True,
 ) -> GeneratedAssets:
     output_dir.mkdir(parents=True, exist_ok=True)
     base = _item_output_dir(item, output_dir)
     artist_query, photos, videos = resolve_visual_media(item, output_dir)
-    if settings.require_visual_media and len(photos) < settings.min_visual_media_assets:
+    if (
+        enforce_media_requirements
+        and settings.require_visual_media
+        and len(photos) < settings.min_visual_media_assets
+    ):
         raise RuntimeError(
             "Reference-style render blocked: "
             f"artist={artist_query!r} has {len(photos)} verified photo(s), "
             f"requires {settings.min_visual_media_assets}"
         )
-    if settings.require_video_media and len(videos) < settings.min_video_media_assets:
+    if (
+        enforce_media_requirements
+        and settings.require_video_media
+        and len(videos) < settings.min_video_media_assets
+    ):
         raise RuntimeError(
             "Mixed-media render blocked: "
             f"artist={artist_query!r} has {len(videos)} verified video(s), "

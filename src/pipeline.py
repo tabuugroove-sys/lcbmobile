@@ -49,11 +49,42 @@ def _retry_wait(item: NewsItem, attempt: int) -> None:
     time.sleep(delay)
 
 
+def _select_with_classic_fallback(
+    candidates: list[NewsItem],
+    store: Store,
+    *,
+    limit: int,
+    stage: str,
+) -> tuple[list[NewsItem], bool]:
+    selected = select_best_candidates(
+        candidates,
+        store,
+        limit=limit,
+        stage=stage,
+        eligibility=lambda item: visual_media_ready(item, settings.output_dir),
+    )
+    if selected:
+        return selected, False
+
+    selected = select_best_candidates(
+        candidates,
+        store,
+        limit=limit,
+        stage=f"{stage}:classic",
+    )
+    if selected:
+        log.warning(
+            "Strict media filter rejected every candidate; using classic render for %d item(s)",
+            len(selected),
+        )
+    return selected, bool(selected)
+
+
 def _yesterday_fallback_items(
     items: list[NewsItem], store: Store, limit: int
-) -> list[NewsItem]:
+) -> tuple[list[NewsItem], bool]:
     if not settings.fallback_to_yesterday:
-        return []
+        return [], False
 
     tz = ZoneInfo(settings.timezone)
     today = datetime.now(tz).date()
@@ -78,12 +109,11 @@ def _yesterday_fallback_items(
         if len(fallback) >= settings.analytics_candidate_pool:
             break
 
-    return select_best_candidates(
+    return _select_with_classic_fallback(
         fallback,
         store,
         limit=limit,
         stage="fallback",
-        eligibility=lambda item: visual_media_ready(item, settings.output_dir),
     )
 
 
@@ -169,16 +199,15 @@ def run(
         candidates.append(item)
         if len(candidates) >= settings.analytics_candidate_pool:
             break
-    fresh = select_best_candidates(
+    fresh, classic_render = _select_with_classic_fallback(
         candidates,
         store,
         limit=limit,
         stage="fresh",
-        eligibility=lambda item: visual_media_ready(item, settings.output_dir),
     )
 
     if not fresh:
-        fresh = _yesterday_fallback_items(items, store, limit)
+        fresh, classic_render = _yesterday_fallback_items(items, store, limit)
         if fresh:
             log.info(
                 "No fresh items; using %d yesterday fallback item(s).",
@@ -188,6 +217,12 @@ def run(
                 f"ℹ️ Nada novo; usando notícia de ontem.\n"
                 f"fallback={len(fresh)} limit={limit}"
             )
+
+    if fresh and classic_render:
+        notify(
+            "ℹ️ Mídia licenciada insuficiente; usando o formato clássico "
+            f"para {len(fresh)} notícia(s)."
+        )
 
     report.new = len(fresh)
     log.info("Fetched=%d new=%d (limit=%d)", report.fetched, report.new, limit)
@@ -230,7 +265,11 @@ def run(
 
             try:
                 assets: GeneratedAssets = build_short(
-                    item, post, settings.output_dir, lang=settings.content_lang
+                    item,
+                    post,
+                    settings.output_dir,
+                    lang=settings.content_lang,
+                    enforce_media_requirements=not classic_render,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.exception("Video render failed for %s", item.url)

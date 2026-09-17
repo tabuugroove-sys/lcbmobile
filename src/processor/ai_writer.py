@@ -127,16 +127,24 @@ def rewrite(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
         if not _is_credit_or_auth_error(exc):
             raise
         from .fallback_writer import is_configured, rewrite_via_gemini
+        from .template_writer import rewrite_via_template
 
         if not is_configured():
-            log.error(
+            log.warning(
                 "Anthropic unavailable (%s) and GEMINI_API_KEY not configured "
-                "— re-raising original error",
+                "— using deterministic template writer",
                 exc,
             )
-            raise
+            return rewrite_via_template(item)
         log.warning("Anthropic unavailable (%s) — falling back to Gemini", exc)
-        return rewrite_via_gemini(item, max_tokens=max_tokens)
+        try:
+            return rewrite_via_gemini(item, max_tokens=max_tokens)
+        except Exception as gemini_exc:  # noqa: BLE001
+            log.warning(
+                "Gemini fallback failed (%s) — using deterministic template writer",
+                gemini_exc,
+            )
+            return rewrite_via_template(item)
 
 
 def _local_claude_enabled() -> bool:

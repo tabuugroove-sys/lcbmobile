@@ -190,6 +190,24 @@ class SceneRenderTests(unittest.TestCase):
         ):
             self.assertFalse(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
+    def test_classic_fallback_accepts_candidate_without_visual_media(self) -> None:
+        news = type(
+            "Item",
+            (),
+            {"title": "Shakira anuncia novidade", "summary": ""},
+        )()
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.resolve_visual_media"
+        ) as resolve:
+            self.assertTrue(
+                visual_media_ready(
+                    news,  # type: ignore[arg-type]
+                    Path(temp_dir),
+                    enforce_requirements=False,
+                )
+            )
+        resolve.assert_not_called()
+
     def test_scene_is_vertical_and_contains_safe_editorial_layout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

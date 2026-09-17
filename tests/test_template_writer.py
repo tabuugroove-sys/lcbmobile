@@ -1,12 +1,41 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from src.models import NewsItem
+from src.processor.ai_writer import rewrite
 from src.processor.template_writer import rewrite_via_template
 
 
 class TemplateWriterTests(unittest.TestCase):
+    def test_rewrite_uses_template_when_anthropic_and_gemini_fail(self) -> None:
+        item = NewsItem(
+            source_id="rss",
+            source_name="Portal Teste",
+            category="dj",
+            url="https://example.com/fallback",
+            title="DJ anuncia novo show em Sao Paulo",
+            summary="A apresentacao sera em setembro.",
+        )
+
+        with mock.patch.dict(
+            "os.environ",
+            {"REWRITE_PROVIDER": "", "LOCAL_CLAUDE_FALLBACK": ""},
+        ), mock.patch(
+            "src.processor.ai_writer._rewrite_via_anthropic",
+            side_effect=RuntimeError("ANTHROPIC_API_KEY is not configured."),
+        ), mock.patch(
+            "src.processor.fallback_writer.is_configured", return_value=True
+        ), mock.patch(
+            "src.processor.fallback_writer.rewrite_via_gemini",
+            side_effect=ValueError("invalid model JSON"),
+        ):
+            post = rewrite(item)
+
+        self.assertEqual(post.headline, item.title)
+        self.assertIn(item.source_name, post.script_voiceover)
+
     def test_uses_only_source_material_and_builds_pt_br_post(self) -> None:
         item = NewsItem(
             source_id="rss",
