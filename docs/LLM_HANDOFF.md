@@ -108,16 +108,15 @@ historical YouTube reaction, freshness, a known-artist signal and confirmed
 drama terms. Server `DRAMA_SIGNAL_WEIGHT=1.8`. Drama can change priority and
 the factual hook; it must never invent or intensify an unsupported claim.
 
-Reference-style visuals are attempted first. `REQUIRE_VISUAL_MEDIA=true` and
-`MIN_VISUAL_MEDIA_ASSETS=3` make ranking continue to the next candidate when the
-current story has no identified artist or too few verified images.
-`REQUIRE_VIDEO_MEDIA=true` and `MIN_VIDEO_MEDIA_ASSETS=2` also require two
-licensed archive clips for that preferred pass. If every candidate fails these
-checks, `_select_with_classic_fallback()` in `src/pipeline.py:52-80` reranks the
-same pool without the visual eligibility gate. `run_pipeline()` then calls
-`build_short(..., enforce_media_requirements=False)` at
-`src/pipeline.py:267-273`. This same-run fallback now applies to the Windows and
-Mac runners as well as GitHub, so lack of rich media must not suppress a post.
+Reference-style visuals are best-effort on every runtime. The production
+defaults are now `REQUIRE_VISUAL_MEDIA=false`, `MIN_VISUAL_MEDIA_ASSETS=0`,
+`REQUIRE_VIDEO_MEDIA=false` and `MIN_VIDEO_MEDIA_ASSETS=0` on Windows, Mac,
+GitHub Actions and bare `load_settings()` calls. The renderer still resolves and
+uses reusable Commons media when available, but its absence cannot reject a
+story or suppress a post. The old strict mode remains available only as an
+explicit environment override for a manual quality test. If strict mode is
+enabled and every candidate fails, `_select_with_classic_fallback()` in
+`src/pipeline.py:52-80` still reranks without the gate.
 
 Automatic GrabCut is present only as an experimental path and remains disabled
 with `AUTO_CUTOUT_ENABLED=false`; automated masking was rejected in QA when a

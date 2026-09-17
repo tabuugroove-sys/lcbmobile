@@ -113,10 +113,10 @@ Variáveis úteis:
 | `YOUTUBE_API_KEY` | Opcional; busca métricas públicas sem depender do OAuth |
 | `YOUTUBE_METRICS_REFRESH_HOURS` | Intervalo mínimo para atualizar métricas |
 | `DRAMA_SIGNAL_WEIGHT` | Peso adicional para drama confirmado na fonte |
-| `REQUIRE_VISUAL_MEDIA` | Bloqueia Shorts sem fotos verificadas do artista |
-| `MIN_VISUAL_MEDIA_ASSETS` | Mínimo de imagens distintas para o ritmo visual |
-| `REQUIRE_VIDEO_MEDIA` | Bloqueia Shorts sem vídeos reutilizáveis já revisados |
-| `MIN_VIDEO_MEDIA_ASSETS` | Mínimo de clipes diferentes no Short |
+| `REQUIRE_VISUAL_MEDIA` | Gate opcional de fotos; desligado por padrão |
+| `MIN_VISUAL_MEDIA_ASSETS` | Mínimo de imagens quando o gate opcional está ligado |
+| `REQUIRE_VIDEO_MEDIA` | Gate opcional de vídeos; desligado por padrão |
+| `MIN_VIDEO_MEDIA_ASSETS` | Mínimo de clipes quando o gate opcional está ligado |
 
 ## Visual dos Shorts regulares
 
@@ -124,11 +124,11 @@ O template `cinematic_mixed_media_v2` alterna fotos e dois trechos de vídeo,
 headlines curtas, legendas em pt-BR, movimento leve e créditos no quadro final.
 Ele pesquisa várias fotos pelo nome exato do artista no Wikimedia Commons e
 aceita automaticamente apenas `Public domain`, `CC0` e `CC BY`. Identidade
-ambígua, `CC BY-SA` e direitos não verificados são bloqueados. A produção exige
-pelo menos três imagens verificadas e dois vídeos distintos do catálogo curado:
-se a pauta mais bem ranqueada não atingir ambos os mínimos, o pipeline passa
-para a próxima. Arte editorial sem artista ou vídeo real não é considerada um
-Short pronto para publicação.
+ambígua, `CC BY-SA` e direitos não verificados continuam fora da busca
+automática. Fotos e vídeos são best-effort: a ausência deles não bloqueia mais
+a pauta nem a publicação, e o renderer usa o formato clássico quando não há
+material visual reutilizável suficiente. Os gates antigos podem ser reativados
+explicitamente pelas quatro variáveis acima para um teste manual de qualidade.
 
 `AUTO_CUTOUT_ENABLED` permanece `false`: a composição recorre a cartões quando
 a máscara automática não pode ser confiável.

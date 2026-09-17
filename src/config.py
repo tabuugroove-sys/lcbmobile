@@ -152,13 +152,13 @@ def load_settings() -> Settings:
         analytics_candidate_pool=_int(os.getenv("ANALYTICS_CANDIDATE_POOL"), 40),
         analytics_history_limit=_int(os.getenv("ANALYTICS_HISTORY_LIMIT"), 250),
         drama_signal_weight=_float(os.getenv("DRAMA_SIGNAL_WEIGHT"), 1.4),
-        require_visual_media=_bool(os.getenv("REQUIRE_VISUAL_MEDIA"), True),
+        require_visual_media=_bool(os.getenv("REQUIRE_VISUAL_MEDIA"), False),
         min_visual_media_assets=max(
-            1, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 3)
+            0, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 0)
         ),
-        require_video_media=_bool(os.getenv("REQUIRE_VIDEO_MEDIA"), True),
+        require_video_media=_bool(os.getenv("REQUIRE_VIDEO_MEDIA"), False),
         min_video_media_assets=max(
-            1, _int(os.getenv("MIN_VIDEO_MEDIA_ASSETS"), 2)
+            0, _int(os.getenv("MIN_VIDEO_MEDIA_ASSETS"), 0)
         ),
         youtube_api_key=_str("YOUTUBE_API_KEY"),
         youtube_metrics_refresh_hours=_int(os.getenv("YOUTUBE_METRICS_REFRESH_HOURS"), 6),

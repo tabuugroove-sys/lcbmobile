@@ -107,12 +107,12 @@ jobs:
           ANALYTICS_CANDIDATE_POOL: ${{ vars.ANALYTICS_CANDIDATE_POOL || '40' }}
           ANALYTICS_HISTORY_LIMIT: ${{ vars.ANALYTICS_HISTORY_LIMIT || '250' }}
           DRAMA_SIGNAL_WEIGHT: ${{ vars.DRAMA_SIGNAL_WEIGHT || '1.8' }}
-          # Scheduled fallback deliberately uses the reliable pre-cinematic
-          # renderer. Manual runs retain the strict mixed-media quality gate.
-          REQUIRE_VISUAL_MEDIA: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && 'false' || 'true' }}
-          MIN_VISUAL_MEDIA_ASSETS: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && '0' || '3' }}
-          REQUIRE_VIDEO_MEDIA: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && 'false' || 'true' }}
-          MIN_VIDEO_MEDIA_ASSETS: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && '0' || '2' }}
+          # Rich media is best-effort on every runner. Missing media must never
+          # suppress a scheduled or manually requested publication.
+          REQUIRE_VISUAL_MEDIA: 'false'
+          MIN_VISUAL_MEDIA_ASSETS: '0'
+          REQUIRE_VIDEO_MEDIA: 'false'
+          MIN_VIDEO_MEDIA_ASSETS: '0'
           YOUTUBE_METRICS_REFRESH_HOURS: ${{ vars.YOUTUBE_METRICS_REFRESH_HOURS || '6' }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           # Editorial: how many hours of virtual freshness to give DJ-category

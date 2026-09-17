@@ -162,6 +162,12 @@ class SceneRenderTests(unittest.TestCase):
             (),
             {"title": "Shakira anuncia novidade", "summary": ""},
         )()
+        strict_settings = mock.Mock(
+            require_visual_media=True,
+            min_visual_media_assets=3,
+            require_video_media=True,
+            min_video_media_assets=2,
+        )
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
             "src.video.generator.resolve_visual_media",
             return_value=(
@@ -169,13 +175,13 @@ class SceneRenderTests(unittest.TestCase):
                 [mock.sentinel.photo] * 3,
                 [mock.sentinel.video] * 2,
             ),
-        ):
+        ), mock.patch("src.video.generator.settings", strict_settings):
             self.assertTrue(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
             "src.video.generator.resolve_visual_media",
             return_value=(None, [], []),
-        ):
+        ), mock.patch("src.video.generator.settings", strict_settings):
             self.assertFalse(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
     def test_reference_style_rejects_photo_only_candidate(self) -> None:
@@ -184,10 +190,16 @@ class SceneRenderTests(unittest.TestCase):
             (),
             {"title": "Shakira anuncia novidade", "summary": ""},
         )()
+        strict_settings = mock.Mock(
+            require_visual_media=True,
+            min_visual_media_assets=3,
+            require_video_media=True,
+            min_video_media_assets=2,
+        )
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
             "src.video.generator.resolve_visual_media",
             return_value=("shakira", [mock.sentinel.photo] * 6, []),
-        ):
+        ), mock.patch("src.video.generator.settings", strict_settings):
             self.assertFalse(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
     def test_classic_fallback_accepts_candidate_without_visual_media(self) -> None:
