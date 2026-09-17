@@ -222,7 +222,12 @@ For publication proof, find all of these together:
 
 ## Tests and known limits
 
-- Media-gate and failover targeted verification: `31/31` unit tests passed.
+- Media-gate and failover targeted verification: `32/32` unit tests passed.
+- `tests/test_pipeline_classic_publish.py` forces zero photo/video assets and
+  proves that the pipeline still calls the YouTube publisher and records a
+  successful remote id. A separate real render with the same zero-media setup
+  produced an H.264/AAC 1080x1920 MP4 lasting 8.97 seconds, confirming that the
+  classic renderer itself does not depend on media assets.
 - Cinematic/selection targeted verification on 2026-09-11: `21/21` passed;
   the pt-BR dry-run rendered six licensed images at 1080x1920, 30 fps, 30 s.
 - Windows targeted verification: `9/9` scheduler/template tests passed.
