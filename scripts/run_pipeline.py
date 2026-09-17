@@ -11,6 +11,7 @@ import click
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.pipeline import run  # noqa: E402
+from src.config import settings  # noqa: E402
 
 
 @click.command()
@@ -30,10 +31,11 @@ def main(limit: int | None, only_publishers: tuple[str, ...], dry_run: bool, ver
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+    effective_dry_run = dry_run or settings.dry_run
     report = run(
         only_publishers=list(only_publishers) or None,
         limit=limit,
-        dry_run=dry_run or None,
+        dry_run=effective_dry_run,
     )
     click.echo(
         f"fetched={report.fetched} new={report.new} processed={report.processed}"
@@ -45,8 +47,11 @@ def main(limit: int | None, only_publishers: tuple[str, ...], dry_run: bool, ver
         if not result.ok:
             any_failure = True
 
-    # Make the GitHub job turn red when the run produced no publications.
-    if report.new and not report.publish_results:
+    # A dry run succeeds only after a render. A real run succeeds only after a
+    # publisher returns a receipt.
+    if effective_dry_run and report.new and not report.processed:
+        sys.exit(2)
+    if not effective_dry_run and report.new and not report.publish_results:
         sys.exit(2)
     if any_failure:
         sys.exit(3)
