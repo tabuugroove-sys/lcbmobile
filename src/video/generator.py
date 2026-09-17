@@ -658,6 +658,151 @@ def _make_scene(
     return output
 
 
+def _make_hook_scene(
+    *,
+    item: NewsItem,
+    media: list[LicensedImage],
+    credits: str,
+    output: Path,
+) -> Path:
+    """Create a truthful curiosity-first opening frame and thumbnail."""
+    if not media:
+        return _make_scene(
+            index=0,
+            count=5,
+            headline="O QUE ACONTECEU?",
+            subtitle="ENTENDA O CASO",
+            source_name=item.source_name,
+            media=None,
+            cutout=None,
+            credits=credits,
+            output=output,
+        )
+
+    images: list[Image.Image] = []
+    for asset in media[:2]:
+        try:
+            images.append(Image.open(asset.path).convert("RGB"))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Cannot open hook media %s: %s", asset.path, exc)
+    if not images:
+        return _make_scene(
+            index=0,
+            count=5,
+            headline="O QUE ACONTECEU?",
+            subtitle="ENTENDA O CASO",
+            source_name=item.source_name,
+            media=None,
+            cutout=None,
+            credits=credits,
+            output=output,
+        )
+    if len(images) == 1:
+        images.append(images[0].copy())
+
+    canvas = _fit_cover(images[0], (WIDTH, HEIGHT), 0.35).filter(
+        ImageFilter.GaussianBlur(30)
+    ).convert("RGBA")
+    canvas = ImageEnhance.Brightness(canvas).enhance(0.42)
+    draw = ImageDraw.Draw(canvas, "RGBA")
+    bold_path = _find_font(DEFAULT_FONT_CANDIDATES)
+    narrow_path = _find_font(CONDENSED_FONT_CANDIDATES) or bold_path
+
+    card_x, card_y, card_w, card_h = 54, 300, 972, 1080
+    draw.rounded_rectangle(
+        (card_x - 8, card_y - 8, card_x + card_w + 8, card_y + card_h + 8),
+        26,
+        fill=(0, 0, 0, 155),
+        outline=(255, 255, 255, 100),
+        width=3,
+    )
+    left = _fit_cover(images[0], (card_w // 2, card_h), 0.30)
+    right = _fit_cover(images[1], (card_w - card_w // 2, card_h), 0.30)
+    canvas.alpha_composite(left.convert("RGBA"), (card_x, card_y))
+    canvas.alpha_composite(right.convert("RGBA"), (card_x + card_w // 2, card_y))
+    shade = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    ImageDraw.Draw(shade).rectangle(
+        (card_x, card_y, card_x + card_w, card_y + card_h),
+        fill=(0, 0, 0, 28),
+    )
+    canvas.alpha_composite(shade)
+    draw = ImageDraw.Draw(canvas, "RGBA")
+    draw.line(
+        (WIDTH // 2, card_y, WIDTH // 2, card_y + card_h),
+        fill=(255, 255, 255, 150),
+        width=5,
+    )
+
+    artist = find_known_music_act(item.title)
+    label = (artist or "MÚSICA AGORA").upper()
+    draw.rounded_rectangle((60, 55, 1020, 150), 24, fill=(5, 5, 9, 225))
+    _draw_centered(
+        draw,
+        (WIDTH // 2, 103),
+        label,
+        _font(bold_path, 43 if len(label) < 18 else 34),
+        stroke=3,
+    )
+
+    radius = 145
+    center = (WIDTH // 2, 855)
+    draw.ellipse(
+        (
+            center[0] - radius,
+            center[1] - radius,
+            center[0] + radius,
+            center[1] + radius,
+        ),
+        fill=(10, 10, 14, 242),
+        outline=(255, 51, 92, 255),
+        width=10,
+    )
+    _draw_centered(
+        draw,
+        center,
+        "?",
+        _font(narrow_path, 238),
+        fill="#ffffff",
+        stroke=5,
+    )
+
+    draw.rounded_rectangle(
+        (72, 1430, 1008, 1698),
+        28,
+        fill=(5, 5, 9, 236),
+        outline=(255, 51, 92, 220),
+        width=5,
+    )
+    _draw_centered(
+        draw,
+        (WIDTH // 2, 1518),
+        "O QUE ACONTECEU?",
+        _font(narrow_path, 74),
+        stroke=6,
+    )
+    _draw_centered(
+        draw,
+        (WIDTH // 2, 1632),
+        "ENTENDA O CASO",
+        _font(bold_path, 37),
+        fill="#ffd34d",
+        stroke=3,
+    )
+
+    source_label = re.sub(r"\s+", " ", item.source_name).strip().upper()[:48]
+    draw.rectangle((0, 1888, WIDTH, HEIGHT), fill=(6, 5, 10, 242))
+    draw.rectangle((0, 1888, round(WIDTH / 5), 1902), fill="#ff335c")
+    draw.text(
+        (60, 1911),
+        f"FONTE DA NOTÍCIA: {source_label}",
+        font=_font(bold_path, 22),
+        fill=(230, 230, 230),
+        anchor="ls",
+    )
+    canvas.convert("RGB").save(output, "JPEG", quality=93)
+    return output
+
+
 def _build_scene_images(
     item: NewsItem,
     post: RewrittenPost,
@@ -687,6 +832,16 @@ def _build_scene_images(
     credits = _creator_credit(media)
     scenes = []
     for index in range(scene_count):
+        if index == 0:
+            scenes.append(
+                _make_hook_scene(
+                    item=item,
+                    media=media,
+                    credits=credits,
+                    output=output_dir / "scene-01.jpg",
+                )
+            )
+            continue
         asset = media[index % len(media)] if media else None
         scenes.append(
             _make_scene(
@@ -717,7 +872,7 @@ def _write_render_manifest(
     (base / "render_manifest.json").write_text(
         json.dumps(
             {
-                "style": "cinematic_mixed_media_v2",
+                "style": "cinematic_mixed_media_v3_curiosity_hook",
                 "language": settings.content_lang,
                 "source_url": item.url,
                 "artist_query": artist_query,
@@ -855,12 +1010,16 @@ def build_short(
         audio = _mix_voice_with_background(voice, duration, voice_path=str(audio_path))
 
         scene_paths = _build_scene_images(item, post, photos, base)
-        per_scene = duration / len(scene_paths)
+        hook_duration = min(2.2, max(1.2, duration * 0.08))
+        content_scene_duration = (duration - hook_duration) / max(
+            1, len(scene_paths) - 1
+        )
         clips = []
         source_clips: list[VideoFileClip] = []
         subtitles = _subtitle_chunks(post.script_voiceover, len(scene_paths))
         headlines = _headline_chunks(post, len(scene_paths))
         for index, scene_path in enumerate(scene_paths):
+            scene_duration = hook_duration if index == 0 else content_scene_duration
             if index % 2 == 1 and videos:
                 video_asset = videos[(index // 2) % len(videos)]
                 overlay_path = _make_video_overlay(
@@ -875,23 +1034,26 @@ def build_short(
                 clip, source_clip = _build_video_scene(
                     media=video_asset,
                     overlay_path=overlay_path,
-                    duration=per_scene,
+                    duration=scene_duration,
                 )
                 clips.append(clip)
                 source_clips.append(source_clip)
                 continue
-            still = ImageClip(str(scene_path)).set_duration(per_scene)
+            still = ImageClip(str(scene_path)).set_duration(scene_duration)
             direction = 1 if index % 2 else -1
             animated = still.resize(
-                lambda time, d=per_scene: 1.0 + 0.025 * min(1.0, time / max(d, 0.1))
+                lambda time, d=scene_duration: 1.0
+                + 0.025 * min(1.0, time / max(d, 0.1))
             ).set_position(
-                lambda time, d=per_scene, sign=direction: (
+                lambda time, d=scene_duration, sign=direction: (
                     "center",
                     int(-8 + sign * 6 * math.sin(time / max(d, 0.1) * math.pi)),
                 )
             )
             clips.append(
-                CompositeVideoClip([animated], size=(WIDTH, HEIGHT)).set_duration(per_scene)
+                CompositeVideoClip([animated], size=(WIDTH, HEIGHT)).set_duration(
+                    scene_duration
+                )
             )
         composite = concatenate_videoclips(clips, method="compose")
         composite = composite.set_audio(audio).set_duration(duration)

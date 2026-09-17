@@ -133,6 +133,89 @@ _DRAMA_PHRASES = (
     "risco de morte",
 )
 
+# Broad topic buckets make the learning less brittle than exact headline
+# tokens. A past winner containing "detona" can therefore help a new story
+# containing "troca de farpas", even when those exact words never repeated.
+_TOPIC_TERMS = {
+    "public_conflict": {
+        "acusa",
+        "acusacao",
+        "barraco",
+        "briga",
+        "critica",
+        "detona",
+        "exposto",
+        "exposta",
+        "polemica",
+        "processo",
+        "revoltado",
+        "revoltada",
+        "treta",
+        "vaiado",
+        "vaiada",
+    },
+    "shock_reveal": {
+        "absurdo",
+        "choca",
+        "chocante",
+        "chocou",
+        "cresceu",
+        "inacreditavel",
+        "revela",
+        "revelacao",
+        "segredo",
+        "surpreende",
+        "surpreendeu",
+        "transformacao",
+    },
+    "loss_mourning": {
+        "despedida",
+        "enterro",
+        "falecimento",
+        "funeral",
+        "luto",
+        "morre",
+        "morreu",
+        "morte",
+    },
+    "health_crisis": {
+        "colapso",
+        "doenca",
+        "doente",
+        "emergencia",
+        "grave",
+        "hospital",
+        "internado",
+        "internada",
+        "surto",
+    },
+    "relationship_drama": {
+        "divorcio",
+        "separacao",
+        "termino",
+        "traicao",
+    },
+}
+
+_TOPIC_PHRASES = {
+    "public_conflict": ("troca de farpas", "quebra o silencio"),
+    "shock_reveal": ("antes e depois", "ninguem esperava", "perdeu tudo"),
+    "loss_mourning": ("morre aos", "morreu aos"),
+    "health_crisis": ("estado grave", "passa mal", "passou mal"),
+    "relationship_drama": ("fim do casamento",),
+}
+
+# Cold-start priors mirror the channel evidence supplied by the owner: direct
+# public conflict won most strongly, followed by shock/reveal and mourning.
+# Once history exists, the learned lift below can move these priors up or down.
+_TOPIC_PRIORS = {
+    "public_conflict": 1.00,
+    "shock_reveal": 0.82,
+    "loss_mourning": 0.78,
+    "health_crisis": 0.70,
+    "relationship_drama": 0.68,
+}
+
 
 def _tokens(text: str) -> list[str]:
     return [
@@ -182,23 +265,51 @@ def _drama_score(item: NewsItem) -> float:
     return min(1.0, raw / 3.0)
 
 
+def _topic_labels(text: str) -> set[str]:
+    """Map varied PT-BR wording into stable, learnable viral topic buckets."""
+    plain = _plain_text(text)
+    tokens = set(_tokens(plain))
+    labels = {
+        topic
+        for topic, terms in _TOPIC_TERMS.items()
+        if tokens & terms
+    }
+    labels.update(
+        topic
+        for topic, phrases in _TOPIC_PHRASES.items()
+        if any(phrase in plain for phrase in phrases)
+    )
+    return labels
+
+
+def _topic_prior(item: NewsItem) -> tuple[float, set[str]]:
+    labels = _topic_labels(f"{item.title} {item.summary}")
+    if not labels:
+        return 0.0, labels
+    strongest = max(_TOPIC_PRIORS.get(label, 0.0) for label in labels)
+    return min(1.0, strongest + 0.05 * (len(labels) - 1)), labels
+
+
 def _cold_start_scores(pool: list[NewsItem]) -> list[tuple[NewsItem, float, str]]:
     """Score candidates when YouTube history is absent or too small."""
     scored: list[tuple[NewsItem, float, str]] = []
     for idx, item in enumerate(pool):
         freshness = _freshness_score(item)
         drama = _drama_score(item)
+        topic, topic_labels = _topic_prior(item)
         star = 1.0 if find_known_music_act(f"{item.title} {item.summary}") else 0.0
         rss_order = 1.0 - (idx / max(len(pool), 1))
         score = (
             0.60 * rss_order
             + 0.75 * freshness
             + settings.drama_signal_weight * drama
+            + 0.85 * topic
             + 0.35 * star
         )
         reason = (
             f"rss={rss_order:.2f} fresh={freshness:.2f} "
-            f"drama={drama:.2f} star={star:.2f}"
+            f"drama={drama:.2f} topic={topic:.2f} "
+            f"topics={','.join(sorted(topic_labels)) or '-'} star={star:.2f}"
         )
         scored.append((item, score, reason))
     scored.sort(key=lambda row: row[1], reverse=True)
@@ -257,6 +368,7 @@ def select_best_candidates(
     source_scores: dict[str, list[float]] = defaultdict(list)
     category_scores: dict[str, list[float]] = defaultdict(list)
     token_scores: dict[str, list[float]] = defaultdict(list)
+    topic_scores: dict[str, list[float]] = defaultdict(list)
 
     for row, perf in zip(examples, scores):
         source = str(row.get("source_id") or "")
@@ -267,6 +379,9 @@ def select_best_candidates(
             category_scores[category].append(perf)
         for token in set(_tokens(str(row.get("title") or ""))):
             token_scores[token].append(perf)
+        history_text = f"{row.get('title') or ''} {row.get('summary') or ''}"
+        for topic in _topic_labels(history_text):
+            topic_scores[topic].append(perf)
 
     scored: list[tuple[NewsItem, float, str]] = []
     for item in pool:
@@ -281,6 +396,17 @@ def select_best_candidates(
         token_part = _avg(token_values, baseline)
         freshness = _freshness_score(item)
         drama = _drama_score(item)
+        topic_prior, topic_labels = _topic_prior(item)
+        topic_lifts = []
+        for topic in topic_labels:
+            values = topic_scores[topic]
+            if not values:
+                continue
+            # Shrink sparse buckets toward the channel baseline so one lucky
+            # upload cannot permanently dominate selection.
+            shrinkage = len(values) / (len(values) + 2.0)
+            topic_lifts.append((_avg(values, baseline) - baseline) * shrinkage)
+        topic_lift = max(-1.5, min(1.5, _avg(topic_lifts, 0.0)))
         star = 1.0 if find_known_music_act(f"{item.title} {item.summary}") else 0.0
 
         score = (
@@ -289,12 +415,16 @@ def select_best_candidates(
             + 0.20 * token_part
             + 0.75 * freshness
             + settings.drama_signal_weight * drama
+            + 0.90 * topic_prior
+            + 0.80 * topic_lift
             + 0.35 * star
         )
         reason = (
             f"source={source_part:.2f} category={category_part:.2f} "
             f"tokens={token_part:.2f} fresh={freshness:.2f} "
-            f"drama={drama:.2f} star={star:.2f}"
+            f"drama={drama:.2f} topic={topic_prior:.2f} "
+            f"topic_lift={topic_lift:.2f} "
+            f"topics={','.join(sorted(topic_labels)) or '-'} star={star:.2f}"
         )
         scored.append((item, score, reason))
 

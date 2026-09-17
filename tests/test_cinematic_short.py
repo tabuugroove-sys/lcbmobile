@@ -13,6 +13,7 @@ from src.video.commons_video import LicensedVideo, fetch_licensed_artist_videos
 from src.video.generator import (
     HEIGHT,
     WIDTH,
+    _make_hook_scene,
     _make_scene,
     _make_video_overlay,
     resolve_visual_media,
@@ -92,6 +93,44 @@ class CommonsMediaTests(unittest.TestCase):
 
 
 class SceneRenderTests(unittest.TestCase):
+    def test_first_frame_is_a_curiosity_collage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            assets = []
+            for index, color in enumerate(((40, 110, 170), (190, 70, 90))):
+                path = root / f"photo-{index}.jpg"
+                Image.new("RGB", (1200, 1600), color).save(path)
+                assets.append(
+                    LicensedImage(
+                        path=str(path),
+                        title=f"Shakira {index}.jpg",
+                        creator="Example Photographer",
+                        license="CC BY 2.0",
+                        license_url="https://creativecommons.org/licenses/by/2.0",
+                        source_page="https://commons.wikimedia.org/example",
+                        source_url=f"https://upload.wikimedia.org/example-{index}.jpg",
+                        width=1200,
+                        height=1600,
+                    )
+                )
+            output = root / "hook.jpg"
+            news = type(
+                "Item",
+                (),
+                {"title": "Shakira quebra o silêncio", "source_name": "Fonte Teste"},
+            )()
+
+            _make_hook_scene(
+                item=news,  # type: ignore[arg-type]
+                media=assets,
+                credits="FOTOS: Example Photographer / CC BY",
+                output=output,
+            )
+
+            with Image.open(output) as rendered:
+                self.assertEqual(rendered.size, (WIDTH, HEIGHT))
+                self.assertNotEqual(rendered.getpixel((280, 850)), rendered.getpixel((800, 850)))
+
     def test_visual_lookup_requires_artist_in_headline(self) -> None:
         news = type(
             "Item",
