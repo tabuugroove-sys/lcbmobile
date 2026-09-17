@@ -7,7 +7,7 @@ Updated: 2026-09-17, America/Sao_Paulo.
 - Source checkout: `/Users/a1111/Documents/Codex/2026-04-29/github/lcbmobile`
 - Repository: `tabuugroove-sys/lcbmobile`
 - Active branch: `claude/create-news-feed-yMBpb`
-- Last verified behavior commit: `6cc3142`
+- Last verified behavior commit: `7654b08`
 - Never print, commit or copy credential values into chat or logs.
 - Recheck runtime state before making a current operational claim. A commit,
   successful task exit or dashboard row is not proof of a YouTube publication.
@@ -116,8 +116,8 @@ story. Video is optional. If the entire candidate pool has no photo,
 `_select_with_classic_fallback()` in `src/pipeline.py:52-80` reranks without the
 gate and publishes the classic format so the scheduled slot is not lost.
 
-Deployment status at 2026-09-17 15:16 BRT: GitHub shows the new workflow and
-the Mac backup runtime has the new defaults with LaunchAgent exit code `0`.
+Deployment status at 2026-09-17 15:31 BRT: commit `7654b08` was pushed and the
+Mac backup runtime has the photo-first defaults with LaunchAgent exit code `0`.
 The copied Windows runtime is **not yet verified or updated** because both SSH
 attempts to `capytime` timed out during banner exchange. Reconnect, copy
 `src/config.py` and `scripts/run_server_primary.ps1`, then inspect the four
@@ -219,7 +219,7 @@ For publication proof, find all of these together:
 
 ## Tests and known limits
 
-- Media-gate and failover targeted verification: `32/32` unit tests passed.
+- Media-gate and failover targeted verification: `34/34` unit tests passed.
 - `tests/test_pipeline_classic_publish.py` forces zero photo/video assets and
   proves that the pipeline still calls the YouTube publisher and records a
   successful remote id. A separate real render with the same zero-media setup
