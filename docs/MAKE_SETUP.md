@@ -87,7 +87,8 @@ GitHub mobile → **Actions** → **Cloud publish (Telegram + Make.com)** →
 **Run workflow**.
 
 Em ~3 minutos: post no Telegram + vídeo subindo nas plataformas via
-Make.com. Depois disso o cron roda sozinho a cada 3 horas.
+Make.com. Esse fluxo é manual; o cron regular de Shorts usa o pipeline descrito
+em `SERVER_PRIMARY.md`.
 
 ## Solução de problemas
 

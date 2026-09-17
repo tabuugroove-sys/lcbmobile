@@ -25,17 +25,17 @@ class LocalBackupRunnerTests(unittest.TestCase):
         return datetime(2026, 8, 31, hour, minute, tzinfo=self.tz)
 
     def test_expected_posts_tracks_backup_slots(self) -> None:
-        self.assertEqual(expected_posts(self._at(8, 27)), 0)
-        self.assertEqual(expected_posts(self._at(8, 28)), 1)
-        self.assertEqual(expected_posts(self._at(13, 27)), 1)
-        self.assertEqual(expected_posts(self._at(13, 28)), 2)
-        self.assertEqual(expected_posts(self._at(20, 28)), 3)
+        self.assertEqual(expected_posts(self._at(9, 27)), 0)
+        self.assertEqual(expected_posts(self._at(9, 28)), 1)
+        self.assertEqual(expected_posts(self._at(14, 27)), 1)
+        self.assertEqual(expected_posts(self._at(14, 28)), 2)
+        self.assertEqual(expected_posts(self._at(19, 28)), 3)
 
     def test_primary_server_slots_are_configurable(self) -> None:
-        slots = parse_publish_slots("08:13=1,13:13=2,20:13=3")
-        self.assertEqual(expected_posts(self._at(8, 12), slots), 0)
-        self.assertEqual(expected_posts(self._at(8, 13), slots), 1)
-        self.assertEqual(expected_posts(self._at(20, 13), slots), 3)
+        slots = parse_publish_slots("09:13=1,14:13=2,19:13=3")
+        self.assertEqual(expected_posts(self._at(9, 12), slots), 0)
+        self.assertEqual(expected_posts(self._at(9, 13), slots), 1)
+        self.assertEqual(expected_posts(self._at(19, 13), slots), 3)
 
     def test_invalid_slot_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

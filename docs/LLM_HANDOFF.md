@@ -34,7 +34,7 @@ unverified RSS image.
 - Runtime: `C:\lcbmobile-news`.
 - Scheduled Task: `LCBMobile News Primary`, running as `SYSTEM`.
 - The task polls every five minutes.
-- Due slots: 08:13, 13:13 and 20:13 BRT.
+- Due slots: 09:13, 14:13 and 19:13 BRT.
 - Expected channel counts after the slots: 1, 2 and 3 Shorts for that BRT day.
 - Entrypoint: `scripts/run_server_primary.ps1`.
 - Gate/orchestrator: `scripts/local_backup_runner.py`.
@@ -59,7 +59,9 @@ the factual hook; it must never invent or intensify an unsupported claim.
 Reference-style visuals are a publication gate. `REQUIRE_VISUAL_MEDIA=true`
 and `MIN_VISUAL_MEDIA_ASSETS=3` make ranking continue to the next candidate
 when the current story has no identified artist or too few verified images.
-Do not restore the graphic-only circle fallback as a publishable main Short.
+`REQUIRE_VIDEO_MEDIA=true` and `MIN_VIDEO_MEDIA_ASSETS=2` also require two
+licensed archive clips. The graphic-only renderer is reserved for scheduled
+GitHub failover and must not replace the main Windows quality mode.
 
 Automatic GrabCut is present only as an experimental path and remains disabled
 with `AUTO_CUTOUT_ENABLED=false`; automated masking was rejected in QA when a
@@ -84,7 +86,7 @@ are under `C:\lcbmobile-news\logs`.
 - LaunchAgent: `com.tabuugroove.lcbmobile.local-backup`.
 - Installed runtime: `~/.local/share/lcbmobile-backup`.
 - Poll interval: every five minutes.
-- Backup slots: 08:28, 13:28 and 20:28 BRT, 15 minutes after primary.
+- Backup slots: 09:28, 14:28 and 19:28 BRT, 15 minutes after primary.
 - It uses the same real YouTube count gate and posts only when the server missed
   the required count.
 - Rewrite provider: signed-in local Claude CLI.
@@ -96,10 +98,15 @@ After changing shared runtime code, run `scripts/install_local_backup.sh`. If
 Codex sandboxing blocks `launchctl bootstrap`, run the bootstrap with explicit
 system approval and verify `last exit code = 0`.
 
-### 3. GitHub Actions is manual fallback for regular Shorts
+### 3. GitHub Actions is the independent last-resort fallback
 
-`.github/workflows/pipeline.yml` has no `schedule`; it keeps only
-`workflow_dispatch`. This prevents GitHub from racing the Windows primary.
+`.github/workflows/pipeline.yml` runs at 10:13, 15:13 and 20:13 BRT, one hour
+after the Windows slots. Before rendering it reads the authenticated YouTube
+uploads playlist and compares today's real Short count with the expected 1/2/3
+quota. A met quota is a no-op. A missing quota uses YouTube only, disables the
+strict `3 photos + 2 videos` gate and renders the reliable graphic/photo mode.
+The workflow verifies the channel again after upload and pages the urgent bot
+if the quota is still missing. Manual `workflow_dispatch` remains available.
 
 Do not disable unrelated scheduled workflows without an explicit request:
 

@@ -9,10 +9,12 @@ Windows publishing host. It is isolated from the LCBand services on that host.
 - Account: `NT AUTHORITY\SYSTEM`
 - Poll interval: every five minutes
 - Pipeline timeout: 45 minutes
-- Due slots in `America/Sao_Paulo`: 08:13, 13:13 and 20:13
+- Due slots in `America/Sao_Paulo`: 09:13, 14:13 and 19:13
 - Expected daily count after each slot: 1, 2 and 3 Shorts
-- Mac backup checks the same channel 15 minutes later at 08:28, 13:28 and 20:28
-- GitHub `pipeline.yml` has no cron; it remains a manual cloud fallback
+- Mac backup checks the same channel 15 minutes later at 09:28, 14:28 and 19:28
+- GitHub Actions independently checks the live YouTube quota one hour later at
+  10:13, 15:13 and 20:13 BRT. It uses the reliable pre-cinematic renderer only
+  when the Windows server still has not delivered the expected Short.
 - A failed verified publication sends one audible urgent-bot alert per missed
   quota milestone. Retries continue on schedule after the alert.
 

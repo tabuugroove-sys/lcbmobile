@@ -37,9 +37,9 @@ SOURCE_RE = re.compile(r"^Fonte:\s*(https?://\S+)", re.IGNORECASE | re.MULTILINE
 
 # Default Mac backup slots are 15 minutes after the primary server slots.
 DEFAULT_SLOTS = (
-    (clock_time(8, 28), 1),
-    (clock_time(13, 28), 2),
-    (clock_time(20, 28), 3),
+    (clock_time(9, 28), 1),
+    (clock_time(14, 28), 2),
+    (clock_time(19, 28), 3),
 )
 
 

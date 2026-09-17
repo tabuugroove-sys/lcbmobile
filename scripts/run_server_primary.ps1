@@ -20,7 +20,7 @@ $env:PATH = "C:\ProgramData\chocolatey\bin;C:\Python311;C:\Python311\Scripts;$en
 $env:IMAGEMAGICK_BINARY = "C:\Program Files\ImageMagick-7.1.2-Q16-HDRI\magick.exe"
 $env:LOCAL_BACKUP_PYTHON = $Python
 $env:RUNNER_ROLE = "server-primary"
-$env:PUBLISH_SLOTS = "08:13=1,13:13=2,20:13=3"
+$env:PUBLISH_SLOTS = "09:13=1,14:13=2,19:13=3"
 $env:LOCAL_BACKUP_COOLDOWN_MINUTES = "15"
 $env:PIPELINE_TIMEOUT_SECONDS = "2700"
 $env:TIMEZONE = "America/Sao_Paulo"

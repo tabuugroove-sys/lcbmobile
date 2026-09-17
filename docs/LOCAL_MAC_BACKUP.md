@@ -7,7 +7,7 @@ This is the emergency path when the Windows primary publisher misses a slot.
 - macOS `launchd` starts `scripts/run_local_backup.sh` every five minutes.
 - `scripts/local_backup_runner.py` reads the authenticated channel's uploads
   playlist through YouTube Data API.
-- The runner expects 1/2/3 Shorts after 08:28, 13:28 and 20:28 BRT. These are
+- The runner expects 1/2/3 Shorts after 09:28, 14:28 and 19:28 BRT. These are
   15 minutes after the primary server slots.
 - If the channel already has the expected count, it exits without rendering.
 - If a Short is missing, it syncs recent source URLs into local SQLite, runs one

@@ -43,8 +43,8 @@ acrescenta YouTube/IG/TikTok depois, sem perder nada do que já foi postado.
 7. **(Opcional) Variables** — no mesmo lugar, aba *Variables*: `ELEVENLABS_VOICE_ID`
    com o id da voz pt-BR escolhida.
 8. **Rode** — *Actions → "Telegram only (one tap)" → Run workflow*. Em ~3 min
-   uma fofoca fresca cai no seu canal. Depois disso o cron principal
-   ("Autopost pipeline") posta sozinho a cada 3 horas.
+   uma fofoca fresca cai no seu canal. O cron de Shorts é descrito na seção
+   "Executando 24/7" abaixo.
 
 ## ☁️ YouTube + Instagram + TikTok pelo celular (via Make.com)
 
@@ -61,8 +61,7 @@ webhook, cola num secret. Pronto.
    do GitHub Release que o pipeline cria).
 4. *Actions → "Cloud publish (Telegram + Make.com)" → Run workflow*.
 
-Esse mesmo workflow já está no cron de 3h, então depois do primeiro tap
-roda sozinho.
+Esse workflow é um caminho manual separado do cron de Shorts.
 
 ## Setup local
 
@@ -181,10 +180,11 @@ ganha crédito só porque caiu em uma pauta naturalmente mais forte.
 
 ## Executando 24/7
 
-O publisher primário roda no Windows Server nos horários 08:13, 13:13 e 20:13
-BRT. O Mac verifica o canal 15 minutos depois e publica apenas quando o servidor
-não atingiu a contagem esperada. `/.github/workflows/pipeline.yml` é somente um
-fallback manual e não tem cron, evitando uploads concorrentes. Veja
+O publisher primário roda no Windows Server nos horários 09:13, 14:13 e 19:13
+BRT. O Mac verifica o canal 15 minutos depois. GitHub Actions faz uma última
+verificação independente uma hora depois, consulta a contagem real de Shorts e
+só usa o renderizador cloud confiável quando o servidor ainda não atingiu a
+meta diária. Veja
 [`docs/SERVER_PRIMARY.md`](docs/SERVER_PRIMARY.md) e
 [`docs/LOCAL_MAC_BACKUP.md`](docs/LOCAL_MAC_BACKUP.md).
 

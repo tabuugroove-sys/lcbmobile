@@ -1,8 +1,13 @@
 name: Autopost pipeline
 
 on:
-  # Scheduled Shorts now run on the Windows server. Keep this workflow as a
-  # manual cloud fallback only, so GitHub cannot race the server at a slot.
+  schedule:
+    # Independent cloud failover, one hour after the Windows primary slots.
+    # BRT: 10:13, 15:13, 20:13. The live YouTube quota gate below makes each
+    # run a no-op when the server already delivered the expected 1/2/3 Shorts.
+    - cron: "13 13 * * *"
+    - cron: "13 18 * * *"
+    - cron: "13 23 * * *"
   workflow_dispatch:
     inputs:
       platforms:
@@ -21,6 +26,14 @@ on:
         description: "Max items per run"
         required: false
         default: "1"
+      fallback_mode:
+        description: "Exercise the scheduled cloud-fallback path manually"
+        required: false
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
 
 concurrency:
   group: autopost
@@ -57,31 +70,7 @@ jobs:
           restore-keys: |
             lcb-state-
 
-      - name: Decide whether this run should publish
-        id: gate
-        env:
-          TIMEZONE: America/Sao_Paulo
-        run: |
-          python3 - <<'PY'
-          import os
-          import sqlite3
-          from datetime import datetime
-          from pathlib import Path
-          from zoneinfo import ZoneInfo
-
-          event = os.environ["GITHUB_EVENT_NAME"]
-          schedule = os.environ.get("GITHUB_EVENT_SCHEDULE", "")
-          should_run = "true"
-          reason = "primary schedule or manual trigger"
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-              fh.write(f"should_run={should_run}\n")
-              fh.write(f"reason={reason}\n")
-          print(reason)
-          PY
-
       - name: Materialize secret files
-        if: steps.gate.outputs.should_run == 'true'
         run: |
           mkdir -p secrets
           if [ -n "${YOUTUBE_CLIENT_SECRET}" ]; then
@@ -93,6 +82,17 @@ jobs:
         env:
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+
+      - name: Check live YouTube quota
+        id: gate
+        env:
+          TIMEZONE: America/Sao_Paulo
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule || (inputs.fallback_mode == 'true' && '13 13 * * *') || '' }}
+        run: |
+          python -m scripts.github_fallback_gate \
+            --mode gate \
+            --schedule "${GITHUB_EVENT_SCHEDULE}" \
+            --github-output "${GITHUB_OUTPUT}"
 
       - name: Run pipeline
         if: steps.gate.outputs.should_run == 'true'
@@ -107,21 +107,20 @@ jobs:
           ANALYTICS_CANDIDATE_POOL: ${{ vars.ANALYTICS_CANDIDATE_POOL || '40' }}
           ANALYTICS_HISTORY_LIMIT: ${{ vars.ANALYTICS_HISTORY_LIMIT || '250' }}
           DRAMA_SIGNAL_WEIGHT: ${{ vars.DRAMA_SIGNAL_WEIGHT || '1.8' }}
-          REQUIRE_VISUAL_MEDIA: 'true'
-          MIN_VISUAL_MEDIA_ASSETS: '3'
-          REQUIRE_VIDEO_MEDIA: 'true'
-          MIN_VIDEO_MEDIA_ASSETS: '2'
+          # Scheduled fallback deliberately uses the reliable pre-cinematic
+          # renderer. Manual runs retain the strict mixed-media quality gate.
+          REQUIRE_VISUAL_MEDIA: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && 'false' || 'true' }}
+          MIN_VISUAL_MEDIA_ASSETS: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && '0' || '3' }}
+          REQUIRE_VIDEO_MEDIA: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && 'false' || 'true' }}
+          MIN_VIDEO_MEDIA_ASSETS: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && '0' || '2' }}
           YOUTUBE_METRICS_REFRESH_HOURS: ${{ vars.YOUTUBE_METRICS_REFRESH_HOURS || '6' }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           # Editorial: how many hours of virtual freshness to give DJ-category
           # items so they compete with high-volume celeb feeds (default 12).
           DJ_CATEGORY_BOOST_HOURS: ${{ vars.DJ_CATEGORY_BOOST_HOURS || '12' }}
-          # Anti-duplicate guard: if a successful post happened within this
-          # window, the run no-ops. Default 3.5h covers redundant slot triggers
-          # (:13/:33/:53). For the daily catch-up cron at 13:13 UTC we override
-          # to 10h — it should publish ONLY when the morning slot (11:13 UTC)
-          # silently failed (then ~17h since previous night's evening post).
-          MIN_HOURS_BETWEEN_POSTS: ${{ github.event.schedule == '13 13 * * *' && '10' || vars.MIN_HOURS_BETWEEN_POSTS || '3.5' }}
+          # Scheduled failover is governed by the live daily quota above, so a
+          # recent post must not hide a still-missing second or third Short.
+          MIN_HOURS_BETWEEN_POSTS: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && '0' || vars.MIN_HOURS_BETWEEN_POSTS || '3.5' }}
           CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
           CONTENT_LANG: pt-BR
           DB_PATH: data/state.db
@@ -162,7 +161,7 @@ jobs:
           WEBHOOK_TARGETS: ${{ vars.WEBHOOK_TARGETS || 'youtube,instagram,tiktok' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          PLATFORMS: ${{ inputs.platforms || vars.PLATFORMS || 'youtube,instagram' }}
+          PLATFORMS: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && 'youtube' || inputs.platforms || vars.PLATFORMS || 'youtube,instagram' }}
         run: |
           ARGS="-v"
           if [ -n "${PLATFORMS}" ]; then
@@ -172,8 +171,20 @@ jobs:
           fi
           python -m scripts.run_pipeline $ARGS
 
+      - name: Verify scheduled YouTube quota
+        if: steps.gate.outputs.should_run == 'true' && github.event_name == 'schedule'
+        env:
+          TIMEZONE: America/Sao_Paulo
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          python -m scripts.github_fallback_gate \
+            --mode verify \
+            --schedule "${GITHUB_EVENT_SCHEDULE}" \
+            --attempts 12 \
+            --delay-seconds 10
+
       - name: Reply to YouTube comments
-        if: steps.gate.outputs.should_run == 'true'
+        if: steps.gate.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.dry_run != 'true')
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
@@ -197,3 +208,20 @@ jobs:
           path: out
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Alert urgent bot when cloud failover fails
+        if: failure() && github.event_name == 'schedule'
+        env:
+          URGENT_BOT_TOKEN: ${{ secrets.LCBAND_URGENT_BOT_TOKEN }}
+          URGENT_CHAT_ID: ${{ secrets.LCBAND_URGENT_CHAT_ID }}
+          FALLBACK_SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ -z "${URGENT_BOT_TOKEN}" ] || [ -z "${URGENT_CHAT_ID}" ]; then
+            echo "Urgent bot secrets are not configured"
+            exit 0
+          fi
+          curl --fail --silent --show-error \
+            --request POST \
+            "https://api.telegram.org/bot${URGENT_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${URGENT_CHAT_ID}" \
+            --data-urlencode "text=[URGENT] GitHub fallback failed for ${FALLBACK_SCHEDULE}. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
