@@ -1,13 +1,13 @@
 # LCBMobile handoff for another LLM
 
-Updated: 2026-09-01, America/Sao_Paulo.
+Updated: 2026-09-17, America/Sao_Paulo.
 
 ## Start here
 
-- Source checkout: `/Users/a1111/Documents/Codex/2026-09-11/lcbmobile-production`
+- Source checkout: `/Users/a1111/Documents/Codex/2026-04-29/github/lcbmobile`
 - Repository: `tabuugroove-sys/lcbmobile`
 - Active branch: `claude/create-news-feed-yMBpb`
-- Last verified source commit: `4494e45`
+- Last verified source commit: `9ce3db1`
 - Never print, commit or copy credential values into chat or logs.
 - Recheck runtime state before making a current operational claim. A commit,
   successful task exit or dashboard row is not proof of a YouTube publication.
@@ -17,14 +17,66 @@ deduplicates and scores candidates, generates a narrated vertical Short and
 publishes it through the YouTube Data API. Selection is intentionally kept near
 music, musicians, DJs, concerts, releases and personal drama involving artists.
 
-The regular Short renderer uses `cinematic_music_news_v1`: several verified
-Wikimedia Commons photographs when an exact known artist can be resolved,
-alternating framed/full compositions, short centered headlines, pt-BR
-subtitles, archive labels and a visible Creative Commons credit on the final
-scene. Only `Public domain`, `CC0` and `CC BY` media are accepted automatically;
-`CC BY-SA`, unclear rights and ambiguous identities are rejected. If no safe
-media is found, the renderer produces a graphic-only video rather than using an
-unverified RSS image.
+The preferred Short renderer uses `cinematic_music_news_v1`: verified
+Wikimedia Commons photographs and curated reusable video when an exact known
+artist can be resolved, alternating framed/full compositions, short centered
+headlines, pt-BR subtitles, archive labels and a visible Creative Commons
+credit on the final scene. Only `Public domain`, `CC0` and `CC BY` media are
+accepted automatically; `CC BY-SA`, unclear rights and ambiguous identities
+are rejected. If the strict media check rejects every eligible story, the same
+run automatically selects the best story again and produces the classic format
+instead of publishing nothing.
+
+## YouTube downloading: exact code truth
+
+There is **no explicit ban on downloading from YouTube anywhere in this
+repository** at commit `9ce3db1`. There is no `BLOCK_YOUTUBE_DOWNLOAD` setting,
+no YouTube-domain rejection branch and no guard that throws because a media URL
+belongs to YouTube. Do not tell the user that such a ban was added: it was not.
+
+The current boundary is architectural: a YouTube downloader was never
+implemented or wired into the production media resolver.
+
+- `src/video/generator.py:28-29` imports only the licensed image and video
+  providers from `commons_media` and `commons_video`.
+- `src/video/generator.py:929-948`, function `resolve_visual_media()`, calls only
+  `fetch_licensed_artist_images()` and `fetch_licensed_artist_videos()`.
+- `src/video/commons_video.py:37-39` defines the reviewed whitelist
+  `CURATED_VIDEOS` and explicitly excludes dynamic video search from unattended
+  production.
+- `src/video/commons_video.py:182-245`, function
+  `fetch_licensed_artist_videos()`, downloads only URLs already present in that
+  whitelist and writes a rights manifest.
+- `requirements.txt:1-22` contains neither `yt-dlp` nor `youtube-dl`.
+
+Therefore, the precise answer to "where was the prohibition added?" is:
+**nowhere**. Production is currently whitelist-only, not because code blocks
+YouTube, but because no arbitrary-YouTube ingestion path exists.
+
+The reason it was not implemented is rights and channel risk, not a technical
+limitation. The user's permission cannot grant rights held by the owner of a
+third-party upload. YouTube states that even a few seconds can create copyright
+issues, that adding original material does not automatically make a use fair,
+and that fair use is ultimately decided by courts. A Content ID claim can
+block, monetize or track a video; a valid copyright removal request creates a
+strike, and three active strikes in 90 days can subject a channel to
+termination. Deleting a video normally does not remove an existing strike.
+
+Official references:
+
+- https://support.google.com/youtube/answer/2797449?hl=en
+- https://support.google.com/youtube/answer/9783148?hl=en-on
+- https://support.google.com/youtube/answer/7002106?hl=en
+- https://support.google.com/youtube/answer/2814000?hl=en
+
+This is why the implemented availability strategy is "licensed rich media when
+available, classic format otherwise", rather than automatically downloading
+unlicensed YouTube uploads. A future agent may add a YouTube-source adapter for
+media that the user owns, has explicit permission to download and reuse, or can
+prove is published under compatible reuse terms. Such an adapter should require
+source-level rights evidence and preserve it in the existing manifest; it
+should not infer permission merely from clip length, cropping, subtitles,
+voiceover or editing.
 
 ## Current ownership model
 
@@ -56,12 +108,16 @@ historical YouTube reaction, freshness, a known-artist signal and confirmed
 drama terms. Server `DRAMA_SIGNAL_WEIGHT=1.8`. Drama can change priority and
 the factual hook; it must never invent or intensify an unsupported claim.
 
-Reference-style visuals are a publication gate. `REQUIRE_VISUAL_MEDIA=true`
-and `MIN_VISUAL_MEDIA_ASSETS=3` make ranking continue to the next candidate
-when the current story has no identified artist or too few verified images.
+Reference-style visuals are attempted first. `REQUIRE_VISUAL_MEDIA=true` and
+`MIN_VISUAL_MEDIA_ASSETS=3` make ranking continue to the next candidate when the
+current story has no identified artist or too few verified images.
 `REQUIRE_VIDEO_MEDIA=true` and `MIN_VIDEO_MEDIA_ASSETS=2` also require two
-licensed archive clips. The graphic-only renderer is reserved for scheduled
-GitHub failover and must not replace the main Windows quality mode.
+licensed archive clips for that preferred pass. If every candidate fails these
+checks, `_select_with_classic_fallback()` in `src/pipeline.py:52-80` reranks the
+same pool without the visual eligibility gate. `run_pipeline()` then calls
+`build_short(..., enforce_media_requirements=False)` at
+`src/pipeline.py:267-273`. This same-run fallback now applies to the Windows and
+Mac runners as well as GitHub, so lack of rich media must not suppress a post.
 
 Automatic GrabCut is present only as an experimental path and remains disabled
 with `AUTO_CUTOUT_ENABLED=false`; automated masking was rejected in QA when a
@@ -159,7 +215,7 @@ For publication proof, find all of these together:
 
 ## Tests and known limits
 
-- Previous local source verification after review fixes: `32/32` unit tests passed.
+- Latest targeted source verification after failover fixes: `34/34` unit tests passed.
 - Cinematic/selection targeted verification on 2026-09-11: `21/21` passed;
   the pt-BR dry-run rendered six licensed images at 1080x1920, 30 fps, 30 s.
 - Windows targeted verification: `9/9` scheduler/template tests passed.
