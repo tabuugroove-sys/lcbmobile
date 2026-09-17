@@ -152,9 +152,9 @@ def load_settings() -> Settings:
         analytics_candidate_pool=_int(os.getenv("ANALYTICS_CANDIDATE_POOL"), 40),
         analytics_history_limit=_int(os.getenv("ANALYTICS_HISTORY_LIMIT"), 250),
         drama_signal_weight=_float(os.getenv("DRAMA_SIGNAL_WEIGHT"), 1.4),
-        require_visual_media=_bool(os.getenv("REQUIRE_VISUAL_MEDIA"), False),
+        require_visual_media=_bool(os.getenv("REQUIRE_VISUAL_MEDIA"), True),
         min_visual_media_assets=max(
-            0, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 0)
+            0, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 1)
         ),
         require_video_media=_bool(os.getenv("REQUIRE_VIDEO_MEDIA"), False),
         min_video_media_assets=max(

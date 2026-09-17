@@ -107,10 +107,10 @@ jobs:
           ANALYTICS_CANDIDATE_POOL: ${{ vars.ANALYTICS_CANDIDATE_POOL || '40' }}
           ANALYTICS_HISTORY_LIMIT: ${{ vars.ANALYTICS_HISTORY_LIMIT || '250' }}
           DRAMA_SIGNAL_WEIGHT: ${{ vars.DRAMA_SIGNAL_WEIGHT || '1.8' }}
-          # Rich media is best-effort on every runner. Missing media must never
-          # suppress a scheduled or manually requested publication.
-          REQUIRE_VISUAL_MEDIA: 'false'
-          MIN_VISUAL_MEDIA_ASSETS: '0'
+          # Prefer another eligible story when the current one has no photo.
+          # The pipeline's classic fallback still posts if the whole pool is dry.
+          REQUIRE_VISUAL_MEDIA: 'true'
+          MIN_VISUAL_MEDIA_ASSETS: '1'
           REQUIRE_VIDEO_MEDIA: 'false'
           MIN_VIDEO_MEDIA_ASSETS: '0'
           YOUTUBE_METRICS_REFRESH_HOURS: ${{ vars.YOUTUBE_METRICS_REFRESH_HOURS || '6' }}

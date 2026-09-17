@@ -19,12 +19,12 @@ class MediaGateConfigTests(unittest.TestCase):
         with mock.patch.dict(os.environ, env, clear=True):
             return load_settings()
 
-    def test_media_gates_are_disabled_by_default(self) -> None:
+    def test_photo_is_preferred_but_video_is_optional_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings = self._load(Path(temp_dir))
 
-        self.assertFalse(settings.require_visual_media)
-        self.assertEqual(settings.min_visual_media_assets, 0)
+        self.assertTrue(settings.require_visual_media)
+        self.assertEqual(settings.min_visual_media_assets, 1)
         self.assertFalse(settings.require_video_media)
         self.assertEqual(settings.min_video_media_assets, 0)
 

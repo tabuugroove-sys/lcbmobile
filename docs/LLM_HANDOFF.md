@@ -108,16 +108,13 @@ historical YouTube reaction, freshness, a known-artist signal and confirmed
 drama terms. Server `DRAMA_SIGNAL_WEIGHT=1.8`. Drama can change priority and
 the factual hook; it must never invent or intensify an unsupported claim.
 
-Reference-style visuals are best-effort in source configuration. Commit
-`6cc3142` sets `REQUIRE_VISUAL_MEDIA=false`, `MIN_VISUAL_MEDIA_ASSETS=0`,
-`REQUIRE_VIDEO_MEDIA=false` and `MIN_VIDEO_MEDIA_ASSETS=0` in bare
-`load_settings()` calls and in the Windows, Mac and GitHub entrypoints. The
-renderer still resolves and uses reusable Commons media when available, but its
-absence cannot reject a story or suppress a post. The old strict mode remains
-available only as an explicit environment override for a manual quality test.
-If strict mode is enabled and every candidate fails,
-`_select_with_classic_fallback()` in `src/pipeline.py:52-80` still reranks
-without the gate.
+The source configuration uses a photo-first, availability-safe policy:
+`REQUIRE_VISUAL_MEDIA=true`, `MIN_VISUAL_MEDIA_ASSETS=1`,
+`REQUIRE_VIDEO_MEDIA=false` and `MIN_VIDEO_MEDIA_ASSETS=0`. The first selection
+pass skips a story with no reusable photo and continues to the next eligible
+story. Video is optional. If the entire candidate pool has no photo,
+`_select_with_classic_fallback()` in `src/pipeline.py:52-80` reranks without the
+gate and publishes the classic format so the scheduled slot is not lost.
 
 Deployment status at 2026-09-17 15:16 BRT: GitHub shows the new workflow and
 the Mac backup runtime has the new defaults with LaunchAgent exit code `0`.

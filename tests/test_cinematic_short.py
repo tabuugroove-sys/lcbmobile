@@ -202,6 +202,24 @@ class SceneRenderTests(unittest.TestCase):
         ), mock.patch("src.video.generator.settings", strict_settings):
             self.assertFalse(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
+    def test_default_photo_gate_accepts_photo_without_video(self) -> None:
+        news = type(
+            "Item",
+            (),
+            {"title": "Shakira anuncia novidade", "summary": ""},
+        )()
+        photo_first_settings = mock.Mock(
+            require_visual_media=True,
+            min_visual_media_assets=1,
+            require_video_media=False,
+            min_video_media_assets=0,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.resolve_visual_media",
+            return_value=("shakira", [mock.sentinel.photo], []),
+        ), mock.patch("src.video.generator.settings", photo_first_settings):
+            self.assertTrue(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
+
     def test_classic_fallback_accepts_candidate_without_visual_media(self) -> None:
         news = type(
             "Item",

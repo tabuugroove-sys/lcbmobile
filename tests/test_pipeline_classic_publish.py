@@ -29,6 +29,47 @@ class _SuccessfulYouTubePublisher:
 
 
 class ClassicPublishPipelineTests(unittest.TestCase):
+    def test_prefers_later_candidate_that_has_a_photo(self) -> None:
+        without_photo = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/without-photo",
+            title="Cantor anuncia novidade sem imagem",
+        )
+        with_photo = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/with-photo",
+            title="Shakira anuncia novidade com imagem",
+        )
+
+        def choose(candidates, _store, *, limit, stage, eligibility=None):
+            del stage
+            eligible = [
+                candidate
+                for candidate in candidates
+                if eligibility is None or eligibility(candidate)
+            ]
+            return eligible[:limit]
+
+        with mock.patch(
+            "src.pipeline.select_best_candidates", side_effect=choose
+        ), mock.patch(
+            "src.pipeline.visual_media_ready",
+            side_effect=lambda item, _output: item is with_photo,
+        ):
+            selected, classic = pipeline._select_with_classic_fallback(
+                [without_photo, with_photo],
+                mock.Mock(),
+                limit=1,
+                stage="fresh",
+            )
+
+        self.assertEqual(selected, [with_photo])
+        self.assertFalse(classic)
+
     def test_publishes_when_no_photo_or_video_is_available(self) -> None:
         item = NewsItem(
             source_id="test-feed",
@@ -69,8 +110,8 @@ class ClassicPublishPipelineTests(unittest.TestCase):
                 pipeline.settings,
                 db_path=root / "state.db",
                 output_dir=root / "out",
-                require_visual_media=False,
-                min_visual_media_assets=0,
+                require_visual_media=True,
+                min_visual_media_assets=1,
                 require_video_media=False,
                 min_video_media_assets=0,
                 max_attempts_per_item=1,
@@ -86,9 +127,8 @@ class ClassicPublishPipelineTests(unittest.TestCase):
                 mock.patch("src.pipeline.is_music_news", return_value=True),
                 mock.patch("src.pipeline.select_best_candidates", side_effect=choose),
                 mock.patch(
-                    "src.video.generator.resolve_visual_media",
-                    return_value=(None, [], []),
-                ) as resolve_media,
+                    "src.pipeline.visual_media_ready", return_value=False
+                ) as media_ready,
                 mock.patch("src.pipeline.rewrite", return_value=post),
                 mock.patch("src.pipeline.build_short", return_value=assets) as build,
                 mock.patch("src.pipeline.build_publishers", return_value=[publisher]),
@@ -107,8 +147,8 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         self.assertTrue(report.publish_results[0].ok)
         self.assertEqual(len(publisher.calls), 1)
         build.assert_called_once()
-        self.assertTrue(build.call_args.kwargs["enforce_media_requirements"])
-        resolve_media.assert_not_called()
+        self.assertFalse(build.call_args.kwargs["enforce_media_requirements"])
+        media_ready.assert_called_once_with(item, test_settings.output_dir)
 
 
 if __name__ == "__main__":
