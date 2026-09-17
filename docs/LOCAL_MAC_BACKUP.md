@@ -14,6 +14,9 @@ This is the emergency path when the Windows primary publisher misses a slot.
   pipeline item and verifies that a new Short actually appears on YouTube.
 - A file lock prevents concurrent runs. Failed attempts have a 15-minute
   cooldown. The normal pipeline still performs up to five item attempts.
+- If a publication still cannot be verified, the runner sends one audible
+  urgent-bot alert for that day's missed quota milestone. Later retries remain
+  enabled, while duplicate alerts for the same milestone are suppressed.
 
 The local route uses the signed-in Claude CLI (`LOCAL_CLAUDE_FALLBACK=true`), so
 it does not depend on Anthropic API credits or Gemini free-tier quota. Voiceover

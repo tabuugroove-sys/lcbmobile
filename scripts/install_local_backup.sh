@@ -19,9 +19,14 @@ rsync -a --delete \
   "${SOURCE_DIR}/" "${RUNTIME_DIR}/"
 
 mkdir -p "${RUNTIME_DIR}/data" "${RUNTIME_DIR}/out"
-cp "${SOURCE_DIR}/.env.local" "${RUNTIME_DIR}/.env.local"
-cp "${SOURCE_DIR}/client_secret.json" "${RUNTIME_DIR}/client_secret.json"
-cp "${SOURCE_DIR}/youtube_token.json" "${RUNTIME_DIR}/youtube_token.json"
+for secret in .env.local client_secret.json youtube_token.json; do
+  if [[ -f "${SOURCE_DIR}/${secret}" ]]; then
+    cp "${SOURCE_DIR}/${secret}" "${RUNTIME_DIR}/${secret}"
+  elif [[ ! -f "${RUNTIME_DIR}/${secret}" ]]; then
+    print -u2 "Missing required secret in source and runtime: ${secret}"
+    exit 2
+  fi
+done
 cp "${SOURCE_DIR}/ops/${LABEL}.plist" "${AGENT_FILE}"
 chmod 600 \
   "${RUNTIME_DIR}/.env.local" \

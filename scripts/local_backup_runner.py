@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from googleapiclient.discovery import build
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.models import _normalize_url  # noqa: E402
+from src.notify import notify_urgent  # noqa: E402
 from src.storage import Store  # noqa: E402
 
 
@@ -131,6 +133,46 @@ def _cooldown_active(now: datetime) -> bool:
         return False
     cooldown = int(os.getenv("LOCAL_BACKUP_COOLDOWN_MINUTES", "15"))
     return (now - last).total_seconds() < cooldown * 60
+
+
+def _posting_alert_key(now: datetime, target: int) -> str:
+    return f"{now.date().isoformat()}:{target}"
+
+
+def _alert_posting_gap(
+    now: datetime,
+    *,
+    current: int,
+    target: int,
+    return_code: int,
+) -> bool:
+    """Notify once for each missed daily quota milestone."""
+    alert_key = _posting_alert_key(now, target)
+    if _load_state().get("last_posting_alert_key") == alert_key:
+        LOG.info("Urgent posting alert already sent for %s", alert_key)
+        return False
+
+    runner = os.getenv("RUNNER_ROLE", "local-backup")
+    host = os.getenv("COMPUTERNAME") or platform.node() or "unknown"
+    message = "\n".join(
+        [
+            "[URGENT] LCBMobile posting stalled",
+            f"YouTube Shorts today: {current}/{target}",
+            f"Missed quota: {alert_key}",
+            f"Runner: {runner} on {host}",
+            f"Pipeline exit code: {return_code}",
+            "Automatic retries remain enabled.",
+        ]
+    )
+    if not notify_urgent(message):
+        LOG.error("Could not deliver urgent posting alert for %s", alert_key)
+        return False
+    _save_state(
+        last_posting_alert_at=datetime.now(now.tzinfo).isoformat(),
+        last_posting_alert_key=alert_key,
+    )
+    LOG.warning("Urgent posting alert delivered for %s", alert_key)
+    return True
 
 
 def _youtube_service():
@@ -301,6 +343,12 @@ def main() -> int:
         LOG.info("Local fallback publication verified on YouTube (%d/%d)", verified, target)
         return 0
     LOG.error("Local fallback did not produce a verified YouTube Short")
+    _alert_posting_gap(
+        datetime.now(tz),
+        current=verified,
+        target=target,
+        return_code=return_code or 3,
+    )
     return return_code or 3
 
 

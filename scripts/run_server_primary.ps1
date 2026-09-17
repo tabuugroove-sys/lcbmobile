@@ -48,6 +48,21 @@ $env:DB_PATH = Join-Path $RepoDir "data\state.db"
 $env:OUTPUT_DIR = Join-Path $RepoDir "out"
 $env:ELEVENLABS_API_KEY = (Get-Content (Join-Path $SecretsDir "elevenlabs_api_key.txt") -Raw).Trim()
 
+$OptionalSecrets = @{
+    "LCBAND_URGENT_BOT_TOKEN" = "lcband_urgent_bot_token.txt"
+    "LCBAND_URGENT_CHAT_ID" = "lcband_urgent_chat_id.txt"
+    "ESCALATION_BOT_TOKEN" = "escalation_bot_token.txt"
+    "ESCALATION_BOT_CHAT_ID" = "escalation_bot_chat_id.txt"
+    "LCBAND_NOTIFY_BOT_TOKEN" = "lcband_notify_bot_token.txt"
+    "LCBAND_NOTIFY_CHAT_ID" = "lcband_notify_chat_id.txt"
+}
+foreach ($Name in $OptionalSecrets.Keys) {
+    $SecretFile = Join-Path $SecretsDir $OptionalSecrets[$Name]
+    if (Test-Path $SecretFile) {
+        Set-Item -Path "Env:$Name" -Value (Get-Content $SecretFile -Raw).Trim()
+    }
+}
+
 Set-Location $RepoDir
 & $Python -m scripts.local_backup_runner
 $ExitCode = $LASTEXITCODE
