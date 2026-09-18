@@ -7,7 +7,7 @@ Updated: 2026-09-17, America/Sao_Paulo.
 - Source checkout: `/Users/a1111/Documents/Codex/2026-04-29/github/lcbmobile`
 - Repository: `tabuugroove-sys/lcbmobile`
 - Active branch: `claude/create-news-feed-yMBpb`
-- Last verified behavior commit: `7654b08`
+- Last verified behavior commit: `0386ec9`
 - Never print, commit or copy credential values into chat or logs.
 - Recheck runtime state before making a current operational claim. A commit,
   successful task exit or dashboard row is not proof of a YouTube publication.
@@ -117,8 +117,8 @@ eligible story. If the entire candidate pool has no photo,
 `_select_with_classic_fallback()` in `src/pipeline.py:52-91` reranks without the
 gate and publishes the classic format so the scheduled slot is not lost.
 
-Deployment status at 2026-09-17 15:31 BRT: commit `7654b08` was pushed and the
-Mac backup runtime has the photo-first defaults with LaunchAgent exit code `0`.
+Deployment status at 2026-09-18 07:32 BRT: commit `0386ec9` was pushed and the
+Mac backup runtime has the video-first selector with LaunchAgent exit code `0`.
 The copied Windows runtime is **not yet verified or updated** because both SSH
 attempts to `capytime` timed out during banner exchange. Reconnect, copy
 `src/config.py` and `scripts/run_server_primary.ps1`, then inspect the four
