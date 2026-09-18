@@ -28,20 +28,93 @@ must not be represented as freely licensed. If all media checks fail, the same
 run still selects the best story and produces the classic format instead of
 publishing nothing.
 
+## Media rights boundaries: exact code truth
+
+There is no single global "copyright restriction" switch. The repository has
+three separate media paths with different rules.
+
+### Wikimedia Commons photographs
+
+The strict automatic photo filter is implemented in
+`src/video/commons_media.py`:
+
+- `ALLOWED_LICENSE_PREFIXES` at line 21 is exactly `("CC BY ", "CC0",
+  "Public domain")`.
+- `_candidate()` at lines 68-110 rejects every Commons result whose
+  `LicenseShortName` does not start with one of those values. This excludes
+  `CC BY-SA` and unknown/missing licenses.
+- The same function accepts only JPEG/PNG, requires at least 700 pixels on the
+  shorter side, requires the filename and metadata to match the exact artist,
+  and rejects likely artwork/logo/poster/signature results.
+- `fetch_licensed_artist_images()` writes the accepted metadata to
+  `licensed_media/rights_manifest.json`.
+
+These restrictions apply only to the Wikimedia Commons search. They are the
+reason older runs often found no photo even when the source article visibly had
+one.
+
+### Source-article photograph fallback
+
+Commit `789b529` added a separate, deliberately non-CC fallback:
+
+- `src/video/generator.py:939-962` first runs the strict Commons search. If it
+  returns no photo and `ALLOW_SOURCE_ARTICLE_IMAGE=true`, it calls
+  `fetch_source_article_image()`.
+- `src/video/source_media.py:18-20` labels the asset `Editorial source image;
+  reuse rights not verified`; it does not claim `CC BY`, `CC0` or public-domain
+  status.
+- `src/video/source_media.py:23-87` downloads only the RSS/OpenGraph image URL,
+  accepts HTTP(S), caps the download at 20 MB, requires a valid image at least
+  300 pixels on the shorter side, converts it to JPEG and stores its source
+  metadata.
+- `src/video/generator.py:875-890` records `rights_status` as
+  `source_image_unverified`, while lines 312-321 show `FONTE DA MATERIA` rather
+  than a false Creative Commons credit.
+
+This fallback is operationally allowed and does not block publication. It is
+not proof that the publisher granted a reusable license. The distinction must
+remain visible in manifests and credits.
+
+### Video footage
+
+The production video resolver is whitelist-only:
+
+- `src/video/commons_video.py:37-157` contains `CURATED_VIDEOS`, whose entries
+  were manually reviewed and include title, creator, license, source page and
+  source URL. The current keys are `lady gaga`, `shakira` and `dua lipa`.
+- `src/video/commons_video.py:182-245` downloads only entries already present
+  in that dictionary and writes `licensed_video/rights_manifest.json`.
+- There is no dynamic Commons-video search and no generic web/YouTube video
+  search in unattended production.
+
+To relax a repository restriction, change the relevant resolver deliberately;
+do not relabel an unverified asset as `CC BY`. If a new source has explicit
+reuse permission, preserve the source page, license text and license URL in the
+existing manifest structure.
+
+### Agent policy versus repository code
+
+The rules above are application code and can be inspected in Git. A coding
+agent may also be subject to external product/safety policy, which is not stored
+in this repository and cannot be deleted by editing this pipeline. Another LLM
+must state which layer it means instead of claiming that a hidden project guard
+exists.
+
 ## YouTube downloading: exact code truth
 
 There is **no explicit ban on downloading from YouTube anywhere in this
-repository** at commit `9ce3db1`. There is no `BLOCK_YOUTUBE_DOWNLOAD` setting,
+repository** on the current branch. There is no `BLOCK_YOUTUBE_DOWNLOAD` setting,
 no YouTube-domain rejection branch and no guard that throws because a media URL
 belongs to YouTube. Do not tell the user that such a ban was added: it was not.
 
 The current boundary is architectural: a YouTube downloader was never
 implemented or wired into the production media resolver.
 
-- `src/video/generator.py:28-29` imports only the licensed image and video
-  providers from `commons_media` and `commons_video`.
-- `src/video/generator.py:929-948`, function `resolve_visual_media()`, calls only
-  `fetch_licensed_artist_images()` and `fetch_licensed_artist_videos()`.
+- `src/video/generator.py:27-31` imports the Commons photo/video providers and
+  the source-article image fallback. It imports no YouTube downloader.
+- `src/video/generator.py:939-962`, function `resolve_visual_media()`, calls
+  `fetch_licensed_artist_images()`, `fetch_source_article_image()` and
+  `fetch_licensed_artist_videos()`.
 - `src/video/commons_video.py:37-39` defines the reviewed whitelist
   `CURATED_VIDEOS` and explicitly excludes dynamic video search from unattended
   production.
