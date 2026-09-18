@@ -55,6 +55,7 @@ class Settings:
     drama_signal_weight: float
     require_visual_media: bool
     min_visual_media_assets: int
+    allow_source_article_image: bool
     require_video_media: bool
     min_video_media_assets: int
     youtube_api_key: str
@@ -155,6 +156,9 @@ def load_settings() -> Settings:
         require_visual_media=_bool(os.getenv("REQUIRE_VISUAL_MEDIA"), True),
         min_visual_media_assets=max(
             0, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 1)
+        ),
+        allow_source_article_image=_bool(
+            os.getenv("ALLOW_SOURCE_ARTICLE_IMAGE"), True
         ),
         require_video_media=_bool(os.getenv("REQUIRE_VIDEO_MEDIA"), False),
         min_video_media_assets=max(

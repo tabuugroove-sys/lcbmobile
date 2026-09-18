@@ -27,6 +27,7 @@ from ..editorial import find_known_music_act
 from ..models import GeneratedAssets, NewsItem, RewrittenPost
 from .commons_media import LicensedImage, fetch_licensed_artist_images
 from .commons_video import LicensedVideo, fetch_licensed_artist_videos
+from .source_media import SOURCE_ARTICLE_LICENSE, fetch_source_article_image
 from .tts import get_tts_provider
 
 log = logging.getLogger(__name__)
@@ -315,6 +316,8 @@ def _creator_credit(media: list[LicensedImage]) -> str:
         if creator and creator.casefold() not in {item.casefold() for item in creators}:
             creators.append(creator)
     joined = " • ".join(creators[:4])
+    if media and all(asset.license == SOURCE_ARTICLE_LICENSE for asset in media):
+        return f"IMAGEM: {joined} / FONTE DA MATERIA" if joined else ""
     return f"FOTOS: {joined} / CC BY" if joined else ""
 
 
@@ -869,6 +872,9 @@ def _write_render_manifest(
     scenes: list[Path],
     duration: float,
 ) -> None:
+    uses_source_image = any(
+        asset.license == SOURCE_ARTICLE_LICENSE for asset in photos
+    )
     (base / "render_manifest.json").write_text(
         json.dumps(
             {
@@ -878,7 +884,11 @@ def _write_render_manifest(
                 "artist_query": artist_query,
                 "licensed_photo_count": len(photos),
                 "licensed_video_count": len(videos),
-                "rights_status": "verified" if photos and videos else "incomplete",
+                "rights_status": (
+                    "source_image_unverified"
+                    if uses_source_image
+                    else "verified" if photos and videos else "incomplete"
+                ),
                 "scene_count": len(scenes),
                 "duration_seconds": round(duration, 3),
                 "auto_publish_decision": "owned_by_pipeline_not_renderer",
@@ -940,6 +950,10 @@ def resolve_visual_media(
         base / "licensed_media",
         limit=max(6, settings.min_visual_media_assets),
     )
+    if not photos and settings.allow_source_article_image:
+        source_photo = fetch_source_article_image(item, base / "source_media")
+        if source_photo is not None:
+            photos = [source_photo]
     videos = fetch_licensed_artist_videos(
         artist_query,
         base / "licensed_video",
@@ -968,7 +982,7 @@ def visual_media_ready(
         not settings.require_video_media
         or len(videos) >= settings.min_video_media_assets
     )
-    ready = bool(artist_query) and photo_ready and video_ready
+    ready = bool(artist_query or photos) and photo_ready and video_ready
     if not ready:
         log.info(
             "Skipping visual-poor candidate: artist=%r photos=%d/%d videos=%d/%d title=%s",

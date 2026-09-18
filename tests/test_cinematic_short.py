@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from unittest import mock
 import httpx
 from PIL import Image
 
+from src.models import NewsItem
 from src.video.commons_media import LicensedImage, _candidate, fetch_licensed_artist_images
 from src.video.commons_video import LicensedVideo, fetch_licensed_artist_videos
 from src.video.generator import (
@@ -19,6 +21,10 @@ from src.video.generator import (
     resolve_visual_media,
     video_media_ready,
     visual_media_ready,
+)
+from src.video.source_media import (
+    SOURCE_ARTICLE_LICENSE,
+    fetch_source_article_image,
 )
 
 
@@ -67,6 +73,41 @@ class CommonsMediaTests(unittest.TestCase):
         page = commons_page("CC BY 2.0")
         page["title"] = "File:Shakira signature, Billboard letter.png"
         self.assertIsNone(_candidate(page, "shakira"))
+
+
+class SourceArticleMediaTests(unittest.TestCase):
+    def test_downloads_rss_or_open_graph_image_with_unverified_rights(self) -> None:
+        payload = io.BytesIO()
+        Image.new("RGB", (1200, 800), (30, 80, 140)).save(payload, format="JPEG")
+        item = type(
+            "Item",
+            (),
+            {
+                "image_url": "https://cdn.example.com/story.jpg",
+                "url": "https://example.com/story",
+                "title": "Artista anuncia novidade",
+                "source_name": "Fonte Teste",
+            },
+        )()
+
+        class Client:
+            def get(self, url: str, **kwargs: object) -> httpx.Response:
+                return httpx.Response(
+                    200,
+                    request=httpx.Request("GET", url),
+                    content=payload.getvalue(),
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            asset = fetch_source_article_image(  # type: ignore[arg-type]
+                item, Path(temp_dir), client=Client()  # type: ignore[arg-type]
+            )
+
+            self.assertIsNotNone(asset)
+            assert asset is not None
+            self.assertTrue(Path(asset.path).exists())
+            self.assertEqual(asset.license, SOURCE_ARTICLE_LICENSE)
+            self.assertEqual((asset.width, asset.height), (1200, 800))
 
     def test_retries_transient_api_rejection(self) -> None:
         class Client:
@@ -156,6 +197,35 @@ class SceneRenderTests(unittest.TestCase):
         fetch_videos.assert_called_once()
         self.assertIsNone(fetch_photos.call_args.args[0])
         self.assertIsNone(fetch_videos.call_args.args[0])
+
+    def test_visual_lookup_falls_back_to_source_article_image(self) -> None:
+        news = NewsItem(
+            source_id="source",
+            source_name="Fonte Teste",
+            category="music",
+            url="https://example.com/story",
+            title="Artista anuncia novidade",
+            image_url="https://cdn.example.com/story.jpg",
+        )
+        source_photo = mock.sentinel.source_photo
+        media_settings = mock.Mock(
+            min_visual_media_assets=1,
+            min_video_media_assets=0,
+            allow_source_article_image=True,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.fetch_licensed_artist_images", return_value=[]
+        ), mock.patch(
+            "src.video.generator.fetch_source_article_image",
+            return_value=source_photo,
+        ) as fetch_source, mock.patch(
+            "src.video.generator.fetch_licensed_artist_videos", return_value=[]
+        ), mock.patch("src.video.generator.settings", media_settings):
+            _, photos, videos = resolve_visual_media(news, Path(temp_dir))
+
+        self.assertEqual(photos, [source_photo])
+        self.assertEqual(videos, [])
+        fetch_source.assert_called_once()
 
     def test_reference_style_requires_multiple_verified_visuals(self) -> None:
         news = type(

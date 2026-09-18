@@ -110,12 +110,19 @@ the factual hook; it must never invent or intensify an unsupported claim.
 
 The source configuration uses a video-first, availability-safe policy:
 `REQUIRE_VISUAL_MEDIA=true`, `MIN_VISUAL_MEDIA_ASSETS=1`,
-`REQUIRE_VIDEO_MEDIA=false` and `MIN_VIDEO_MEDIA_ASSETS=0`. The first selection
+`ALLOW_SOURCE_ARTICLE_IMAGE=true`, `REQUIRE_VIDEO_MEDIA=false` and
+`MIN_VIDEO_MEDIA_ASSETS=0`. The first selection
 pass looks for a story with at least one reusable video and one photo. The
 second pass skips a story with no reusable photo and continues to the next
 eligible story. If the entire candidate pool has no photo,
 `_select_with_classic_fallback()` in `src/pipeline.py:52-91` reranks without the
 gate and publishes the classic format so the scheduled slot is not lost.
+
+Photo resolution first keeps the strict Wikimedia Commons policy. If Commons
+has no accepted photo, `src/video/source_media.py` downloads the RSS/OpenGraph
+image from the source article. That fallback is credited to the publisher and
+recorded as `source_image_unverified`; it must never be described as CC-licensed
+or as verified reusable media.
 
 Deployment status at 2026-09-18 07:32 BRT: commit `0386ec9` was pushed and the
 Mac backup runtime has the video-first selector with LaunchAgent exit code `0`.

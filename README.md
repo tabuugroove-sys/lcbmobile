@@ -115,6 +115,7 @@ Variáveis úteis:
 | `DRAMA_SIGNAL_WEIGHT` | Peso adicional para drama confirmado na fonte |
 | `REQUIRE_VISUAL_MEDIA` | Faz o primeiro passe preferir pautas com foto |
 | `MIN_VISUAL_MEDIA_ASSETS` | Mínimo de imagens no primeiro passe; padrão `1` |
+| `ALLOW_SOURCE_ARTICLE_IMAGE` | Usa a imagem RSS/OpenGraph da matéria quando o Commons não tem foto |
 | `REQUIRE_VIDEO_MEDIA` | Gate opcional de vídeos; desligado por padrão |
 | `MIN_VIDEO_MEDIA_ASSETS` | Mínimo de clipes quando o gate opcional está ligado |
 
@@ -125,7 +126,11 @@ headlines curtas, legendas em pt-BR, movimento leve e créditos no quadro final.
 Ele pesquisa várias fotos pelo nome exato do artista no Wikimedia Commons e
 aceita automaticamente apenas `Public domain`, `CC0` e `CC BY`. Identidade
 ambígua, `CC BY-SA` e direitos não verificados continuam fora da busca
-automática. O primeiro passe procura uma pauta com ao menos um vídeo e uma foto
+automática do Commons. Quando essa busca fica vazia,
+`ALLOW_SOURCE_ARTICLE_IMAGE=true` usa a imagem RSS/OpenGraph da própria matéria
+como fallback editorial. O crédito aponta para a fonte e o manifest registra
+`source_image_unverified`; o sistema não apresenta essa imagem como licenciada.
+O primeiro passe procura uma pauta com ao menos um vídeo e uma foto
 reutilizáveis. Se não houver, o segundo passe troca uma pauta sem foto pela
 próxima pauta elegível que tenha ao menos uma imagem. Se nenhuma pauta do pool
 tiver foto, o fallback escolhe a melhor notícia mesmo assim e publica o formato

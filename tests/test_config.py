@@ -25,6 +25,7 @@ class MediaGateConfigTests(unittest.TestCase):
 
         self.assertTrue(settings.require_visual_media)
         self.assertEqual(settings.min_visual_media_assets, 1)
+        self.assertTrue(settings.allow_source_article_image)
         self.assertFalse(settings.require_video_media)
         self.assertEqual(settings.min_video_media_assets, 0)
 
