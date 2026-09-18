@@ -1,13 +1,13 @@
 # LCBMobile handoff for another LLM
 
-Updated: 2026-09-17, America/Sao_Paulo.
+Updated: 2026-09-18, America/Sao_Paulo.
 
 ## Start here
 
 - Source checkout: `/Users/a1111/Documents/Codex/2026-04-29/github/lcbmobile`
 - Repository: `tabuugroove-sys/lcbmobile`
 - Active branch: `claude/create-news-feed-yMBpb`
-- Last verified behavior commit: `0386ec9`
+- Last verified behavior commit: `789b529`
 - Never print, commit or copy credential values into chat or logs.
 - Recheck runtime state before making a current operational claim. A commit,
   successful task exit or dashboard row is not proof of a YouTube publication.
@@ -17,15 +17,16 @@ deduplicates and scores candidates, generates a narrated vertical Short and
 publishes it through the YouTube Data API. Selection is intentionally kept near
 music, musicians, DJs, concerts, releases and personal drama involving artists.
 
-The preferred Short renderer uses `cinematic_music_news_v1`: verified
-Wikimedia Commons photographs and curated reusable video when an exact known
-artist can be resolved, alternating framed/full compositions, short centered
-headlines, pt-BR subtitles, archive labels and a visible Creative Commons
-credit on the final scene. Only `Public domain`, `CC0` and `CC BY` media are
-accepted automatically; `CC BY-SA`, unclear rights and ambiguous identities
-are rejected. If the strict media check rejects every eligible story, the same
-run automatically selects the best story again and produces the classic format
-instead of publishing nothing.
+The preferred Short renderer uses `cinematic_music_news_v1`: Wikimedia Commons
+photographs, the source article's RSS/OpenGraph image fallback, and curated
+reusable video when an exact known artist can be resolved. It alternates
+framed/full compositions, short centered headlines, pt-BR subtitles, archive
+labels and visible source credits. The Commons resolver accepts only `Public
+domain`, `CC0` and `CC BY`; `CC BY-SA` and ambiguous identities are rejected.
+The article-image fallback is explicitly marked `source_image_unverified` and
+must not be represented as freely licensed. If all media checks fail, the same
+run still selects the best story and produces the classic format instead of
+publishing nothing.
 
 ## YouTube downloading: exact code truth
 
@@ -124,8 +125,10 @@ image from the source article. That fallback is credited to the publisher and
 recorded as `source_image_unverified`; it must never be described as CC-licensed
 or as verified reusable media.
 
-Deployment status at 2026-09-18 07:32 BRT: commit `0386ec9` was pushed and the
-Mac backup runtime has the video-first selector with LaunchAgent exit code `0`.
+Deployment status at 2026-09-18 08:04 BRT: commit `789b529` was pushed and the
+Mac backup runtime has the video-first selector plus source-article image
+fallback, with matching source/runtime SHA-256 hashes and LaunchAgent exit code
+`0`.
 The copied Windows runtime is **not yet verified or updated** because both SSH
 attempts to `capytime` timed out during banner exchange. Reconnect, copy
 `src/config.py` and `scripts/run_server_primary.ps1`, then inspect the four
@@ -227,7 +230,7 @@ For publication proof, find all of these together:
 
 ## Tests and known limits
 
-- Media-gate and failover targeted verification: `36/36` unit tests passed.
+- Media-gate and failover targeted verification: `38/38` unit tests passed.
 - `tests/test_pipeline_classic_publish.py` forces zero photo/video assets and
   proves that the pipeline still calls the YouTube publisher and records a
   successful remote id. A separate real render with the same zero-media setup
