@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import os
 import re
 import time
 import unicodedata
@@ -17,8 +18,13 @@ log = logging.getLogger(__name__)
 
 API_URL = "https://commons.wikimedia.org/w/api.php"
 USER_AGENT = "LCBMobileNews/1.1 (https://github.com/tabuugroove-sys/lcbmobile)"
-MANIFEST_POLICY_VERSION = 2
+MANIFEST_POLICY_VERSION = 3
 ALLOWED_LICENSE_PREFIXES = ("CC BY ", "CC0", "Public domain")
+# Minimum accepted size on the shorter side. Lowered from 700 to 400 so that
+# smaller but still usable licensed photos are not discarded; the vertical
+# framed composition still upscales them acceptably. Override per runtime with
+# the COMMONS_MIN_SHORT_SIDE environment variable.
+MIN_SHORT_SIDE_PIXELS = int(os.environ.get("COMMONS_MIN_SHORT_SIDE", "400"))
 BLOCKED_TITLE_TERMS = {
     "album",
     "artwork",
@@ -83,7 +89,7 @@ def _candidate(page: dict[str, object], query: str) -> dict[str, object] | None:
         return None
     width = int(info.get("thumbwidth") or info.get("width") or 0)
     height = int(info.get("thumbheight") or info.get("height") or 0)
-    if min(width, height) < 700:
+    if min(width, height) < MIN_SHORT_SIDE_PIXELS:
         return None
     title = str(page.get("title") or "")
     plain_title = _plain(title.removeprefix("File:").replace("_", " "))

@@ -61,6 +61,18 @@ class CommonsMediaTests(unittest.TestCase):
     def test_rejects_share_alike_for_automatic_channel_video(self) -> None:
         self.assertIsNone(_candidate(commons_page("CC BY-SA 4.0"), "shakira"))
 
+    def test_accepts_smaller_photo_after_threshold_relaxation(self) -> None:
+        page = commons_page("CC BY 2.0")
+        page["imageinfo"][0]["thumbwidth"] = 500
+        page["imageinfo"][0]["thumbheight"] = 900
+        self.assertIsNotNone(_candidate(page, "shakira"))
+
+    def test_rejects_photo_below_minimum_short_side(self) -> None:
+        page = commons_page("CC BY 2.0")
+        page["imageinfo"][0]["thumbwidth"] = 300
+        page["imageinfo"][0]["thumbheight"] = 900
+        self.assertIsNone(_candidate(page, "shakira"))
+
     def test_rejects_wrong_identity(self) -> None:
         self.assertIsNone(_candidate(commons_page("CC BY 2.0"), "anitta"))
 

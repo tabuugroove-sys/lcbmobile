@@ -43,9 +43,11 @@ The strict automatic photo filter is implemented in
 - `_candidate()` at lines 68-110 rejects every Commons result whose
   `LicenseShortName` does not start with one of those values. This excludes
   `CC BY-SA` and unknown/missing licenses.
-- The same function accepts only JPEG/PNG, requires at least 700 pixels on the
-  shorter side, requires the filename and metadata to match the exact artist,
-  and rejects likely artwork/logo/poster/signature results.
+- The same function accepts only JPEG/PNG, requires at least 400 pixels on the
+  shorter side (lowered from 700 on 2026-09-18; `MIN_SHORT_SIDE_PIXELS` in
+  `src/video/commons_media.py`, overridable with the `COMMONS_MIN_SHORT_SIDE`
+  environment variable), requires the filename and metadata to match the exact
+  artist, and rejects likely artwork/logo/poster/signature results.
 - `fetch_licensed_artist_images()` writes the accepted metadata to
   `licensed_media/rights_manifest.json`.
 
