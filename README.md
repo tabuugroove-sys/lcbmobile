@@ -125,10 +125,11 @@ headlines curtas, legendas em pt-BR, movimento leve e créditos no quadro final.
 Ele pesquisa várias fotos pelo nome exato do artista no Wikimedia Commons e
 aceita automaticamente apenas `Public domain`, `CC0` e `CC BY`. Identidade
 ambígua, `CC BY-SA` e direitos não verificados continuam fora da busca
-automática. O primeiro passe troca uma pauta sem foto pela próxima pauta
-elegível que tenha ao menos uma imagem reutilizável; vídeo continua opcional.
-Se nenhuma pauta do pool tiver foto, o fallback escolhe a melhor notícia mesmo
-assim e publica o formato clássico, para que o horário não fique vazio.
+automática. O primeiro passe procura uma pauta com ao menos um vídeo e uma foto
+reutilizáveis. Se não houver, o segundo passe troca uma pauta sem foto pela
+próxima pauta elegível que tenha ao menos uma imagem. Se nenhuma pauta do pool
+tiver foto, o fallback escolhe a melhor notícia mesmo assim e publica o formato
+clássico, para que o horário não fique vazio.
 
 `AUTO_CUTOUT_ENABLED` permanece `false`: a composição recorre a cartões quando
 a máscara automática não pode ser confiável.

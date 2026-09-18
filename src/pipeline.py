@@ -18,7 +18,7 @@ from .publisher import build_publishers, PublishResult
 from .publisher.youtube import hours_since_latest_short
 from .scraper import collect_news, load_sources
 from .storage import Store
-from .video import build_short, visual_media_ready
+from .video import build_short, video_media_ready, visual_media_ready
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +60,17 @@ def _select_with_classic_fallback(
         candidates,
         store,
         limit=limit,
-        stage=stage,
+        stage=f"{stage}:video",
+        eligibility=lambda item: video_media_ready(item, settings.output_dir),
+    )
+    if selected:
+        return selected, False
+
+    selected = select_best_candidates(
+        candidates,
+        store,
+        limit=limit,
+        stage=f"{stage}:photo",
         eligibility=lambda item: visual_media_ready(item, settings.output_dir),
     )
     if selected:

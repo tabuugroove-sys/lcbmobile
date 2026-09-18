@@ -29,6 +29,48 @@ class _SuccessfulYouTubePublisher:
 
 
 class ClassicPublishPipelineTests(unittest.TestCase):
+    def test_prefers_video_candidate_over_earlier_photo_only_story(self) -> None:
+        photo_only = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/photo-only",
+            title="Cantor anuncia novidade com foto",
+        )
+        with_video = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/with-video",
+            title="Shakira anuncia novidade em video",
+        )
+
+        def choose(candidates, _store, *, limit, stage, eligibility=None):
+            del stage
+            eligible = [
+                candidate
+                for candidate in candidates
+                if eligibility is None or eligibility(candidate)
+            ]
+            return eligible[:limit]
+
+        with mock.patch(
+            "src.pipeline.select_best_candidates", side_effect=choose
+        ), mock.patch(
+            "src.pipeline.video_media_ready",
+            side_effect=lambda item, _output: item is with_video,
+        ), mock.patch("src.pipeline.visual_media_ready") as photo_ready:
+            selected, classic = pipeline._select_with_classic_fallback(
+                [photo_only, with_video],
+                mock.Mock(),
+                limit=1,
+                stage="fresh",
+            )
+
+        self.assertEqual(selected, [with_video])
+        self.assertFalse(classic)
+        photo_ready.assert_not_called()
+
     def test_prefers_later_candidate_that_has_a_photo(self) -> None:
         without_photo = NewsItem(
             source_id="test-feed",
@@ -56,6 +98,8 @@ class ClassicPublishPipelineTests(unittest.TestCase):
 
         with mock.patch(
             "src.pipeline.select_best_candidates", side_effect=choose
+        ), mock.patch(
+            "src.pipeline.video_media_ready", return_value=False
         ), mock.patch(
             "src.pipeline.visual_media_ready",
             side_effect=lambda item, _output: item is with_photo,
@@ -126,6 +170,7 @@ class ClassicPublishPipelineTests(unittest.TestCase):
                 mock.patch("src.pipeline.collect_news", return_value=[item]),
                 mock.patch("src.pipeline.is_music_news", return_value=True),
                 mock.patch("src.pipeline.select_best_candidates", side_effect=choose),
+                mock.patch("src.pipeline.video_media_ready", return_value=False),
                 mock.patch(
                     "src.pipeline.visual_media_ready", return_value=False
                 ) as media_ready,

@@ -108,12 +108,13 @@ historical YouTube reaction, freshness, a known-artist signal and confirmed
 drama terms. Server `DRAMA_SIGNAL_WEIGHT=1.8`. Drama can change priority and
 the factual hook; it must never invent or intensify an unsupported claim.
 
-The source configuration uses a photo-first, availability-safe policy:
+The source configuration uses a video-first, availability-safe policy:
 `REQUIRE_VISUAL_MEDIA=true`, `MIN_VISUAL_MEDIA_ASSETS=1`,
 `REQUIRE_VIDEO_MEDIA=false` and `MIN_VIDEO_MEDIA_ASSETS=0`. The first selection
-pass skips a story with no reusable photo and continues to the next eligible
-story. Video is optional. If the entire candidate pool has no photo,
-`_select_with_classic_fallback()` in `src/pipeline.py:52-80` reranks without the
+pass looks for a story with at least one reusable video and one photo. The
+second pass skips a story with no reusable photo and continues to the next
+eligible story. If the entire candidate pool has no photo,
+`_select_with_classic_fallback()` in `src/pipeline.py:52-91` reranks without the
 gate and publishes the classic format so the scheduled slot is not lost.
 
 Deployment status at 2026-09-17 15:31 BRT: commit `7654b08` was pushed and the
@@ -219,7 +220,7 @@ For publication proof, find all of these together:
 
 ## Tests and known limits
 
-- Media-gate and failover targeted verification: `34/34` unit tests passed.
+- Media-gate and failover targeted verification: `36/36` unit tests passed.
 - `tests/test_pipeline_classic_publish.py` forces zero photo/video assets and
   proves that the pipeline still calls the YouTube publisher and records a
   successful remote id. A separate real render with the same zero-media setup

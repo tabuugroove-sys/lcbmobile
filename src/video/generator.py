@@ -982,6 +982,21 @@ def visual_media_ready(
     return ready
 
 
+def video_media_ready(item: NewsItem, output_dir: Path) -> bool:
+    """Return whether the story has enough media for a real mixed-media cut."""
+    artist_query, photos, videos = resolve_visual_media(item, output_dir)
+    ready = bool(artist_query) and len(photos) >= 1 and len(videos) >= 1
+    if not ready:
+        log.info(
+            "Skipping video-poor candidate: artist=%r photos=%d/1 videos=%d/1 title=%s",
+            artist_query,
+            len(photos),
+            len(videos),
+            item.title,
+        )
+    return ready
+
+
 def build_short(
     item: NewsItem,
     post: RewrittenPost,

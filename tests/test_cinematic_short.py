@@ -17,6 +17,7 @@ from src.video.generator import (
     _make_scene,
     _make_video_overlay,
     resolve_visual_media,
+    video_media_ready,
     visual_media_ready,
 )
 
@@ -219,6 +220,28 @@ class SceneRenderTests(unittest.TestCase):
             return_value=("shakira", [mock.sentinel.photo], []),
         ), mock.patch("src.video.generator.settings", photo_first_settings):
             self.assertTrue(visual_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
+
+    def test_video_priority_requires_both_photo_and_video(self) -> None:
+        news = type(
+            "Item",
+            (),
+            {"title": "Shakira anuncia novidade", "summary": ""},
+        )()
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.resolve_visual_media",
+            return_value=(
+                "shakira",
+                [mock.sentinel.photo],
+                [mock.sentinel.video],
+            ),
+        ):
+            self.assertTrue(video_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.resolve_visual_media",
+            return_value=("shakira", [mock.sentinel.photo], []),
+        ):
+            self.assertFalse(video_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
     def test_classic_fallback_accepts_candidate_without_visual_media(self) -> None:
         news = type(
