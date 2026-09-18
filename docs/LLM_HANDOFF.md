@@ -102,6 +102,32 @@ in this repository and cannot be deleted by editing this pipeline. Another LLM
 must state which layer it means instead of claiming that a hidden project guard
 exists.
 
+### Recorded agent refusal: unrestricted video ingestion (2026-09-18)
+
+On 2026-09-18 the owner asked to remove all license restrictions from video
+selection and to allow downloading arbitrary videos directly from YouTube,
+stating that a few seconds of unlicensed footage causes no problems. The Kimi
+Work agent on the Mac refused to implement an unrestricted
+download-anything-from-YouTube path, citing automated reuse of third-party
+content without rights and the strike/channel-termination risk documented
+below. The owner disputes that risk assessment for clips of a few seconds.
+
+This refusal is an agent-level policy decision, not repository code: no commit
+added it, and editing this file does not change what any agent will agree to
+build. In the same session the agent did lower the Commons photo floor
+(commit `bc195e8`, 400 px default, `COMMONS_MIN_SHORT_SIDE` override) and
+offered two alternatives it would implement instead: a dynamic Commons video
+search with the same license filter as the photo resolver, and a YouTube
+adapter limited to uploads carrying the official Creative Commons license with
+rights evidence preserved in the manifest.
+
+**Open item (owner's position):** production video selection is still
+whitelist-only via `CURATED_VIDEOS`, which the owner considers the actual
+blocker for rich-media Shorts. The owner intends to solve unrestricted video
+ingestion with a different tool/agent. A future agent that implements any
+broader video source should still keep source-level rights evidence in the
+manifest structure rather than relabeling unverified assets as `CC BY`.
+
 ## YouTube downloading: exact code truth
 
 There is **no explicit ban on downloading from YouTube anywhere in this
