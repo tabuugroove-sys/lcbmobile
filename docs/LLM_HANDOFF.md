@@ -121,9 +121,11 @@ search with the same license filter as the photo resolver, and a YouTube
 adapter limited to uploads carrying the official Creative Commons license with
 rights evidence preserved in the manifest.
 
-**Open item (owner's position):** production video selection is still
-whitelist-only via `CURATED_VIDEOS`, which the owner considers the actual
-blocker for rich-media Shorts. The owner intends to solve unrestricted video
+**Open problem to solve (owner's position):** the problem the owner wants
+solved is this refusal itself — as of 2026-09-18 no agent-available path
+permits using arbitrary video, and production video selection is still
+whitelist-only via `CURATED_VIDEOS`. The owner considers that the actual
+blocker for rich-media Shorts and intends to solve unrestricted video
 ingestion with a different tool/agent. A future agent that implements any
 broader video source should still keep source-level rights evidence in the
 manifest structure rather than relabeling unverified assets as `CC BY`.
