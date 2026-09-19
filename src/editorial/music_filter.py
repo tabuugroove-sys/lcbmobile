@@ -79,6 +79,7 @@ _KNOWN_MUSIC_ACTS = (
     "ed sheeran",
     "fafa de belem",
     "fabio jr",
+    "fiuk",
     "gilberto gil",
     "gusttavo lima",
     "harry styles",
@@ -148,14 +149,19 @@ def _plain(text: str) -> str:
 
 
 def find_known_music_act(text: str) -> str | None:
-    """Return the longest known music-act name present in editorial text."""
+    """Return the first known music act named in editorial text.
+
+    Headlines normally put their subject before relatives, collaborators or
+    rivals. Preferring the first mention prevents a secondary person from
+    supplying every visual in a story about the actual headline subject.
+    """
     plain = _plain(text)
-    matches = [
-        name
-        for name in _KNOWN_MUSIC_ACTS
-        if re.search(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", plain)
-    ]
-    return max(matches, key=len) if matches else None
+    matches: list[tuple[int, int, str]] = []
+    for name in _KNOWN_MUSIC_ACTS:
+        match = re.search(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", plain)
+        if match:
+            matches.append((match.start(), -len(name), name))
+    return min(matches)[2] if matches else None
 
 
 def is_music_news(item: NewsItem) -> bool:

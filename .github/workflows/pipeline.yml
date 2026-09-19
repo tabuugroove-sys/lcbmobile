@@ -2,12 +2,13 @@ name: Autopost pipeline
 
 on:
   schedule:
-    # Independent cloud failover, one hour after the Windows primary slots.
-    # BRT: 10:13, 15:13, 20:13. The live YouTube quota gate below makes each
-    # run a no-op when the server already delivered the expected 1/2/3 Shorts.
-    - cron: "13 13 * * *"
-    - cron: "13 18 * * *"
-    - cron: "13 23 * * *"
+    # Temporary cloud primary while the Windows runtime cannot be updated.
+    # BRT: 08:45, 13:45, 18:45. This head start lets the rich-media build land
+    # before the stale Windows slots at 09:13/14:13/19:13; their live quota
+    # gate then prevents a duplicate classic render.
+    - cron: "45 11 * * *"
+    - cron: "45 16 * * *"
+    - cron: "45 21 * * *"
   workflow_dispatch:
     inputs:
       platforms:
@@ -87,7 +88,7 @@ jobs:
         id: gate
         env:
           TIMEZONE: America/Sao_Paulo
-          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule || (inputs.fallback_mode == 'true' && '13 13 * * *') || '' }}
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule || (inputs.fallback_mode == 'true' && '45 11 * * *') || '' }}
         run: |
           python -m scripts.github_fallback_gate \
             --mode gate \

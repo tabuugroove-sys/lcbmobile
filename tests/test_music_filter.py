@@ -43,7 +43,7 @@ class MusicFilterTests(unittest.TestCase):
     def test_allows_music_that_is_connected_to_a_movie(self) -> None:
         self.assertTrue(is_music_news(item("Lady Gaga lança música para novo filme")))
 
-    def test_finds_longest_known_music_act_for_media_search(self) -> None:
+    def test_finds_primary_known_music_act_for_media_search(self) -> None:
         self.assertEqual(
             find_known_music_act("Adam Levine fala sobre o Maroon 5"),
             "adam levine",
@@ -55,6 +55,18 @@ class MusicFilterTests(unittest.TestCase):
         )
         self.assertIsNone(find_known_music_act("Festival será batizado nesta sexta"))
         self.assertIsNone(find_known_music_act("Artista independente lança single"))
+
+    def test_headline_subject_wins_over_later_relative(self) -> None:
+        self.assertEqual(
+            find_known_music_act(
+                "Fiuk encerra carreira como cantor; briga com Fábio Jr chama atenção"
+            ),
+            "fiuk",
+        )
+        self.assertEqual(
+            find_known_music_act("Fábio Jr comenta decisão de Fiuk"),
+            "fabio jr",
+        )
 
 
 if __name__ == "__main__":

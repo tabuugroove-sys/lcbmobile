@@ -18,9 +18,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 SCHEDULE_TARGETS = {
-    "13 13 * * *": 1,
-    "13 18 * * *": 2,
-    "13 23 * * *": 3,
+    "45 11 * * *": 1,
+    "45 16 * * *": 2,
+    "45 21 * * *": 3,
 }
 
 

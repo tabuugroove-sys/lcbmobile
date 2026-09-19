@@ -239,6 +239,36 @@ class SceneRenderTests(unittest.TestCase):
         self.assertEqual(videos, [])
         fetch_source.assert_called_once()
 
+    def test_visual_lookup_uses_headline_subject_not_later_relative(self) -> None:
+        news = NewsItem(
+            source_id="source",
+            source_name="TV Foco",
+            category="music",
+            url="https://example.com/fiuk",
+            title="Fiuk encerra carreira como cantor; briga com Fábio Jr",
+            image_url="https://cdn.example.com/fiuk.jpg",
+        )
+        media_settings = mock.Mock(
+            min_visual_media_assets=1,
+            min_video_media_assets=0,
+            allow_source_article_image=True,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.fetch_licensed_artist_images", return_value=[]
+        ) as fetch_photos, mock.patch(
+            "src.video.generator.fetch_source_article_image",
+            return_value=mock.sentinel.source_photo,
+        ), mock.patch(
+            "src.video.generator.fetch_licensed_artist_videos", return_value=[]
+        ) as fetch_videos, mock.patch(
+            "src.video.generator.settings", media_settings
+        ):
+            artist, _, _ = resolve_visual_media(news, Path(temp_dir))
+
+        self.assertEqual(artist, "fiuk")
+        self.assertEqual(fetch_photos.call_args.args[0], "fiuk")
+        self.assertEqual(fetch_videos.call_args.args[0], "fiuk")
+
     def test_reference_style_requires_multiple_verified_visuals(self) -> None:
         news = type(
             "Item",

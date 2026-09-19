@@ -168,7 +168,7 @@ voiceover or editing.
 
 ## Current ownership model
 
-### 1. Windows server is primary for regular Shorts
+### 1. Windows server is temporarily behind the cloud primary
 
 - SSH alias: `capytime` (do not put the host IP in repository files).
 - Runtime: `C:\lcbmobile-news`.
@@ -256,10 +256,12 @@ After changing shared runtime code, run `scripts/install_local_backup.sh`. If
 Codex sandboxing blocks `launchctl bootstrap`, run the bootstrap with explicit
 system approval and verify `last exit code = 0`.
 
-### 3. GitHub Actions is the independent last-resort fallback
+### 3. GitHub Actions is the temporary primary
 
-`.github/workflows/pipeline.yml` runs at 10:13, 15:13 and 20:13 BRT, one hour
-after the Windows slots. Before rendering it reads the authenticated YouTube
+While the Windows runtime is unreachable and stale,
+`.github/workflows/pipeline.yml` starts at 08:45, 13:45 and 18:45 BRT. The head
+start lets the updated rich-media render publish before the Windows slots at
+09:13, 14:13 and 19:13. Before rendering it reads the authenticated YouTube
 uploads playlist and compares today's real Short count with the expected 1/2/3
 quota. A met quota is a no-op. A missing quota uses YouTube only, disables the
 strict `3 photos + 2 videos` gate and renders the reliable graphic/photo mode.
