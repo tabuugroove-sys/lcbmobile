@@ -1,13 +1,13 @@
 # LCBMobile handoff for another LLM
 
-Updated: 2026-09-18, America/Sao_Paulo.
+Updated: 2026-09-19, America/Sao_Paulo.
 
 ## Start here
 
 - Source checkout: `/Users/a1111/Documents/Codex/2026-04-29/github/lcbmobile`
 - Repository: `tabuugroove-sys/lcbmobile`
 - Active branch: `claude/create-news-feed-yMBpb`
-- Last verified behavior commit: `789b529`
+- Last verified behavior commit: `d14ff53`
 - Never print, commit or copy credential values into chat or logs.
 - Recheck runtime state before making a current operational claim. A commit,
   successful task exit or dashboard row is not proof of a YouTube publication.
@@ -212,14 +212,19 @@ image from the source article. That fallback is credited to the publisher and
 recorded as `source_image_unverified`; it must never be described as CC-licensed
 or as verified reusable media.
 
-Deployment status at 2026-09-18 08:04 BRT: commit `789b529` was pushed and the
-Mac backup runtime has the video-first selector plus source-article image
-fallback, with matching source/runtime SHA-256 hashes and LaunchAgent exit code
-`0`.
-The copied Windows runtime is **not yet verified or updated** because both SSH
-attempts to `capytime` timed out during banner exchange. Reconnect, copy
-`src/config.py` and `scripts/run_server_primary.ps1`, then inspect the four
-effective environment values before claiming Windows deployment.
+Deployment status at 2026-09-19 20:30 BRT: commit `d14ff53` was pushed. GitHub
+Actions is the temporary primary at 08:45/13:45/18:45 BRT. The Mac backup has
+the same current photo resolver and headline-subject selection, with matching
+source/runtime SHA-256 hashes and LaunchAgent exit code `0`.
+
+The copied Windows runtime is **still stale and unreachable**: the latest SSH
+attempt to `capytime` again stalled before executing a command. On 2026-09-19
+it published three public Shorts, but two had no photo credits and the Fiuk
+story used Fábio Jr photos because the older resolver selected the later known
+name in the headline. Do not treat that day's `3/3` quota as visual success.
+Commit `d14ff53` adds Fiuk, selects the first headline artist, and starts the
+updated GitHub build before the stale Windows slots. A real local render of the
+same Fiuk headline resolved `artist=fiuk` and produced a two-photo Fiuk hook.
 
 Automatic GrabCut is present only as an experimental path and remains disabled
 with `AUTO_CUTOUT_ENABLED=false`; automated masking was rejected in QA when a
@@ -319,7 +324,8 @@ For publication proof, find all of these together:
 
 ## Tests and known limits
 
-- Media-gate and failover targeted verification: `38/38` unit tests passed.
+- Media-gate, subject-selection and failover targeted verification: `48/48`
+  unit tests passed.
 - `tests/test_pipeline_classic_publish.py` forces zero photo/video assets and
   proves that the pipeline still calls the YouTube publisher and records a
   successful remote id. A separate real render with the same zero-media setup
