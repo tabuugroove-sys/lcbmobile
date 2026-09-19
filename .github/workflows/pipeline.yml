@@ -122,7 +122,7 @@ jobs:
           DJ_CATEGORY_BOOST_HOURS: ${{ vars.DJ_CATEGORY_BOOST_HOURS || '12' }}
           # Scheduled failover is governed by the live daily quota above, so a
           # recent post must not hide a still-missing second or third Short.
-          MIN_HOURS_BETWEEN_POSTS: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true') && '0' || vars.MIN_HOURS_BETWEEN_POSTS || '3.5' }}
+          MIN_HOURS_BETWEEN_POSTS: ${{ (github.event_name == 'schedule' || inputs.fallback_mode == 'true' || inputs.dry_run == 'true') && '0' || vars.MIN_HOURS_BETWEEN_POSTS || '3.5' }}
           CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
           CONTENT_LANG: pt-BR
           DB_PATH: data/state.db
