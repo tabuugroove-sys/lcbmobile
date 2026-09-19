@@ -226,6 +226,13 @@ Commit `d14ff53` adds Fiuk, selects the first headline artist, and starts the
 updated GitHub build before the stale Windows slots. A real local render of the
 same Fiuk headline resolved `artist=fiuk` and produced a two-photo Fiuk hook.
 
+Cloud proof: GitHub Actions dry-run `35475760201` completed successfully on
+commit `c1a10af` without publishing. Its artifact rendered a 42.43-second
+1080x1920 Lady Gaga Short with six matching photos and two matching archive
+video clips; frames at 1, 10 and 20 seconds were visually inspected. The first
+manual dry-run had been skipped by the recent-post gap, so `c1a10af` also makes
+`dry_run=true` set `MIN_HOURS_BETWEEN_POSTS=0` while keeping publishing off.
+
 Automatic GrabCut is present only as an experimental path and remains disabled
 with `AUTO_CUTOUT_ENABLED=false`; automated masking was rejected in QA when a
 concert crowd could be mistaken for a subject. Framed-photo fallback is the
