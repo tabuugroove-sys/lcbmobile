@@ -212,19 +212,24 @@ image from the source article. That fallback is credited to the publisher and
 recorded as `source_image_unverified`; it must never be described as CC-licensed
 or as verified reusable media.
 
-Deployment status at 2026-09-19 20:30 BRT: commit `d14ff53` was pushed. GitHub
-Actions is the temporary primary at 08:45/13:45/18:45 BRT. The Mac backup has
-the same current photo resolver and headline-subject selection, with matching
-source/runtime SHA-256 hashes and LaunchAgent exit code `0`.
+Deployment status at 2026-09-19 21:51 BRT: SSH to `capytime` is working again.
+The copied Windows runtime was updated from the repository, with its previous
+files preserved under
+`C:\lcbmobile-news\backups\pre-photo-fix-20260920-025110`. SHA-256 hashes for
+all nine deployed files match the repository. Remote `py_compile` passed, and
+the headline-subject probe returned `fiuk` for a headline that also named
+Fábio Jr. The Scheduled Task is enabled and ready; its five-minute trigger is
+the watchdog, while `run_server_primary.ps1` gates actual publications to
+09:13/14:13/19:13 BRT.
 
-The copied Windows runtime is **still stale and unreachable**: the latest SSH
-attempt to `capytime` again stalled before executing a command. On 2026-09-19
-it published three public Shorts, but two had no photo credits and the Fiuk
-story used Fábio Jr photos because the older resolver selected the later known
-name in the headline. Do not treat that day's `3/3` quota as visual success.
-Commit `d14ff53` adds Fiuk, selects the first headline artist, and starts the
-updated GitHub build before the stale Windows slots. A real local render of the
-same Fiuk headline resolved `artist=fiuk` and produced a two-photo Fiuk hook.
+On 2026-09-19 the stale runtime had published three public Shorts, but two had
+no photo credits and the Fiuk story used Fábio Jr photos because the older
+resolver selected the later known name in the headline. Do not treat that
+day's `3/3` quota as visual success. Commit `d14ff53` adds Fiuk and selects the
+first headline artist. A real local render of the same Fiuk headline resolved
+`artist=fiuk` and produced a two-photo Fiuk hook. The Mac backup has the same
+current photo resolver and headline-subject selection, with matching
+source/runtime SHA-256 hashes and LaunchAgent exit code `0`.
 
 Cloud proof: GitHub Actions dry-run `35475760201` completed successfully on
 commit `c1a10af` without publishing. Its artifact rendered a 42.43-second
@@ -268,17 +273,16 @@ After changing shared runtime code, run `scripts/install_local_backup.sh`. If
 Codex sandboxing blocks `launchctl bootstrap`, run the bootstrap with explicit
 system approval and verify `last exit code = 0`.
 
-### 3. GitHub Actions is the temporary primary
+### 3. GitHub Actions is the third-tier fallback
 
-While the Windows runtime is unreachable and stale,
-`.github/workflows/pipeline.yml` starts at 08:45, 13:45 and 18:45 BRT. The head
-start lets the updated rich-media render publish before the Windows slots at
-09:13, 14:13 and 19:13. Before rendering it reads the authenticated YouTube
-uploads playlist and compares today's real Short count with the expected 1/2/3
-quota. A met quota is a no-op. A missing quota uses YouTube only, disables the
-strict `3 photos + 2 videos` gate and renders the reliable graphic/photo mode.
-The workflow verifies the channel again after upload and pages the urgent bot
-if the quota is still missing. Manual `workflow_dispatch` remains available.
+`.github/workflows/pipeline.yml` starts at 10:13, 15:13 and 20:13 BRT, one hour
+after the Windows primary slots and 45 minutes after the Mac backup slots.
+Before rendering it reads the authenticated YouTube uploads playlist and
+compares today's real Short count with the expected 1/2/3 quota. A met quota is
+a no-op. A missing quota uses YouTube only, disables the strict
+`3 photos + 2 videos` gate and renders the reliable graphic/photo mode. The
+workflow verifies the channel again after upload and pages the urgent bot if
+the quota is still missing. Manual `workflow_dispatch` remains available.
 
 Do not disable unrelated scheduled workflows without an explicit request:
 

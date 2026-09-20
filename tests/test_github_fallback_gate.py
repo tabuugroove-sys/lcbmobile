@@ -8,10 +8,10 @@ from scripts.github_fallback_gate import shorts_today, target_for_schedule
 
 
 class GitHubFallbackGateTests(unittest.TestCase):
-    def test_schedule_targets_match_temporary_cloud_primary(self) -> None:
-        self.assertEqual(target_for_schedule("45 11 * * *"), 1)
-        self.assertEqual(target_for_schedule("45 16 * * *"), 2)
-        self.assertEqual(target_for_schedule("45 21 * * *"), 3)
+    def test_schedule_targets_match_cloud_fallback(self) -> None:
+        self.assertEqual(target_for_schedule("13 13 * * *"), 1)
+        self.assertEqual(target_for_schedule("13 18 * * *"), 2)
+        self.assertEqual(target_for_schedule("13 23 * * *"), 3)
         self.assertEqual(target_for_schedule(""), 0)
 
     def test_counts_only_today_shorts_in_sao_paulo(self) -> None:
