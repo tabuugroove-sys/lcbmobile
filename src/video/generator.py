@@ -9,6 +9,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
@@ -23,11 +24,15 @@ from moviepy.editor import (
 )
 
 from ..config import settings
-from ..editorial import find_known_music_act
+from ..editorial import find_known_music_act, find_known_music_acts
 from ..models import GeneratedAssets, NewsItem, RewrittenPost
 from .commons_media import LicensedImage, fetch_licensed_artist_images
 from .commons_video import LicensedVideo, fetch_licensed_artist_videos
-from .source_media import SOURCE_ARTICLE_LICENSE, fetch_source_article_image
+from .source_media import (
+    SOURCE_ARTICLE_LICENSE,
+    fetch_source_article_image,
+    fetch_source_article_images,
+)
 from .tts import get_tts_provider
 
 log = logging.getLogger(__name__)
@@ -317,8 +322,116 @@ def _creator_credit(media: list[LicensedImage]) -> str:
             creators.append(creator)
     joined = " • ".join(creators[:4])
     if media and all(asset.license == SOURCE_ARTICLE_LICENSE for asset in media):
-        return f"IMAGEM: {joined} / FONTE DA MATERIA" if joined else ""
+        return f"IMAGENS: {joined} / FONTE DA MATERIA" if joined else ""
+    if any(asset.license == SOURCE_ARTICLE_LICENSE for asset in media):
+        return f"IMAGENS: {joined} / CREDITOS NA DESCRICAO" if joined else ""
     return f"FOTOS: {joined} / CC BY" if joined else ""
+
+
+def _asset_source_identity(asset: LicensedImage) -> str:
+    raw = asset.source_url or asset.source_page or asset.path
+    parsed = urlparse(raw)
+    path = parsed.path.casefold()
+    path = re.sub(r"-\d+x\d+(?=\.[a-z0-9]+$)", "", path)
+    return f"{parsed.netloc.casefold()}{path}" if parsed.netloc else path
+
+
+def _visual_signature(asset: LicensedImage) -> tuple[int, tuple[int, int, int]] | None:
+    try:
+        with Image.open(asset.path) as image:
+            rgb = image.convert("RGB")
+            gray = rgb.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
+            pixels = list(gray.getdata())
+            difference = 0
+            for row in range(8):
+                for column in range(8):
+                    left = pixels[row * 9 + column]
+                    right = pixels[row * 9 + column + 1]
+                    difference = (difference << 1) | int(left > right)
+            mean = np.asarray(rgb.resize((1, 1)), dtype=np.uint8)[0, 0]
+            color = tuple(int(channel) for channel in mean)
+            return difference, color
+    except (OSError, ValueError):
+        return None
+
+
+def _same_visual(
+    first: LicensedImage,
+    second: LicensedImage,
+    first_signature: tuple[int, tuple[int, int, int]] | None = None,
+    second_signature: tuple[int, tuple[int, int, int]] | None = None,
+) -> bool:
+    if _asset_source_identity(first) == _asset_source_identity(second):
+        return True
+    first_signature = first_signature or _visual_signature(first)
+    second_signature = second_signature or _visual_signature(second)
+    if first_signature is None or second_signature is None:
+        return False
+    hash_distance = (first_signature[0] ^ second_signature[0]).bit_count()
+    color_distance = sum(
+        abs(left - right)
+        for left, right in zip(first_signature[1], second_signature[1])
+    )
+    return hash_distance <= 6 and color_distance <= 45
+
+
+def _unique_visual_assets(media: list[LicensedImage]) -> list[LicensedImage]:
+    unique: list[LicensedImage] = []
+    signatures: list[tuple[int, tuple[int, int, int]] | None] = []
+    for asset in media:
+        signature = _visual_signature(asset)
+        if any(
+            _same_visual(previous, asset, previous_signature, signature)
+            for previous, previous_signature in zip(unique, signatures)
+        ):
+            continue
+        unique.append(asset)
+        signatures.append(signature)
+    return unique
+
+
+def resolve_hook_media(
+    item: NewsItem,
+    primary_media: list[LicensedImage],
+    output_dir: Path,
+) -> list[LicensedImage]:
+    """Choose a hero-versus-context pair without repeating the same visual."""
+    primary = _unique_visual_assets(primary_media)
+    source_context: list[LicensedImage] = []
+    if settings.allow_source_article_image:
+        source_context = fetch_source_article_images(
+            item,
+            output_dir / "source_article",
+            limit=5,
+        )
+
+    secondary_people: list[LicensedImage] = []
+    primary_artist = find_known_music_act(item.title)
+    named_people = find_known_music_acts(f"{item.title} {item.summary}")
+    for person in named_people:
+        if person == primary_artist:
+            continue
+        safe_name = re.sub(r"[^a-z0-9]+", "-", person).strip("-")
+        secondary_people.extend(
+            fetch_licensed_artist_images(
+                person,
+                output_dir / f"secondary-{safe_name}",
+                limit=2,
+            )
+        )
+        if secondary_people:
+            break
+
+    ordered = _unique_visual_assets([*primary, *secondary_people, *source_context])
+    if not ordered:
+        return []
+    hero = primary[0] if primary else ordered[0]
+    pair = [hero]
+    for candidate in [*secondary_people, *source_context, *primary[1:]]:
+        if not _same_visual(hero, candidate):
+            pair.append(candidate)
+            break
+    return pair
 
 
 def _video_creator_credit(media: LicensedVideo) -> str:
@@ -683,7 +796,7 @@ def _make_hook_scene(
         )
 
     images: list[Image.Image] = []
-    for asset in media[:2]:
+    for asset in _unique_visual_assets(media)[:2]:
         try:
             images.append(Image.open(asset.path).convert("RGB"))
         except Exception as exc:  # noqa: BLE001
@@ -700,9 +813,6 @@ def _make_hook_scene(
             credits=credits,
             output=output,
         )
-    if len(images) == 1:
-        images.append(images[0].copy())
-
     canvas = _fit_cover(images[0], (WIDTH, HEIGHT), 0.35).filter(
         ImageFilter.GaussianBlur(30)
     ).convert("RGBA")
@@ -720,9 +830,41 @@ def _make_hook_scene(
         width=3,
     )
     left = _fit_cover(images[0], (card_w // 2, card_h), 0.30)
-    right = _fit_cover(images[1], (card_w - card_w // 2, card_h), 0.30)
     canvas.alpha_composite(left.convert("RGBA"), (card_x, card_y))
-    canvas.alpha_composite(right.convert("RGBA"), (card_x + card_w // 2, card_y))
+    if len(images) > 1:
+        right = _fit_cover(images[1], (card_w - card_w // 2, card_h), 0.30)
+        canvas.alpha_composite(right.convert("RGBA"), (card_x + card_w // 2, card_y))
+    else:
+        draw = ImageDraw.Draw(canvas, "RGBA")
+        right_x = card_x + card_w // 2
+        draw.rectangle(
+            (right_x, card_y, card_x + card_w, card_y + card_h),
+            fill=(9, 8, 14, 255),
+        )
+        draw.polygon(
+            (
+                (right_x, card_y + 160),
+                (card_x + card_w, card_y),
+                (card_x + card_w, card_y + 230),
+                (right_x, card_y + 390),
+            ),
+            fill=(255, 51, 92, 210),
+        )
+        _draw_centered(
+            draw,
+            (right_x + card_w // 4, card_y + 560),
+            "FATO\nNOVO",
+            _font(narrow_path, 78),
+            fill="#ffd34d",
+            stroke=5,
+        )
+        _draw_centered(
+            draw,
+            (right_x + card_w // 4, card_y + 745),
+            "ENTENDA",
+            _font(bold_path, 38),
+            stroke=3,
+        )
     shade = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     ImageDraw.Draw(shade).rectangle(
         (card_x, card_y, card_x + card_w, card_y + card_h),
@@ -811,6 +953,8 @@ def _build_scene_images(
     post: RewrittenPost,
     media: list[LicensedImage],
     output_dir: Path,
+    *,
+    hook_media: list[LicensedImage] | None = None,
 ) -> list[Path]:
     # Mixed-media Shorts have exactly two video beats and three photo beats.
     # Keeping five scenes prevents a third video slot from repeating one of the
@@ -832,14 +976,15 @@ def _build_scene_images(
             cutout = _try_cutout(Path(asset.path), output_dir / "subject-cutout.png")
             if cutout is not None:
                 break
-    credits = _creator_credit(media)
+    hook_media = hook_media if hook_media is not None else media
+    credits = _creator_credit(_unique_visual_assets([*media, *hook_media]))
     scenes = []
     for index in range(scene_count):
         if index == 0:
             scenes.append(
                 _make_hook_scene(
                     item=item,
-                    media=media,
+                    media=hook_media,
                     credits=credits,
                     output=output_dir / "scene-01.jpg",
                 )
@@ -878,7 +1023,7 @@ def _write_render_manifest(
     (base / "render_manifest.json").write_text(
         json.dumps(
             {
-                "style": "cinematic_mixed_media_v3_curiosity_hook",
+                "style": "cinematic_mixed_media_v4_semantic_hook",
                 "language": settings.content_lang,
                 "source_url": item.url,
                 "artist_query": artist_query,
@@ -1043,6 +1188,9 @@ def build_short(
             f"requires {settings.min_video_media_assets}"
         )
 
+    hook_media = resolve_hook_media(item, photos, base / "hook_media")
+    credited_photos = _unique_visual_assets([*photos, *hook_media])
+
     with tempfile.TemporaryDirectory() as temp_dir:
         temp = Path(temp_dir)
         audio_path = _tts(post.script_voiceover, lang, base / "voice.mp3")
@@ -1054,7 +1202,13 @@ def build_short(
         voice = voice.set_duration(duration)
         audio = _mix_voice_with_background(voice, duration, voice_path=str(audio_path))
 
-        scene_paths = _build_scene_images(item, post, photos, base)
+        scene_paths = _build_scene_images(
+            item,
+            post,
+            photos,
+            base,
+            hook_media=hook_media,
+        )
         hook_duration = min(2.2, max(1.2, duration * 0.08))
         content_scene_duration = (duration - hook_duration) / max(
             1, len(scene_paths) - 1
@@ -1120,12 +1274,12 @@ def build_short(
             base=base,
             item=item,
             artist_query=artist_query,
-            photos=photos,
+            photos=credited_photos,
             videos=videos,
             scenes=scene_paths,
             duration=duration,
         )
-        _write_media_credits(base, photos, videos)
+        _write_media_credits(base, credited_photos, videos)
         composite.close()
         for clip in clips:
             clip.close()

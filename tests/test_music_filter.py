@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from src.editorial import find_known_music_act, is_music_news
+from src.editorial import find_known_music_act, find_known_music_acts, is_music_news
 from src.models import NewsItem
 
 
@@ -66,6 +66,14 @@ class MusicFilterTests(unittest.TestCase):
         self.assertEqual(
             find_known_music_act("Fábio Jr comenta decisão de Fiuk"),
             "fabio jr",
+        )
+
+    def test_returns_all_named_acts_in_mention_order(self) -> None:
+        self.assertEqual(
+            find_known_music_acts(
+                "Fiuk encerra carreira; Fábio Jr e Cleo comentam a decisão"
+            ),
+            ["fiuk", "fabio jr"],
         )
 
 

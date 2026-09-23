@@ -212,6 +212,14 @@ image from the source article. That fallback is credited to the publisher and
 recorded as `source_image_unverified`; it must never be described as CC-licensed
 or as verified reusable media.
 
+The curiosity hook uses a semantic two-sided composition. The left side is the
+headline subject; the right side prefers a second named musician and otherwise
+uses a visually distinct event/context image extracted from the article body.
+Article recommendations, avatars, logos and near-duplicate image-size variants
+are excluded. The renderer never mirrors or copies one photo into both halves;
+when no honest second image exists, the right side becomes an editorial teaser
+panel instead of a duplicate.
+
 Deployment status at 2026-09-19 21:51 BRT: SSH to `capytime` is working again.
 The copied Windows runtime was updated from the repository, with its previous
 files preserved under

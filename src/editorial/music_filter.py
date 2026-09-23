@@ -148,6 +148,17 @@ def _plain(text: str) -> str:
     return decomposed.encode("ascii", "ignore").decode("ascii").lower()
 
 
+def find_known_music_acts(text: str) -> list[str]:
+    """Return known music acts in editorial mention order."""
+    plain = _plain(text)
+    matches: list[tuple[int, int, str]] = []
+    for name in _KNOWN_MUSIC_ACTS:
+        match = re.search(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", plain)
+        if match:
+            matches.append((match.start(), -len(name), name))
+    return [name for _, _, name in sorted(matches)]
+
+
 def find_known_music_act(text: str) -> str | None:
     """Return the first known music act named in editorial text.
 
@@ -155,13 +166,8 @@ def find_known_music_act(text: str) -> str | None:
     rivals. Preferring the first mention prevents a secondary person from
     supplying every visual in a story about the actual headline subject.
     """
-    plain = _plain(text)
-    matches: list[tuple[int, int, str]] = []
-    for name in _KNOWN_MUSIC_ACTS:
-        match = re.search(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", plain)
-        if match:
-            matches.append((match.start(), -len(name), name))
-    return min(matches)[2] if matches else None
+    matches = find_known_music_acts(text)
+    return matches[0] if matches else None
 
 
 def is_music_news(item: NewsItem) -> bool:

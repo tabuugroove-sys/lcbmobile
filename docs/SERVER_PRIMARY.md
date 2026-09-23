@@ -22,6 +22,12 @@ The server checks the real YouTube uploads playlist before rendering. If the
 expected count is already present, it exits successfully. This prevents races
 with a manual run or the Mac backup.
 
+The opening curiosity frame must contain two different visual roles: the main
+subject on the left and a named opponent, colleague, audience or event context
+on the right. It may use distinct images from the source article when Commons
+does not provide both roles. A single image is never duplicated across both
+halves; the safe fallback is one photo plus an editorial teaser panel.
+
 ## Runtime
 
 - Python: `C:\lcbmobile-news\.venv\Scripts\python.exe`

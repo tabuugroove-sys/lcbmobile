@@ -18,6 +18,7 @@ from src.video.generator import (
     _make_hook_scene,
     _make_scene,
     _make_video_overlay,
+    resolve_hook_media,
     resolve_visual_media,
     video_media_ready,
     visual_media_ready,
@@ -25,6 +26,7 @@ from src.video.generator import (
 from src.video.source_media import (
     SOURCE_ARTICLE_LICENSE,
     fetch_source_article_image,
+    fetch_source_article_images,
 )
 
 
@@ -121,6 +123,52 @@ class SourceArticleMediaTests(unittest.TestCase):
             self.assertEqual(asset.license, SOURCE_ARTICLE_LICENSE)
             self.assertEqual((asset.width, asset.height), (1200, 800))
 
+    def test_collects_distinct_article_images_and_skips_related_cards(self) -> None:
+        def payload(color: tuple[int, int, int]) -> bytes:
+            content = io.BytesIO()
+            Image.new("RGB", (1200, 800), color).save(content, format="JPEG")
+            return content.getvalue()
+
+        html = """
+        <html><head><meta property="og:image" content="https://cdn.example.com/hero.jpg"></head>
+        <body><article><div class="entry-content">
+          <figure><img src="https://cdn.example.com/context.jpg" alt="Público reage"></figure>
+          <div class="leia-tambem"><img src="https://cdn.example.com/related.jpg"></div>
+        </div></article></body></html>
+        """
+        item = NewsItem(
+            source_id="source",
+            source_name="Fonte Teste",
+            category="music",
+            url="https://example.com/story",
+            title="Artista surpreende o público",
+            image_url="https://cdn.example.com/hero.jpg",
+        )
+
+        class Client:
+            def get(self, url: str, **kwargs: object) -> httpx.Response:
+                request = httpx.Request("GET", url)
+                if url == item.url:
+                    return httpx.Response(200, request=request, text=html)
+                colors = {
+                    "https://cdn.example.com/hero.jpg": (25, 80, 160),
+                    "https://cdn.example.com/context.jpg": (185, 60, 75),
+                    "https://cdn.example.com/related.jpg": (40, 170, 90),
+                }
+                return httpx.Response(200, request=request, content=payload(colors[url]))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            assets = fetch_source_article_images(
+                item,
+                Path(temp_dir),
+                limit=4,
+                client=Client(),  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(len(assets), 2)
+        self.assertEqual(assets[1].title, "Público reage")
+        self.assertNotIn("related.jpg", [asset.source_url for asset in assets])
+
     def test_retries_transient_api_rejection(self) -> None:
         class Client:
             def __init__(self) -> None:
@@ -184,6 +232,122 @@ class SceneRenderTests(unittest.TestCase):
             with Image.open(output) as rendered:
                 self.assertEqual(rendered.size, (WIDTH, HEIGHT))
                 self.assertNotEqual(rendered.getpixel((280, 850)), rendered.getpixel((800, 850)))
+
+    def test_single_hook_photo_is_not_duplicated(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            photo = root / "only.jpg"
+            Image.new("RGB", (1200, 1600), (45, 115, 180)).save(photo)
+            asset = LicensedImage(
+                path=str(photo),
+                title="Artista.jpg",
+                creator="Example Photographer",
+                license="CC BY 2.0",
+                license_url="https://creativecommons.org/licenses/by/2.0",
+                source_page="https://commons.wikimedia.org/example",
+                source_url="https://upload.wikimedia.org/only.jpg",
+                width=1200,
+                height=1600,
+            )
+            output = root / "hook.jpg"
+            news = type(
+                "Item",
+                (),
+                {"title": "Artista revela mudança", "source_name": "Fonte Teste"},
+            )()
+
+            _make_hook_scene(
+                item=news,  # type: ignore[arg-type]
+                media=[asset, asset],
+                credits="FOTO: Example Photographer / CC BY",
+                output=output,
+            )
+
+            with Image.open(output) as rendered:
+                self.assertNotEqual(
+                    rendered.getpixel((280, 1050)),
+                    rendered.getpixel((800, 1050)),
+                )
+
+    def test_hook_pair_uses_article_context_when_no_named_opponent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def asset(name: str, color: tuple[int, int, int]) -> LicensedImage:
+                path = root / name
+                Image.new("RGB", (1200, 800), color).save(path)
+                return LicensedImage(
+                    path=str(path),
+                    title=name,
+                    creator="Fonte Teste",
+                    license=SOURCE_ARTICLE_LICENSE,
+                    license_url="https://example.com/story",
+                    source_page="https://example.com/story",
+                    source_url=f"https://cdn.example.com/{name}",
+                    width=1200,
+                    height=800,
+                )
+
+            hero = asset("hero.jpg", (40, 90, 170))
+            context = asset("audience.jpg", (190, 65, 80))
+            news = NewsItem(
+                source_id="source",
+                source_name="Fonte Teste",
+                category="music",
+                url="https://example.com/story",
+                title="Cantor surpreende público durante show",
+                image_url=hero.source_url,
+            )
+            with mock.patch(
+                "src.video.generator.fetch_source_article_images",
+                return_value=[hero, context],
+            ):
+                pair = resolve_hook_media(news, [hero], root / "hook")
+
+        self.assertEqual([row.title for row in pair], ["hero.jpg", "audience.jpg"])
+
+    def test_hook_pair_prefers_named_opponent_over_generic_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def asset(name: str, color: tuple[int, int, int]) -> LicensedImage:
+                path = root / name
+                Image.new("RGB", (1200, 800), color).save(path)
+                return LicensedImage(
+                    path=str(path),
+                    title=name,
+                    creator="Example Photographer",
+                    license="CC BY 2.0",
+                    license_url="https://creativecommons.org/licenses/by/2.0",
+                    source_page=f"https://commons.wikimedia.org/{name}",
+                    source_url=f"https://upload.wikimedia.org/{name}",
+                    width=1200,
+                    height=800,
+                )
+
+            hero = asset("fiuk.jpg", (40, 90, 170))
+            opponent = asset("fabio-jr.jpg", (190, 65, 80))
+            context = asset("audience.jpg", (50, 160, 95))
+            news = NewsItem(
+                source_id="source",
+                source_name="Fonte Teste",
+                category="music",
+                url="https://example.com/story",
+                title="Fiuk responde a Fábio Jr após nova polêmica",
+                summary="Os dois artistas falaram sobre o conflito.",
+                image_url=hero.source_url,
+            )
+            with mock.patch(
+                "src.video.generator.fetch_source_article_images",
+                return_value=[hero, context],
+            ), mock.patch(
+                "src.video.generator.fetch_licensed_artist_images",
+                return_value=[opponent],
+            ) as fetch_secondary:
+                pair = resolve_hook_media(news, [hero], root / "hook")
+
+        self.assertEqual([row.title for row in pair], ["fiuk.jpg", "fabio-jr.jpg"])
+        self.assertEqual(fetch_secondary.call_args.args[0], "fabio jr")
 
     def test_visual_lookup_requires_artist_in_headline(self) -> None:
         news = type(
