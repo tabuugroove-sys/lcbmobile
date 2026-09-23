@@ -220,6 +220,15 @@ are excluded. The renderer never mirrors or copies one photo into both halves;
 when no honest second image exists, the right side becomes an editorial teaser
 panel instead of a duplicate.
 
+Deployment proof at 2026-09-23 13:30 BRT: commit `3fe511c` is installed on the
+Windows primary and Mac backup. The Windows pre-update files are under
+`C:\lcbmobile-news\backups\pre-semantic-hook-20260923-182942`; all four runtime
+SHA-256 hashes match the repository, remote compile/import passed, and the first
+post-deploy watchdog exited `0`. Mac runtime hashes also match and its
+LaunchAgent reports last exit code `0`. A no-publish visual test on the same
+Rick story that previously duplicated one face instead rendered the couple on
+the left and the article's distinct airport-ambulance context on the right.
+
 Deployment status at 2026-09-19 21:51 BRT: SSH to `capytime` is working again.
 The copied Windows runtime was updated from the repository, with its previous
 files preserved under
