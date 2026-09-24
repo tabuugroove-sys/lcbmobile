@@ -50,3 +50,7 @@ assets/generated/
 .vscode/
 *.swp
 .DS_Store
+
+# YouTube cookies (owner-secret, never commit)
+youtube_cookies.txt
+cookies.txt
