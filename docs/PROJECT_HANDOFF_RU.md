@@ -249,6 +249,24 @@ publication data. Не делать вывод о межсерверном де�
   дал ни одного клипа; `YOUTUBE_VIDEO_MODE=off` полностью глушит источник.
 - По умолчанию флаг выключен, поэтому production-поведение не изменилось.
 
+### Cookies для серверов с бот-чеком YouTube
+
+С дата-центровых IP YouTube часто отвечает `Sign in to confirm you're not a
+bot` (подтверждено на прод-сервере Contabo, 2026-09-24). Легальное решение —
+cookies от собственной залогиненной сессии владельца канала:
+
+1. В браузере владельца (залогинен в YouTube) экспортировать cookies в
+   Netscape-формате, например расширением «Get cookies.txt LOCALLY» —
+   получается `cookies.txt`.
+2. Положить файл на сервер в `C:\lcbmobile-news\secrets\youtube_cookies.txt`
+   с теми же ACL, что у прочих файлов в `secrets\` (только учётка сервиса).
+3. В `C:\lcbmobile-news\.env` добавить
+   `YOUTUBE_COOKIES_FILE=C:\lcbmobile-news\secrets\youtube_cookies.txt`.
+4. Адаптер сам подхватит файл (`cookiesfile` в yt-dlp) и залогирует факт
+   использования; при отсутствии файла — warning и работа без cookies.
+5. Cookies протухают (обычно недели-месяцы): если снова появится бот-чек —
+   экспортировать заново.
+
 Поэтому правильная формулировка: **YouTube downloading не заблокирован отдельным
 guard; произвольный YouTube ingestion теперь реализован как opt-in adapter за
 feature flag и по умолчанию выключен**. Удалять один `if` бессмысленно, потому
@@ -272,13 +290,14 @@ classic/photo format, а не скачивает случайный YouTube uplo
 `fallback` — YouTube вызывается только при пустом curated whitelist).
 Из исходного плана выполнены пункты 1, 3 (SHA-256, канал, URL, license — кроме
 fetched timestamp), 4 (лимиты 15–600 с и ≤100 MB, timeout, retry; проверка
-размера файла), 5 (качается отрезок 0–30 с через `download_sections` + ffmpeg,
+размера файла), 5 (качается отрезок 0–30 с через `download_ranges` + ffmpeg,
 монтаж берёт сегмент без original audio), 7 (`youtube_video/rights_manifest.json`),
 8 (feature flag), 10 (unit tests `tests/test_youtube_media.py`, полный прогон
 pytest зелёный). Осталось при переносе в прод: п.2 (политика допуска только
 owner/permission/CC-роликов — сейчас метаданные честно помечают «reuse rights
-not verified»), п.6 (source-level дедуп между выпусками), п.9 (установить
-`yt-dlp` и ffmpeg на Windows, Mac и GitHub runner и включить env в workflows),
+not verified»), п.6 (source-level дедуп между выпусками), п.9 (`yt-dlp` и
+ffmpeg уже установлены на прод-сервере; включить env — сделано через
+`C:\lcbmobile-news\.env`; при бот-чеке положить cookies, см. раздел 7),
 п.10 (dry-run render и visual review).
 
 Исходный план (для истории):

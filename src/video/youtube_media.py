@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 from .commons_video import LicensedVideo
+from ..config import settings
 
 try:  # yt-dlp is optional at import time so the pipeline can run without it.
     import yt_dlp
@@ -93,8 +94,25 @@ def _candidate_ok(
     return True
 
 
+def _cookies_opts() -> dict[str, str]:
+    """Optional cookies.txt for servers hit by YouTube bot checks.
+
+    Datacenter IPs are routinely asked to "sign in to confirm you're not a
+    bot". An exported cookies file (owner's own logged-in session, Netscape
+    format) lets yt-dlp answer that challenge legitimately.
+    """
+    path = settings.youtube_cookies_file
+    if not path:
+        return {}
+    if not Path(path).exists():
+        log.warning("YOUTUBE_COOKIES_FILE set but file is missing: %s", path)
+        return {}
+    log.info("YouTube ingestion: using cookies file %s", path)
+    return {"cookiesfile": path}
+
+
 def _search_opts() -> dict[str, object]:
-    return {
+    opts: dict[str, object] = {
         "extract_flat": True,
         "skip_download": True,
         "noplaylist": True,
@@ -102,6 +120,8 @@ def _search_opts() -> dict[str, object]:
         "no_warnings": True,
         "socket_timeout": 30,
     }
+    opts.update(_cookies_opts())
+    return opts
 
 
 def _download_opts(outtmpl: str, *, section_seconds: float | None) -> dict[str, object]:
@@ -123,6 +143,7 @@ def _download_opts(outtmpl: str, *, section_seconds: float | None) -> dict[str, 
         opts["download_ranges"] = yt_dlp.utils.download_range_func(
             None, [(0, section_seconds)]
         )
+    opts.update(_cookies_opts())
     return opts
 
 

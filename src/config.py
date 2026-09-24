@@ -60,6 +60,7 @@ class Settings:
     min_video_media_assets: int
     youtube_video_enabled: bool
     youtube_video_mode: str
+    youtube_cookies_file: str
     youtube_api_key: str
     youtube_metrics_refresh_hours: int
     dry_run: bool
@@ -172,6 +173,7 @@ def load_settings() -> Settings:
         ),
         youtube_video_enabled=_bool(os.getenv("YOUTUBE_VIDEO_ENABLED"), False),
         youtube_video_mode=youtube_video_mode,
+        youtube_cookies_file=_str("YOUTUBE_COOKIES_FILE"),
         youtube_api_key=_str("YOUTUBE_API_KEY"),
         youtube_metrics_refresh_hours=_int(os.getenv("YOUTUBE_METRICS_REFRESH_HOURS"), 6),
         dry_run=_bool(os.getenv("DRY_RUN"), False),

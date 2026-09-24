@@ -282,3 +282,43 @@ def test_resolve_visual_media_mode_off_suppresses_youtube(monkeypatch, tmp_path)
 
     assert videos == []
     assert calls["youtube"] == 0
+
+
+def test_cookies_file_is_passed_to_yt_dlp(monkeypatch, tmp_path):
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    entries = [_entry("ck1", 120.0)]
+    script = _script(entries, infos={entries[0]["url"]: _info("ck1")})
+    monkeypatch.setattr(youtube_media, "yt_dlp", _fake_module(script))
+    monkeypatch.setattr(
+        youtube_media,
+        "settings",
+        replace(youtube_media.settings, youtube_cookies_file=str(cookies)),
+    )
+
+    videos = fetch_youtube_artist_videos("some artist", tmp_path, max_videos=1)
+
+    assert len(videos) == 1
+    assert script["ydl_opts_seen"]
+    assert all(
+        opts.get("cookiesfile") == str(cookies) for opts in script["ydl_opts_seen"]
+    )
+
+
+def test_missing_cookies_file_is_ignored(monkeypatch, tmp_path):
+    entries = [_entry("ck2", 120.0)]
+    script = _script(entries, infos={entries[0]["url"]: _info("ck2")})
+    monkeypatch.setattr(youtube_media, "yt_dlp", _fake_module(script))
+    monkeypatch.setattr(
+        youtube_media,
+        "settings",
+        replace(
+            youtube_media.settings,
+            youtube_cookies_file=str(tmp_path / "absent.txt"),
+        ),
+    )
+
+    videos = fetch_youtube_artist_videos("some artist", tmp_path, max_videos=1)
+
+    assert len(videos) == 1
+    assert all("cookiesfile" not in opts for opts in script["ydl_opts_seen"])
