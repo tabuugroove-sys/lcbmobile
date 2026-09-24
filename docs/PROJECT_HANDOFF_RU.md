@@ -206,7 +206,8 @@ publication data. Не делать вывод о межсерверном де�
   словаря.
 - Для каждого файла сохраняются creator, license, license URL, source page,
   source URL и SHA-256 в `licensed_video/rights_manifest.json`.
-- Автоматического поиска видео по Commons, YouTube или всему web нет.
+- Автоматического поиска видео по Commons или всему web нет; поиск по YouTube
+  существует только в opt-in adapter `src/video/youtube_media.py` (см. раздел 7).
 
 ## 7. Ограничения на скачивание видео с YouTube: точная правда
 
@@ -230,14 +231,28 @@ publication data. Не делать вывод о межсерверном де�
 - Нет `BLOCK_YOUTUBE_DOWNLOAD`.
 - Нет проверки вида `if host == youtube.com: reject`.
 - Нет отдельного запрета на YouTube URL.
-- Нет `yt-dlp` или `youtube-dl` в `requirements.txt`.
 - Нет cookies/browser-auth/DRM bypass.
-- Нет функции, которая принимает произвольный YouTube URL, скачивает ролик и
-  передаёт его в монтаж.
+
+### Что изменилось: YouTube ingestion реализован
+
+- `yt-dlp>=2024.8.6` добавлен в `requirements.txt`.
+- Создан adapter `src/video/youtube_media.py`: функция
+  `fetch_youtube_artist_videos()` ищет ролики через `ytsearch`, скачивает
+  выбранные (предпочтительно отрезок 0–30 с через `download_sections` + ffmpeg,
+  с fallback на полное скачивание) и возвращает `LicensedVideo` с честными
+  метаданными: `license="YouTube standard license (reuse rights not verified)"`,
+  без поддельных CC. SHA-256 и права пишутся в
+  `youtube_video/rights_manifest.json`.
+- Adapter подключён в `resolve_visual_media()` (`src/video/generator.py`) за
+  feature flag `YOUTUBE_VIDEO_ENABLED` (default `false`) и работает в режиме
+  `YOUTUBE_VIDEO_MODE=fallback`: вызывается только если curated whitelist не
+  дал ни одного клипа; `YOUTUBE_VIDEO_MODE=off` полностью глушит источник.
+- По умолчанию флаг выключен, поэтому production-поведение не изменилось.
 
 Поэтому правильная формулировка: **YouTube downloading не заблокирован отдельным
-guard; произвольный YouTube ingestion просто не реализован и не подключён к
-production**. Удалять один `if` бессмысленно, потому что такого `if` нет.
+guard; произвольный YouTube ingestion теперь реализован как opt-in adapter за
+feature flag и по умолчанию выключен**. Удалять один `if` бессмысленно, потому
+что такого `if` нет — включение делается через `YOUTUBE_VIDEO_ENABLED=true`.
 
 ### Почему выбран именно такой production boundary
 
@@ -251,8 +266,22 @@ classic/photo format, а не скачивает случайный YouTube uplo
 
 ## 8. Как технически добавить YouTube ingestion в будущем
 
-Это новая подсистема, а не снятие существующего флага. Минимальный корректный
-план:
+**Статус: реализовано.** Adapter `src/video/youtube_media.py` создан и
+подключён в `resolve_visual_media()` за флагом `YOUTUBE_VIDEO_ENABLED`
+(default `false`), режим `YOUTUBE_VIDEO_MODE=fallback|off` (default
+`fallback` — YouTube вызывается только при пустом curated whitelist).
+Из исходного плана выполнены пункты 1, 3 (SHA-256, канал, URL, license — кроме
+fetched timestamp), 4 (лимиты 15–600 с и ≤100 MB, timeout, retry; проверка
+размера файла), 5 (качается отрезок 0–30 с через `download_sections` + ffmpeg,
+монтаж берёт сегмент без original audio), 7 (`youtube_video/rights_manifest.json`),
+8 (feature flag), 10 (unit tests `tests/test_youtube_media.py`, полный прогон
+pytest зелёный). Осталось при переносе в прод: п.2 (политика допуска только
+owner/permission/CC-роликов — сейчас метаданные честно помечают «reuse rights
+not verified»), п.6 (source-level дедуп между выпусками), п.9 (установить
+`yt-dlp` и ffmpeg на Windows, Mac и GitHub runner и включить env в workflows),
+п.10 (dry-run render и visual review).
+
+Исходный план (для истории):
 
 1. создать отдельный adapter, например `src/video/youtube_media.py`;
 2. принимать только URL с зафиксированным основанием использования: owner,

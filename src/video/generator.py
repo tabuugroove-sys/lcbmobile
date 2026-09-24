@@ -33,6 +33,7 @@ from .source_media import (
     fetch_source_article_image,
     fetch_source_article_images,
 )
+from .youtube_media import fetch_youtube_artist_videos
 from .tts import get_tts_provider
 
 log = logging.getLogger(__name__)
@@ -1104,6 +1105,26 @@ def resolve_visual_media(
         base / "licensed_video",
         limit=max(2, settings.min_video_media_assets),
     )
+    if settings.youtube_video_enabled and settings.youtube_video_mode != "off":
+        if videos:
+            log.info(
+                "Video source: curated Commons whitelist (%d clip(s)) for %r",
+                len(videos),
+                artist_query,
+            )
+        else:
+            youtube_videos = fetch_youtube_artist_videos(
+                artist_query,
+                base / "youtube_video",
+                max_videos=max(2, settings.min_video_media_assets),
+            )
+            if youtube_videos:
+                log.info(
+                    "Video source: YouTube ingestion (%d clip(s)) for %r",
+                    len(youtube_videos),
+                    artist_query,
+                )
+                videos = youtube_videos
     return artist_query, photos, videos
 
 

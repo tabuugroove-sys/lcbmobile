@@ -58,6 +58,8 @@ class Settings:
     allow_source_article_image: bool
     require_video_media: bool
     min_video_media_assets: int
+    youtube_video_enabled: bool
+    youtube_video_mode: str
     youtube_api_key: str
     youtube_metrics_refresh_hours: int
     dry_run: bool
@@ -129,6 +131,10 @@ def load_settings() -> Settings:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    youtube_video_mode = _str("YOUTUBE_VIDEO_MODE", "fallback").lower()
+    if youtube_video_mode not in {"fallback", "off"}:
+        youtube_video_mode = "fallback"
+
     return Settings(
         anthropic_api_key=_str("ANTHROPIC_API_KEY"),
         anthropic_model=_str("ANTHROPIC_MODEL", "claude-haiku-4-5"),
@@ -164,6 +170,8 @@ def load_settings() -> Settings:
         min_video_media_assets=max(
             0, _int(os.getenv("MIN_VIDEO_MEDIA_ASSETS"), 0)
         ),
+        youtube_video_enabled=_bool(os.getenv("YOUTUBE_VIDEO_ENABLED"), False),
+        youtube_video_mode=youtube_video_mode,
         youtube_api_key=_str("YOUTUBE_API_KEY"),
         youtube_metrics_refresh_hours=_int(os.getenv("YOUTUBE_METRICS_REFRESH_HOURS"), 6),
         dry_run=_bool(os.getenv("DRY_RUN"), False),
