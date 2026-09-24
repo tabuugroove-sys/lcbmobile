@@ -1,13 +1,20 @@
 # LCBMobile handoff for another LLM
 
-Updated: 2026-09-19, America/Sao_Paulo.
+Updated: 2026-09-24, America/Sao_Paulo.
+
+Russian standalone handoff for the next agent:
+[`PROJECT_HANDOFF_RU.md`](PROJECT_HANDOFF_RU.md). It includes the current
+architecture, recent changes, deployment ownership and the exact distinction
+between the curated-video allowlist and the absent arbitrary-YouTube ingestion
+path.
 
 ## Start here
 
 - Source checkout: `/Users/a1111/Documents/Codex/2026-04-29/github/lcbmobile`
 - Repository: `tabuugroove-sys/lcbmobile`
 - Active branch: `claude/create-news-feed-yMBpb`
-- Last verified behavior commit: `d14ff53`
+- Last verified behavior commit: `3fe511c`
+- Last deployment-record commit: `9783d0b`
 - Never print, commit or copy credential values into chat or logs.
 - Recheck runtime state before making a current operational claim. A commit,
   successful task exit or dashboard row is not proof of a YouTube publication.
