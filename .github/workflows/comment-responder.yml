@@ -20,6 +20,11 @@ on:
         options:
           - "false"
           - "true"
+      reply_limit:
+        description: "Maximum replies for this manual run"
+        required: false
+        type: number
+        default: 10
 
 concurrency:
   group: comment-responder
@@ -76,8 +81,8 @@ jobs:
 
           # Tunables (override via repo Variables if needed).
           COMMENT_LOOKBACK_VIDEOS: ${{ vars.COMMENT_LOOKBACK_VIDEOS || '30' }}
-          COMMENT_MAX_PER_RUN: ${{ vars.COMMENT_MAX_PER_RUN || '10' }}
-          COMMENT_MAX_PER_VIDEO: ${{ vars.COMMENT_MAX_PER_VIDEO || '5' }}
+          COMMENT_MAX_PER_RUN: ${{ inputs.reply_limit || vars.COMMENT_MAX_PER_RUN || '10' }}
+          COMMENT_MAX_PER_VIDEO: ${{ inputs.reply_limit || vars.COMMENT_MAX_PER_VIDEO || '5' }}
           COMMENT_DAILY_CAP: ${{ vars.COMMENT_DAILY_CAP || '120' }}
           COMMENT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
 

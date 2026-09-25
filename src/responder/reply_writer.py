@@ -121,16 +121,29 @@ def _via_gemini(video_title: str, comment_text: str, author: str) -> dict[str, A
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{GEMINI_MODEL}:generateContent"
     )
+    generation_config: dict[str, Any] = {
+        "temperature": 0.7,
+        "maxOutputTokens": 1024,
+        "responseMimeType": "application/json",
+        "responseSchema": {
+            "type": "OBJECT",
+            "properties": {
+                "should_reply": {"type": "BOOLEAN"},
+                "reply": {"type": "STRING"},
+                "reason": {"type": "STRING"},
+            },
+            "required": ["should_reply", "reply", "reason"],
+        },
+    }
+    if GEMINI_MODEL.startswith("gemini-2.5"):
+        generation_config["thinkingConfig"] = {"thinkingBudget": 0}
+
     body = {
         "system_instruction": {"parts": [{"text": REPLY_SYSTEM_PROMPT}]},
         "contents": [
             {"role": "user", "parts": [{"text": _user_prompt(video_title, comment_text, author)}]}
         ],
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 300,
-            "responseMimeType": "application/json",
-        },
+        "generationConfig": generation_config,
     }
     response = httpx.post(endpoint, params={"key": api_key}, json=body, timeout=60.0)
     response.raise_for_status()
