@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS replied_comments (
 );
 """
 
+RETRYABLE_REASON_PREFIXES = (
+    "anthropic error:",
+    "gemini error:",
+    "no llm available",
+)
+
 
 class CommentStore:
     def __init__(self, db_path: Path) -> None:
@@ -46,9 +52,15 @@ class CommentStore:
             return True
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT 1 FROM replied_comments WHERE comment_id = ?", (comment_id,)
+                "SELECT status, reason FROM replied_comments WHERE comment_id = ?",
+                (comment_id,),
             ).fetchone()
-            return row is not None
+            if row is None:
+                return False
+            status, reason = str(row[0] or ""), str(row[1] or "").casefold()
+            if status == "skipped" and reason.startswith(RETRYABLE_REASON_PREFIXES):
+                return False
+            return True
 
     def mark_handled(
         self,

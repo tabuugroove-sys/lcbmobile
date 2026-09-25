@@ -196,9 +196,20 @@ def run_comment_responder(*, dry_run: bool = False) -> dict[str, int]:
             stats["scanned"] += 1
             decision = generate_reply(title, text, author)
             if not decision["should_reply"]:
-                if not dry_run:
+                reason = str(decision["reason"] or "")
+                generation_failed = reason.casefold().startswith(
+                    ("anthropic error:", "gemini error:", "no llm available")
+                )
+                if generation_failed:
+                    stats["errors"] += 1
+                    log.warning(
+                        "Reply generation failed for %s; leaving it retryable: %s",
+                        comment_id,
+                        reason,
+                    )
+                elif not dry_run:
                     store.mark_handled(
-                        comment_id, video_id, "skipped", reason=decision["reason"][:200]
+                        comment_id, video_id, "skipped", reason=reason[:200]
                     )
                 stats["skipped"] += 1
                 continue
