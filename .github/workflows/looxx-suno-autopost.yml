@@ -60,7 +60,7 @@ jobs:
             printf '%s' "${LOOXX_YOUTUBE_TOKEN}" > looxx_youtube_token.json
           fi
 
-      - name: Poll Suno and publish at most one track
+      - name: Poll both Suno playlists and publish at most one track
         env:
           SUNO_PLAYLIST_URL: https://suno.com/playlist/344579d1-5a04-45f8-aa71-a48f9da326a3
           SUNO_STATE_DB: data/suno/state.db
@@ -70,11 +70,15 @@ jobs:
           YOUTUBE_PRIVACY_STATUS: ${{ vars.LOOXX_YOUTUBE_PRIVACY || 'public' }}
           DRY_RUN_INPUT: ${{ inputs.dry_run || 'false' }}
         run: |
-          ARGS="-v"
+          ARGS=""
           if [ "${DRY_RUN_INPUT}" = "true" ]; then
             ARGS="${ARGS} --dry-run"
           fi
           python -m scripts.run_suno_playlist ${ARGS}
+          # Same state DB, remote reconciliation, daily cap, and job lock.
+          # Stop on any first-playlist failure; never bypass uncertain uploads.
+          SUNO_PLAYLIST_URL=https://suno.com/playlist/305db808-2168-4f5f-9b04-bb4910a0b369 \
+            python -m scripts.run_suno_playlist ${ARGS}
 
       - name: Upload render for review
         if: always()
