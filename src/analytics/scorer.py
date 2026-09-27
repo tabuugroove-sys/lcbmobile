@@ -227,9 +227,11 @@ def _tokens(text: str) -> list[str]:
 
 def _performance(row: dict[str, object]) -> float:
     views = int(row.get("view_count") or 0)
-    likes = int(row.get("like_count") or 0)
-    comments = int(row.get("comment_count") or 0)
-    return math.log1p(views) + 0.25 * math.log1p(likes) + 0.35 * math.log1p(comments)
+    subscribers = int(row.get("subscribers_gained") or 0)
+    # The owner cares about two outcomes: reach and channel growth. Log scaling
+    # keeps one outlier from owning the model forever, while the larger
+    # subscriber coefficient rewards videos that convert viewers into followers.
+    return math.log1p(views) + 1.75 * math.log1p(subscribers)
 
 
 def _avg(values: list[float], fallback: float) -> float:

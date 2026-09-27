@@ -43,12 +43,16 @@ CREATE TABLE IF NOT EXISTS item_features (
 );
 
 CREATE TABLE IF NOT EXISTS youtube_metrics (
-    video_id      TEXT PRIMARY KEY,
-    fingerprint   TEXT NOT NULL,
-    view_count    INTEGER NOT NULL DEFAULT 0,
-    like_count    INTEGER NOT NULL DEFAULT 0,
-    comment_count INTEGER NOT NULL DEFAULT 0,
-    collected_at  TEXT NOT NULL
+    video_id             TEXT PRIMARY KEY,
+    fingerprint          TEXT NOT NULL,
+    view_count           INTEGER NOT NULL DEFAULT 0,
+    like_count           INTEGER NOT NULL DEFAULT 0,
+    comment_count        INTEGER NOT NULL DEFAULT 0,
+    analytics_view_count INTEGER,
+    subscribers_gained   INTEGER NOT NULL DEFAULT 0,
+    title                TEXT,
+    collected_at         TEXT NOT NULL,
+    analytics_collected_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS youtube_comment_actions (
@@ -112,6 +116,11 @@ class Store:
         for ddl in [
             "ALTER TABLE seen_items ADD COLUMN content_hash TEXT",
             "ALTER TABLE publications ADD COLUMN content_hash TEXT",
+            "ALTER TABLE youtube_metrics ADD COLUMN analytics_view_count INTEGER",
+            "ALTER TABLE youtube_metrics ADD COLUMN subscribers_gained "
+            "INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE youtube_metrics ADD COLUMN title TEXT",
+            "ALTER TABLE youtube_metrics ADD COLUMN analytics_collected_at TEXT",
         ]:
             try:
                 conn.execute(ddl)
@@ -300,24 +309,27 @@ class Store:
 
     def youtube_metric_targets(
         self, *, stale_after_hours: int, limit: int = 50
-    ) -> list[tuple[str, str]]:
+    ) -> list[tuple[str, str, str]]:
         cutoff = (datetime.utcnow() - timedelta(hours=stale_after_hours)).isoformat()
         with self._conn() as conn:
             rows = conn.execute(
-                """SELECT MIN(p.fingerprint) AS fingerprint, p.remote_id
+                """SELECT MIN(p.fingerprint) AS fingerprint, p.remote_id,
+                          MIN(p.posted_at) AS posted_at
                    FROM publications p
                    LEFT JOIN youtube_metrics m ON m.video_id = p.remote_id
                    WHERE p.platform IN ('youtube', 'youtube_daily_multinews')
                      AND p.status = 'ok'
                      AND p.remote_id IS NOT NULL
                      AND p.remote_id != ''
-                     AND (m.collected_at IS NULL OR m.collected_at < ?)
+                     AND (m.collected_at IS NULL OR m.collected_at < ?
+                          OR m.analytics_collected_at IS NULL
+                          OR m.analytics_collected_at < ?)
                    GROUP BY p.remote_id
                    ORDER BY p.posted_at DESC
                    LIMIT ?""",
-                (cutoff, limit),
+                (cutoff, cutoff, limit),
             ).fetchall()
-        return [(row[0], row[1]) for row in rows]
+        return [(row[0], row[1], row[2]) for row in rows]
 
     def record_youtube_metrics(
         self,
@@ -330,10 +342,16 @@ class Store:
     ) -> None:
         with self._conn() as conn:
             conn.execute(
-                """INSERT OR REPLACE INTO youtube_metrics
+                """INSERT INTO youtube_metrics
                    (video_id, fingerprint, view_count, like_count,
                     comment_count, collected_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(video_id) DO UPDATE SET
+                       fingerprint = excluded.fingerprint,
+                       view_count = excluded.view_count,
+                       like_count = excluded.like_count,
+                       comment_count = excluded.comment_count,
+                       collected_at = excluded.collected_at""",
                 (
                     video_id,
                     fingerprint,
@@ -341,6 +359,44 @@ class Store:
                     like_count,
                     comment_count,
                     datetime.utcnow().isoformat(),
+                ),
+            )
+
+    def record_youtube_growth_metrics(
+        self,
+        *,
+        fingerprint: str,
+        video_id: str,
+        view_count: int,
+        subscribers_gained: int,
+        title: str | None = None,
+    ) -> None:
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO youtube_metrics
+                   (video_id, fingerprint, view_count, like_count,
+                    comment_count, analytics_view_count, subscribers_gained, title,
+                    collected_at, analytics_collected_at)
+                   VALUES (?, ?, 0, 0, 0, ?, ?, ?, ?, ?)
+                   ON CONFLICT(video_id) DO UPDATE SET
+                       fingerprint = CASE
+                           WHEN youtube_metrics.fingerprint LIKE 'youtube:%'
+                           THEN excluded.fingerprint
+                           ELSE youtube_metrics.fingerprint
+                       END,
+                       analytics_view_count = excluded.analytics_view_count,
+                       subscribers_gained = excluded.subscribers_gained,
+                       title = COALESCE(excluded.title, youtube_metrics.title),
+                       analytics_collected_at = excluded.analytics_collected_at""",
+                (
+                    video_id,
+                    fingerprint,
+                    view_count,
+                    subscribers_gained,
+                    title,
+                    now,
+                    now,
                 ),
             )
 
@@ -405,18 +461,21 @@ class Store:
                        m.fingerprint,
                        COALESCE(f.source_id, s.source_id, '') AS source_id,
                        COALESCE(f.category, '') AS category,
-                       COALESCE(f.title, s.title, '') AS title,
+                       COALESCE(f.title, s.title, m.title, '') AS title,
                        COALESCE(f.summary, '') AS summary,
-                       m.view_count,
+                       COALESCE(m.analytics_view_count, m.view_count),
                        m.like_count,
-                       m.comment_count
+                       m.comment_count,
+                       m.subscribers_gained
                    FROM youtube_metrics m
-                   JOIN publications p
+                   LEFT JOIN publications p
                      ON p.platform = 'youtube' AND p.remote_id = m.video_id
                    LEFT JOIN item_features f ON f.fingerprint = m.fingerprint
                    LEFT JOIN seen_items s ON s.fingerprint = m.fingerprint
-                   WHERE p.status = 'ok'
-                   ORDER BY p.posted_at DESC
+                   WHERE p.status = 'ok' OR m.title IS NOT NULL
+                   ORDER BY COALESCE(
+                       p.posted_at, m.analytics_collected_at, m.collected_at
+                   ) DESC
                    LIMIT ?""",
                 (limit,),
             ).fetchall()
@@ -430,6 +489,7 @@ class Store:
                 "view_count": row[5],
                 "like_count": row[6],
                 "comment_count": row[7],
+                "subscribers_gained": row[8],
             }
             for row in rows
         ]

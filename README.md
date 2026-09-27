@@ -160,6 +160,11 @@ python -m scripts.get_youtube_token
 gh secret set YOUTUBE_TOKEN -R tabuugroove-sys/lcbmobile < youtube_token.json
 ```
 
+O mesmo fluxo também concede `youtube.readonly` e `yt-analytics.readonly`.
+Esses escopos permitem ao seletor aprender com os dois KPIs editoriais do
+canal: visualizações e inscritos ganhos por cada vídeo. Ative a YouTube
+Analytics API no mesmo projeto do Google Cloud antes de gerar o token.
+
 Limites úteis:
 
 | Variável | Para quê |

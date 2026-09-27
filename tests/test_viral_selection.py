@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from src.analytics.scorer import (
     _cold_start_scores,
     _drama_score,
+    _performance,
     _topic_labels,
     select_best_candidates,
 )
@@ -25,6 +26,34 @@ def item(title: str, summary: str = "") -> NewsItem:
 
 
 class ViralSelectionTests(unittest.TestCase):
+    def test_performance_uses_only_views_and_subscribers_gained(self) -> None:
+        baseline = _performance(
+            {
+                "view_count": 1_000,
+                "subscribers_gained": 2,
+                "like_count": 0,
+                "comment_count": 0,
+            }
+        )
+        noisy_reactions = _performance(
+            {
+                "view_count": 1_000,
+                "subscribers_gained": 2,
+                "like_count": 50_000,
+                "comment_count": 50_000,
+            }
+        )
+
+        self.assertEqual(baseline, noisy_reactions)
+        self.assertGreater(
+            _performance({"view_count": 1_000, "subscribers_gained": 8}),
+            baseline,
+        )
+        self.assertGreater(
+            _performance({"view_count": 5_000, "subscribers_gained": 2}),
+            baseline,
+        )
+
     def test_groups_winning_headlines_into_stable_topics(self) -> None:
         self.assertIn("public_conflict", _topic_labels("Ex-colega detona cantora na TV"))
         self.assertIn("shock_reveal", _topic_labels("Ele cresceu e está absurdo"))
