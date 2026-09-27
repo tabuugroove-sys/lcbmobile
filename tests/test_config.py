@@ -24,7 +24,7 @@ class MediaGateConfigTests(unittest.TestCase):
             settings = self._load(Path(temp_dir))
 
         self.assertTrue(settings.require_visual_media)
-        self.assertEqual(settings.min_visual_media_assets, 1)
+        self.assertEqual(settings.min_visual_media_assets, 2)
         self.assertTrue(settings.allow_source_article_image)
         self.assertFalse(settings.require_video_media)
         self.assertEqual(settings.min_video_media_assets, 0)

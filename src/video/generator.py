@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 from moviepy.editor import (
     AudioFileClip,
     ColorClip,
@@ -30,7 +30,6 @@ from .commons_media import LicensedImage, fetch_licensed_artist_images
 from .commons_video import LicensedVideo, fetch_licensed_artist_videos
 from .source_media import (
     SOURCE_ARTICLE_LICENSE,
-    fetch_source_article_image,
     fetch_source_article_images,
 )
 from .youtube_media import fetch_youtube_artist_videos
@@ -132,16 +131,61 @@ def _mix_voice_with_background(
     return CompositeAudioClip([music, voice]).set_duration(duration)
 
 
-def _fit_cover(image: Image.Image, size: tuple[int, int], focus_y: float = 0.5) -> Image.Image:
+def _fit_cover(
+    image: Image.Image,
+    size: tuple[int, int],
+    focus_y: float = 0.5,
+    focus_x: float = 0.5,
+) -> Image.Image:
     image = image.convert("RGB")
     ratio = max(size[0] / image.width, size[1] / image.height)
     resized = image.resize(
         (round(image.width * ratio), round(image.height * ratio)),
         Image.Resampling.LANCZOS,
     )
-    left = max(0, (resized.width - size[0]) // 2)
+    left = round(
+        max(0, resized.width - size[0]) * max(0.0, min(1.0, focus_x))
+    )
     top = round(max(0, resized.height - size[1]) * max(0.0, min(1.0, focus_y)))
     return resized.crop((left, top, left + size[0], top + size[1]))
+
+
+def _fit_editorial(
+    image: Image.Image,
+    size: tuple[int, int],
+    focus_y: float = 0.5,
+) -> Image.Image:
+    """Preserve the full subject when source and frame aspect ratios disagree."""
+    image = image.convert("RGB")
+    source_ratio = image.width / max(image.height, 1)
+    target_ratio = size[0] / max(size[1], 1)
+    ratio_delta = source_ratio / target_ratio
+    if 0.72 <= ratio_delta <= 1.38:
+        return _fit_cover(image, size, focus_y)
+
+    background = _fit_cover(image, size, focus_y)
+    background = background.filter(ImageFilter.GaussianBlur(28))
+    background = ImageEnhance.Brightness(background).enhance(0.42)
+    contained = ImageOps.contain(image, size, method=Image.Resampling.LANCZOS)
+    left = (size[0] - contained.width) // 2
+    top = (size[1] - contained.height) // 2
+    background.paste(contained, (left, top))
+    return background
+
+
+def _fit_hook_panel(
+    image: Image.Image,
+    size: tuple[int, int],
+    *,
+    side: str,
+) -> Image.Image:
+    """Create a close hook crop without centering between two people."""
+    source_ratio = image.width / max(image.height, 1)
+    target_ratio = size[0] / max(size[1], 1)
+    if source_ratio > target_ratio * 1.38:
+        focus_x = 0.26 if side == "left" else 0.74
+        return _fit_cover(image, size, 0.30, focus_x)
+    return _fit_editorial(image, size, 0.30)
 
 
 def _gradient(accent: str) -> Image.Image:
@@ -651,7 +695,7 @@ def _make_scene(
         canvas.alpha_composite(shadow, (x + 20, y + 28))
         canvas.alpha_composite(person, (x, y))
     elif source_image and layout == "card":
-        picture = _fit_cover(source_image, (760, 1050), 0.34)
+        picture = _fit_editorial(source_image, (760, 1050), 0.34)
         card = Image.new("RGBA", (820, 1110), (248, 246, 242, 255))
         card.alpha_composite(picture.convert("RGBA"), (30, 30))
         card = card.rotate(
@@ -665,7 +709,7 @@ def _make_scene(
         canvas.alpha_composite(shadow, ((WIDTH - card.width) // 2 + 20, 330))
         canvas.alpha_composite(card, ((WIDTH - card.width) // 2, 300))
     elif source_image:
-        picture = _fit_cover(source_image, (860, 1180), 0.34)
+        picture = _fit_editorial(source_image, (860, 1180), 0.34)
         x, y = 110, 245
         shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
         ImageDraw.Draw(shadow).rounded_rectangle(
@@ -830,10 +874,18 @@ def _make_hook_scene(
         outline=(255, 255, 255, 100),
         width=3,
     )
-    left = _fit_cover(images[0], (card_w // 2, card_h), 0.30)
+    left = _fit_hook_panel(
+        images[0],
+        (card_w // 2, card_h),
+        side="left",
+    )
     canvas.alpha_composite(left.convert("RGBA"), (card_x, card_y))
     if len(images) > 1:
-        right = _fit_cover(images[1], (card_w - card_w // 2, card_h), 0.30)
+        right = _fit_hook_panel(
+            images[1],
+            (card_w - card_w // 2, card_h),
+            side="right",
+        )
         canvas.alpha_composite(right.convert("RGBA"), (card_x + card_w // 2, card_y))
     else:
         draw = ImageDraw.Draw(canvas, "RGBA")
@@ -1096,10 +1148,16 @@ def resolve_visual_media(
         base / "licensed_media",
         limit=max(6, settings.min_visual_media_assets),
     )
-    if not photos and settings.allow_source_article_image:
-        source_photo = fetch_source_article_image(item, base / "source_media")
-        if source_photo is not None:
-            photos = [source_photo]
+    if (
+        settings.allow_source_article_image
+        and len(photos) < settings.min_visual_media_assets
+    ):
+        source_photos = fetch_source_article_images(
+            item,
+            base / "source_media",
+            limit=max(6, settings.min_visual_media_assets),
+        )
+        photos = _unique_visual_assets([*photos, *source_photos])
     videos = fetch_licensed_artist_videos(
         artist_query,
         base / "licensed_video",
@@ -1188,6 +1246,19 @@ def build_short(
     output_dir.mkdir(parents=True, exist_ok=True)
     base = _item_output_dir(item, output_dir)
     artist_query, photos, videos = resolve_visual_media(item, output_dir)
+    classic_media_fallback = (
+        not enforce_media_requirements
+        and settings.require_visual_media
+        and len(photos) < settings.min_visual_media_assets
+    )
+    if classic_media_fallback:
+        log.warning(
+            "Classic render: discarding %d insufficient photo(s) to avoid "
+            "repeating one image across the whole Short",
+            len(photos),
+        )
+        photos = []
+        videos = []
     if (
         enforce_media_requirements
         and settings.require_visual_media
@@ -1209,7 +1280,11 @@ def build_short(
             f"requires {settings.min_video_media_assets}"
         )
 
-    hook_media = resolve_hook_media(item, photos, base / "hook_media")
+    hook_media = (
+        []
+        if classic_media_fallback
+        else resolve_hook_media(item, photos, base / "hook_media")
+    )
     credited_photos = _unique_visual_assets([*photos, *hook_media])
 
     with tempfile.TemporaryDirectory() as temp_dir:

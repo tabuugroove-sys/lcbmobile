@@ -114,7 +114,7 @@ Variáveis úteis:
 | `YOUTUBE_METRICS_REFRESH_HOURS` | Intervalo mínimo para atualizar métricas |
 | `DRAMA_SIGNAL_WEIGHT` | Peso adicional para drama confirmado na fonte |
 | `REQUIRE_VISUAL_MEDIA` | Faz o primeiro passe preferir pautas com foto |
-| `MIN_VISUAL_MEDIA_ASSETS` | Mínimo de imagens no primeiro passe; padrão `1` |
+| `MIN_VISUAL_MEDIA_ASSETS` | Mínimo de imagens distintas no primeiro passe; padrão `2` |
 | `ALLOW_SOURCE_ARTICLE_IMAGE` | Usa a imagem RSS/OpenGraph da matéria quando o Commons não tem foto |
 | `REQUIRE_VIDEO_MEDIA` | Gate opcional de vídeos; desligado por padrão |
 | `MIN_VIDEO_MEDIA_ASSETS` | Mínimo de clipes quando o gate opcional está ligado |

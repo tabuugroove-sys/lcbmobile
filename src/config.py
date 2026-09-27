@@ -162,7 +162,7 @@ def load_settings() -> Settings:
         drama_signal_weight=_float(os.getenv("DRAMA_SIGNAL_WEIGHT"), 1.4),
         require_visual_media=_bool(os.getenv("REQUIRE_VISUAL_MEDIA"), True),
         min_visual_media_assets=max(
-            0, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 1)
+            0, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 2)
         ),
         allow_source_article_image=_bool(
             os.getenv("ALLOW_SOURCE_ARTICLE_IMAGE"), True

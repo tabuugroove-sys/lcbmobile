@@ -106,6 +106,7 @@ _KNOWN_MUSIC_ACTS = (
     "oliver tree",
     "pabllo vittar",
     "rihanna",
+    "rick e renner",
     "roberto carlos",
     "sabrina carpenter",
     "shakira",

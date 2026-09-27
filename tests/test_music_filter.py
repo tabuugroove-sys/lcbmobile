@@ -50,6 +50,10 @@ class MusicFilterTests(unittest.TestCase):
         )
         self.assertEqual(find_known_music_act("Bloc Party lança disco"), "bloc party")
         self.assertEqual(
+            find_known_music_act("Hit de Rick e Renner volta às paradas"),
+            "rick e renner",
+        )
+        self.assertEqual(
             find_known_music_act("Jota Quest é batizado por Tim Maia"),
             "jota quest",
         )

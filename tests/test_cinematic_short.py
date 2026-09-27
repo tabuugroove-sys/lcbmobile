@@ -15,6 +15,7 @@ from src.video.commons_video import LicensedVideo, fetch_licensed_artist_videos
 from src.video.generator import (
     HEIGHT,
     WIDTH,
+    _fit_editorial,
     _make_hook_scene,
     _make_scene,
     _make_video_overlay,
@@ -363,7 +364,9 @@ class SceneRenderTests(unittest.TestCase):
             "src.video.generator.fetch_licensed_artist_images", return_value=[]
         ) as fetch_photos, mock.patch(
             "src.video.generator.fetch_licensed_artist_videos", return_value=[]
-        ) as fetch_videos:
+        ) as fetch_videos, mock.patch(
+            "src.video.generator.fetch_source_article_images", return_value=[]
+        ):
             artist, photos, videos = resolve_visual_media(news, Path(temp_dir))  # type: ignore[arg-type]
 
         self.assertIsNone(artist)
@@ -383,23 +386,41 @@ class SceneRenderTests(unittest.TestCase):
             title="Artista anuncia novidade",
             image_url="https://cdn.example.com/story.jpg",
         )
-        source_photo = mock.sentinel.source_photo
         media_settings = mock.Mock(
             min_visual_media_assets=1,
             min_video_media_assets=0,
             allow_source_article_image=True,
         )
-        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
-            "src.video.generator.fetch_licensed_artist_images", return_value=[]
-        ), mock.patch(
-            "src.video.generator.fetch_source_article_image",
-            return_value=source_photo,
-        ) as fetch_source, mock.patch(
-            "src.video.generator.fetch_licensed_artist_videos", return_value=[]
-        ), mock.patch("src.video.generator.settings", media_settings):
-            _, photos, videos = resolve_visual_media(news, Path(temp_dir))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_photos = []
+            for index, color in enumerate(((40, 90, 170), (190, 65, 80)), start=1):
+                path = root / f"source-{index}.jpg"
+                Image.new("RGB", (1200, 800), color).save(path)
+                source_photos.append(
+                    LicensedImage(
+                        path=str(path),
+                        title=path.name,
+                        creator="Fonte Teste",
+                        license=SOURCE_ARTICLE_LICENSE,
+                        license_url=news.url,
+                        source_page=news.url,
+                        source_url=f"https://cdn.example.com/{path.name}",
+                        width=1200,
+                        height=800,
+                    )
+                )
+            with mock.patch(
+                "src.video.generator.fetch_licensed_artist_images", return_value=[]
+            ), mock.patch(
+                "src.video.generator.fetch_source_article_images",
+                return_value=source_photos,
+            ) as fetch_source, mock.patch(
+                "src.video.generator.fetch_licensed_artist_videos", return_value=[]
+            ), mock.patch("src.video.generator.settings", media_settings):
+                _, photos, videos = resolve_visual_media(news, root)
 
-        self.assertEqual(photos, [source_photo])
+        self.assertEqual(photos, source_photos)
         self.assertEqual(videos, [])
         fetch_source.assert_called_once()
 
@@ -420,8 +441,8 @@ class SceneRenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
             "src.video.generator.fetch_licensed_artist_images", return_value=[]
         ) as fetch_photos, mock.patch(
-            "src.video.generator.fetch_source_article_image",
-            return_value=mock.sentinel.source_photo,
+            "src.video.generator.fetch_source_article_images",
+            return_value=[],
         ), mock.patch(
             "src.video.generator.fetch_licensed_artist_videos", return_value=[]
         ) as fetch_videos, mock.patch(
@@ -432,6 +453,23 @@ class SceneRenderTests(unittest.TestCase):
         self.assertEqual(artist, "fiuk")
         self.assertEqual(fetch_photos.call_args.args[0], "fiuk")
         self.assertEqual(fetch_videos.call_args.args[0], "fiuk")
+
+    def test_editorial_fit_preserves_full_landscape_photo(self) -> None:
+        source = Image.new("RGB", (800, 450), "black")
+        for x in range(800):
+            source.putpixel((x, 225), (x % 256, 20, 20))
+
+        fitted = _fit_editorial(source, (760, 1050), 0.34)
+
+        # The full 16:9 frame is letterboxed inside the portrait card instead
+        # of throwing away both horizontal edges with a center crop.
+        expected_height = round(450 * (760 / 800))
+        top = (1050 - expected_height) // 2
+        self.assertEqual(fitted.getpixel((0, top + expected_height // 2))[0], 0)
+        self.assertGreater(
+            fitted.getpixel((759, top + expected_height // 2))[0],
+            20,
+        )
 
     def test_reference_style_requires_multiple_verified_visuals(self) -> None:
         news = type(
