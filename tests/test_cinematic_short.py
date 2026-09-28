@@ -541,20 +541,36 @@ class SceneRenderTests(unittest.TestCase):
             (),
             {"title": "Shakira anuncia novidade", "summary": ""},
         )()
+        mixed_settings = mock.Mock(
+            require_visual_media=True,
+            min_visual_media_assets=4,
+            require_video_media=True,
+            min_video_media_assets=1,
+        )
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
             "src.video.generator.resolve_visual_media",
             return_value=(
                 "shakira",
-                [mock.sentinel.photo],
+                [mock.sentinel.photo] * 4,
                 [mock.sentinel.video],
             ),
-        ):
+        ), mock.patch("src.video.generator.settings", mixed_settings):
             self.assertTrue(video_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
             "src.video.generator.resolve_visual_media",
-            return_value=("shakira", [mock.sentinel.photo], []),
-        ):
+            return_value=("shakira", [mock.sentinel.photo] * 4, []),
+        ), mock.patch("src.video.generator.settings", mixed_settings):
+            self.assertFalse(video_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.resolve_visual_media",
+            return_value=(
+                "shakira",
+                [mock.sentinel.photo] * 3,
+                [mock.sentinel.video],
+            ),
+        ), mock.patch("src.video.generator.settings", mixed_settings):
             self.assertFalse(video_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
 
     def test_classic_fallback_accepts_candidate_without_visual_media(self) -> None:
@@ -629,11 +645,82 @@ class SceneRenderTests(unittest.TestCase):
 
 class CommonsVideoTests(unittest.TestCase):
     def test_unknown_artist_is_not_downloaded(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            assets = fetch_licensed_artist_videos("artista desconhecido", Path(temp_dir))
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                request=request,
+                json={"query": {"pages": []}},
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir, httpx.Client(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            assets = fetch_licensed_artist_videos(
+                "artista desconhecido",
+                Path(temp_dir),
+                client=client,
+            )
             manifest = (Path(temp_dir) / "rights_manifest.json").read_text()
         self.assertEqual(assets, [])
-        self.assertIn('"status": "no_curated_video"', manifest)
+        self.assertIn('"status": "no_verified_video"', manifest)
+
+    def test_dynamic_commons_video_is_downloaded_with_verified_rights(self) -> None:
+        query = "artista exemplo"
+        media_url = "https://upload.wikimedia.org/example-480p.webm"
+        page = {
+            "title": "File:Artista Exemplo no palco.webm",
+            "videoinfo": [
+                {
+                    "width": 1280,
+                    "height": 720,
+                    "duration": 45.0,
+                    "descriptionurl": "https://commons.wikimedia.org/example",
+                    "mediatype": "VIDEO",
+                    "extmetadata": {
+                        "ObjectName": {"value": "Artista Exemplo no palco"},
+                        "ImageDescription": {"value": "Show do Artista Exemplo"},
+                        "Artist": {"value": "Example Creator"},
+                        "LicenseShortName": {"value": "CC BY 4.0"},
+                        "LicenseUrl": {
+                            "value": "https://creativecommons.org/licenses/by/4.0/"
+                        },
+                    },
+                    "derivatives": [
+                        {
+                            "src": media_url,
+                            "type": 'video/webm; codecs="vp9, opus"',
+                            "width": 854,
+                            "height": 480,
+                            "bandwidth": 700_000,
+                        }
+                    ],
+                }
+            ],
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if str(request.url).startswith("https://commons.wikimedia.org/w/api.php"):
+                return httpx.Response(
+                    200,
+                    request=request,
+                    json={"query": {"pages": [page]}},
+                )
+            self.assertEqual(str(request.url), media_url)
+            return httpx.Response(200, request=request, content=b"x" * 100_001)
+
+        with tempfile.TemporaryDirectory() as temp_dir, httpx.Client(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            assets = fetch_licensed_artist_videos(
+                query,
+                Path(temp_dir),
+                limit=1,
+                client=client,
+            )
+
+        self.assertEqual(len(assets), 1)
+        self.assertEqual(assets[0].license, "CC BY 4.0")
+        self.assertEqual(assets[0].source_url, media_url)
 
     def test_reuses_verified_cached_video(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

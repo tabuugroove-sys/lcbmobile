@@ -162,16 +162,16 @@ def load_settings() -> Settings:
         drama_signal_weight=_float(os.getenv("DRAMA_SIGNAL_WEIGHT"), 1.4),
         require_visual_media=_bool(os.getenv("REQUIRE_VISUAL_MEDIA"), True),
         min_visual_media_assets=max(
-            0, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 2)
+            0, _int(os.getenv("MIN_VISUAL_MEDIA_ASSETS"), 4)
         ),
         allow_source_article_image=_bool(
             os.getenv("ALLOW_SOURCE_ARTICLE_IMAGE"), True
         ),
-        require_video_media=_bool(os.getenv("REQUIRE_VIDEO_MEDIA"), False),
+        require_video_media=_bool(os.getenv("REQUIRE_VIDEO_MEDIA"), True),
         min_video_media_assets=max(
-            0, _int(os.getenv("MIN_VIDEO_MEDIA_ASSETS"), 0)
+            0, _int(os.getenv("MIN_VIDEO_MEDIA_ASSETS"), 1)
         ),
-        youtube_video_enabled=_bool(os.getenv("YOUTUBE_VIDEO_ENABLED"), False),
+        youtube_video_enabled=_bool(os.getenv("YOUTUBE_VIDEO_ENABLED"), True),
         youtube_video_mode=youtube_video_mode,
         youtube_cookies_file=_str("YOUTUBE_COOKIES_FILE"),
         youtube_api_key=_str("YOUTUBE_API_KEY"),

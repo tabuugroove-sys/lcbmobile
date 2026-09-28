@@ -244,10 +244,14 @@ publication data. Не делать вывод о межсерверном де�
   без поддельных CC. SHA-256 и права пишутся в
   `youtube_video/rights_manifest.json`.
 - Adapter подключён в `resolve_visual_media()` (`src/video/generator.py`) за
-  feature flag `YOUTUBE_VIDEO_ENABLED` (default `false`) и работает в режиме
+  feature flag `YOUTUBE_VIDEO_ENABLED` (default `true`) и работает в режиме
   `YOUTUBE_VIDEO_MODE=fallback`: вызывается только если curated whitelist не
   дал ни одного клипа; `YOUTUBE_VIDEO_MODE=off` полностью глушит источник.
-- По умолчанию флаг выключен, поэтому production-поведение не изменилось.
+- Production включает этот fallback: обычный mixed-media выпуск допускается
+  только при наличии минимум четырёх разных фото и одного видеоклипа.
+- Перед YouTube используется динамический поиск Wikimedia Commons через
+  `prop=videoinfo`: принимаются только совпадающие по имени артиста WebM-клипы
+  длительностью 8–600 секунд с `CC BY`, `CC0` или `Public domain`.
 
 ### Cookies для серверов с бот-чеком YouTube
 
@@ -286,7 +290,7 @@ classic/photo format, а не скачивает случайный YouTube uplo
 
 **Статус: реализовано.** Adapter `src/video/youtube_media.py` создан и
 подключён в `resolve_visual_media()` за флагом `YOUTUBE_VIDEO_ENABLED`
-(default `false`), режим `YOUTUBE_VIDEO_MODE=fallback|off` (default
+(default `true`), режим `YOUTUBE_VIDEO_MODE=fallback|off` (default
 `fallback` — YouTube вызывается только при пустом curated whitelist).
 Из исходного плана выполнены пункты 1, 3 (SHA-256, канал, URL, license — кроме
 fetched timestamp), 4 (лимиты 15–600 с и ≤100 MB, timeout, retry; проверка

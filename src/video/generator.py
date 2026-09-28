@@ -38,6 +38,8 @@ from .tts import get_tts_provider
 log = logging.getLogger(__name__)
 
 WIDTH, HEIGHT = 1080, 1920
+PHOTO_SEARCH_LIMIT = 8
+VIDEO_SEARCH_LIMIT = 2
 ACCENTS = ("#ff335c", "#ffd34d", "#29d3ff")
 DEFAULT_FONT_CANDIDATES = [
     "C:/Windows/Fonts/arialbd.ttf",
@@ -1143,25 +1145,25 @@ def resolve_visual_media(
     # The artist must be the explicit subject of the headline. A name buried in
     # a festival roundup cannot safely determine the visuals for the whole story.
     artist_query = find_known_music_act(item.title)
+    photo_search_limit = max(PHOTO_SEARCH_LIMIT, settings.min_visual_media_assets)
     photos = fetch_licensed_artist_images(
         artist_query,
         base / "licensed_media",
-        limit=max(6, settings.min_visual_media_assets),
+        limit=photo_search_limit,
     )
-    if (
-        settings.allow_source_article_image
-        and len(photos) < settings.min_visual_media_assets
-    ):
+    if settings.allow_source_article_image:
         source_photos = fetch_source_article_images(
             item,
             base / "source_media",
-            limit=max(6, settings.min_visual_media_assets),
+            limit=photo_search_limit,
         )
-        photos = _unique_visual_assets([*photos, *source_photos])
+        photos = _unique_visual_assets([*photos, *source_photos])[
+            :photo_search_limit
+        ]
     videos = fetch_licensed_artist_videos(
         artist_query,
         base / "licensed_video",
-        limit=max(2, settings.min_video_media_assets),
+        limit=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
     )
     if settings.youtube_video_enabled and settings.youtube_video_mode != "off":
         if videos:
@@ -1174,7 +1176,7 @@ def resolve_visual_media(
             youtube_videos = fetch_youtube_artist_videos(
                 artist_query,
                 base / "youtube_video",
-                max_videos=max(2, settings.min_video_media_assets),
+                max_videos=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
             )
             if youtube_videos:
                 log.info(
@@ -1223,13 +1225,27 @@ def visual_media_ready(
 def video_media_ready(item: NewsItem, output_dir: Path) -> bool:
     """Return whether the story has enough media for a real mixed-media cut."""
     artist_query, photos, videos = resolve_visual_media(item, output_dir)
-    ready = bool(artist_query) and len(photos) >= 1 and len(videos) >= 1
+    required_photos = max(
+        1,
+        settings.min_visual_media_assets if settings.require_visual_media else 0,
+    )
+    required_videos = max(
+        1,
+        settings.min_video_media_assets if settings.require_video_media else 0,
+    )
+    ready = (
+        bool(artist_query)
+        and len(photos) >= required_photos
+        and len(videos) >= required_videos
+    )
     if not ready:
         log.info(
-            "Skipping video-poor candidate: artist=%r photos=%d/1 videos=%d/1 title=%s",
+            "Skipping video-poor candidate: artist=%r photos=%d/%d videos=%d/%d title=%s",
             artist_query,
             len(photos),
+            required_photos,
             len(videos),
+            required_videos,
             item.title,
         )
     return ready

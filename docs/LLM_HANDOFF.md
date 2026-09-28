@@ -204,12 +204,14 @@ drama terms. Server `DRAMA_SIGNAL_WEIGHT=1.8`. Drama can change priority and
 the factual hook; it must never invent or intensify an unsupported claim.
 
 The source configuration uses a video-first, availability-safe policy:
-`REQUIRE_VISUAL_MEDIA=true`, `MIN_VISUAL_MEDIA_ASSETS=2`,
-`ALLOW_SOURCE_ARTICLE_IMAGE=true`, `REQUIRE_VIDEO_MEDIA=false` and
-`MIN_VIDEO_MEDIA_ASSETS=0`. The first selection
-pass looks for a story with at least one reusable video and two distinct photos. The
-second pass skips a story with no reusable photo and continues to the next
-eligible story. If the entire candidate pool has no photo,
+`REQUIRE_VISUAL_MEDIA=true`, `MIN_VISUAL_MEDIA_ASSETS=4`,
+`ALLOW_SOURCE_ARTICLE_IMAGE=true`, `REQUIRE_VIDEO_MEDIA=true`,
+`MIN_VIDEO_MEDIA_ASSETS=1`, `YOUTUBE_VIDEO_ENABLED=true` and
+`YOUTUBE_VIDEO_MODE=fallback`. The first selection
+pass looks for a story with at least one video and four distinct photos. It
+combines up to eight distinct Commons and source-article images. Video lookup
+uses the curated list, then a licensed dynamic Commons search, then YouTube. If the entire
+candidate pool cannot satisfy the mixed-media gate,
 `_select_with_classic_fallback()` in `src/pipeline.py:52-91` reranks without the
 gate and publishes the classic format so the scheduled slot is not lost.
 

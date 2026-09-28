@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 API_URL = "https://commons.wikimedia.org/w/api.php"
 USER_AGENT = "LCBMobileNews/1.1 (https://github.com/tabuugroove-sys/lcbmobile)"
-MANIFEST_POLICY_VERSION = 3
+MANIFEST_POLICY_VERSION = 4
 ALLOWED_LICENSE_PREFIXES = ("CC BY ", "CC0", "Public domain")
 # Minimum accepted size on the shorter side. Lowered from 700 to 400 so that
 # smaller but still usable licensed photos are not discarded; the vertical

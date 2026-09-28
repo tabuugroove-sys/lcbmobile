@@ -1,7 +1,7 @@
 """Download arbitrary artist videos from YouTube via yt-dlp.
 
-This adapter is a FALLBACK source: the curated Wikimedia Commons whitelist in
-commons_video.py stays the primary, rights-verified supply. YouTube uploads are
+This adapter is a FALLBACK source: the curated and dynamic Wikimedia Commons
+resolver stays the primary, rights-verified supply. YouTube uploads are
 recorded with honest metadata — the standard YouTube license does NOT grant
 reuse rights, so nothing here is ever labelled as Creative Commons.
 """

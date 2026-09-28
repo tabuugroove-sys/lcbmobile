@@ -1,9 +1,12 @@
-"""Download curated, reusable artist video from Wikimedia Commons."""
+"""Download reusable artist video from Wikimedia Commons."""
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import logging
+import re
+import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -11,8 +14,13 @@ import httpx
 
 
 log = logging.getLogger(__name__)
-MANIFEST_POLICY_VERSION = 1
+MANIFEST_POLICY_VERSION = 2
 USER_AGENT = "LCBMobileNews/1.1 (https://github.com/tabuugroove-sys/lcbmobile)"
+API_URL = "https://commons.wikimedia.org/w/api.php"
+ALLOWED_LICENSE_PREFIXES = ("CC BY ", "CC0", "Public domain")
+MAX_DYNAMIC_DURATION_SECONDS = 600.0
+MAX_DYNAMIC_FILE_BYTES = 100 * 1024 * 1024
+TAG_RE = re.compile(r"<[^>]+>")
 
 
 @dataclass(frozen=True)
@@ -157,6 +165,125 @@ CURATED_VIDEOS: dict[str, tuple[dict[str, object], ...]] = {
 }
 
 
+def _plain(value: str) -> str:
+    value = TAG_RE.sub(" ", html.unescape(value or ""))
+    value = unicodedata.normalize("NFKD", value)
+    return re.sub(
+        r"\s+", " ", value.encode("ascii", "ignore").decode("ascii")
+    ).strip().lower()
+
+
+def _meta(metadata: dict[str, object], name: str) -> str:
+    node = metadata.get(name)
+    if isinstance(node, dict):
+        return str(node.get("value") or "")
+    return ""
+
+
+def _dynamic_candidate(
+    page: dict[str, object], query: str
+) -> dict[str, object] | None:
+    rows = page.get("videoinfo")
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        return None
+    info = rows[0]
+    metadata = info.get("extmetadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    license_name = TAG_RE.sub(
+        "", html.unescape(_meta(metadata, "LicenseShortName"))
+    ).strip()
+    if not any(license_name.startswith(prefix) for prefix in ALLOWED_LICENSE_PREFIXES):
+        return None
+    if str(info.get("mediatype") or "").upper() != "VIDEO":
+        return None
+    duration = float(info.get("duration") or 0.0)
+    if not 8.0 <= duration <= MAX_DYNAMIC_DURATION_SECONDS:
+        return None
+
+    title = str(page.get("title") or "").removeprefix("File:")
+    plain_title = _plain(title.replace("_", " "))
+    plain_query = _plain(query)
+    if not (
+        plain_title.startswith(plain_query)
+        or plain_title.replace(" ", "").startswith(plain_query.replace(" ", ""))
+    ):
+        return None
+    description = " ".join(
+        [title, _meta(metadata, "ObjectName"), _meta(metadata, "ImageDescription")]
+    )
+    query_tokens = [token for token in plain_query.split() if len(token) > 2]
+    haystack = _plain(description)
+    if query_tokens and not all(token in haystack for token in query_tokens):
+        return None
+
+    derivatives = []
+    for derivative in info.get("derivatives") or []:
+        if not isinstance(derivative, dict):
+            continue
+        source_url = str(derivative.get("src") or "")
+        media_type = str(derivative.get("type") or "")
+        height = int(derivative.get("height") or 0)
+        bandwidth = int(derivative.get("bandwidth") or 0)
+        estimated_size = bandwidth * duration / 8 if bandwidth else 0
+        if (
+            source_url
+            and media_type.startswith("video/")
+            and "webm" in media_type
+            and 240 <= height <= 720
+            and (not estimated_size or estimated_size <= MAX_DYNAMIC_FILE_BYTES)
+        ):
+            derivatives.append(derivative)
+    if not derivatives:
+        return None
+    derivatives.sort(
+        key=lambda row: int(row.get("height") or 0),
+        reverse=True,
+    )
+    derivative = derivatives[0]
+    creator = TAG_RE.sub(" ", html.unescape(_meta(metadata, "Artist"))).strip()
+    source_page = str(info.get("descriptionurl") or "")
+    return {
+        "title": title,
+        "creator": creator or "Wikimedia Commons contributor",
+        "license": license_name,
+        "license_url": TAG_RE.sub("", _meta(metadata, "LicenseUrl")).strip(),
+        "source_page": source_page,
+        "source_url": str(derivative["src"]),
+        "width": int(derivative.get("width") or info.get("width") or 0),
+        "height": int(derivative.get("height") or info.get("height") or 0),
+        "duration": duration,
+        "seek_seconds": max(0.0, min(duration - 8.0, duration * 0.15)),
+    }
+
+
+def _search_dynamic_specs(
+    query: str,
+    client: httpx.Client,
+    *,
+    limit: int,
+) -> tuple[dict[str, object], ...]:
+    response = client.get(
+        API_URL,
+        params={
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": f'"{query}" filetype:video',
+            "gsrnamespace": "6",
+            "gsrlimit": "35",
+            "prop": "videoinfo",
+            "viprop": "url|size|mime|mediatype|extmetadata|derivatives",
+            "format": "json",
+            "formatversion": "2",
+        },
+    )
+    response.raise_for_status()
+    pages = response.json().get("query", {}).get("pages", [])
+    specs = [row for page in pages if (row := _dynamic_candidate(page, query))]
+    specs.sort(key=lambda row: float(row["duration"]))
+    return tuple(specs[:limit])
+
+
 def _write_manifest(
     path: Path,
     query: str | None,
@@ -186,13 +313,14 @@ def fetch_licensed_artist_videos(
     limit: int = 2,
     client: httpx.Client | None = None,
 ) -> list[LicensedVideo]:
-    """Download pre-reviewed clips and preserve their rights evidence."""
+    """Download curated or dynamically verified Commons artist clips."""
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "rights_manifest.json"
-    specs = CURATED_VIDEOS.get(query or "", ())
-    if not specs:
+    if not query:
         _write_manifest(manifest_path, query, "no_curated_video", [])
         return []
+
+    specs = CURATED_VIDEOS.get(query, ())
 
     if manifest_path.exists():
         try:
@@ -217,6 +345,15 @@ def fetch_licensed_artist_videos(
     )
     assets: list[LicensedVideo] = []
     try:
+        if not specs:
+            try:
+                specs = _search_dynamic_specs(query, client, limit=limit)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Commons video search failed for %r: %s", query, exc)
+                specs = ()
+        if not specs:
+            _write_manifest(manifest_path, query, "no_verified_video", [])
+            return []
         for index, spec in enumerate(specs[:limit], start=1):
             path = output_dir / f"artist-video-{index:02d}.webm"
             digest = hashlib.sha256()

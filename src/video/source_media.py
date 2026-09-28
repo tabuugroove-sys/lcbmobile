@@ -135,6 +135,7 @@ def fetch_source_article_images(
             if (
                 cached.get("article_url") == item.url
                 and assets
+                and int(cached.get("requested_limit") or 1) >= max(1, limit)
                 and all(Path(asset.path).exists() for asset in assets)
             ):
                 return assets[:limit]
@@ -211,6 +212,7 @@ def fetch_source_article_images(
             json.dumps(
                 {
                     "article_url": item.url,
+                    "requested_limit": max(1, limit),
                     "assets": [asset.as_manifest() for asset in assets],
                 },
                 ensure_ascii=False,

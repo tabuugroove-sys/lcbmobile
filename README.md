@@ -114,10 +114,15 @@ Variáveis úteis:
 | `YOUTUBE_METRICS_REFRESH_HOURS` | Intervalo mínimo para atualizar métricas |
 | `DRAMA_SIGNAL_WEIGHT` | Peso adicional para drama confirmado na fonte |
 | `REQUIRE_VISUAL_MEDIA` | Faz o primeiro passe preferir pautas com foto |
-| `MIN_VISUAL_MEDIA_ASSETS` | Mínimo de imagens distintas no primeiro passe; padrão `2` |
-| `ALLOW_SOURCE_ARTICLE_IMAGE` | Usa a imagem RSS/OpenGraph da matéria quando o Commons não tem foto |
-| `REQUIRE_VIDEO_MEDIA` | Gate opcional de vídeos; desligado por padrão |
-| `MIN_VIDEO_MEDIA_ASSETS` | Mínimo de clipes quando o gate opcional está ligado |
+| `MIN_VISUAL_MEDIA_ASSETS` | Mínimo de imagens distintas no primeiro passe; padrão `4` |
+| `ALLOW_SOURCE_ARTICLE_IMAGE` | Combina imagens RSS/OpenGraph e do artigo com as fotos do Commons |
+| `REQUIRE_VIDEO_MEDIA` | Exige vídeo no passe mixed-media; padrão `true` |
+| `MIN_VIDEO_MEDIA_ASSETS` | Mínimo de clipes; padrão `1` |
+| `YOUTUBE_VIDEO_ENABLED` | Usa busca no YouTube quando o Commons não oferece vídeo; padrão `true` |
+
+O resolver procura até oito fotos distintas. Para vídeo, usa primeiro a lista
+curada e a busca dinâmica licenciada do Wikimedia Commons; se ambas estiverem
+vazias, tenta YouTube. O formato clássico continua como fallback operacional.
 
 ## Visual dos Shorts regulares
 
