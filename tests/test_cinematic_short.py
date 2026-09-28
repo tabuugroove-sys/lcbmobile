@@ -15,7 +15,7 @@ from src.video.commons_video import LicensedVideo, fetch_licensed_artist_videos
 from src.video.generator import (
     HEIGHT,
     WIDTH,
-    _fit_editorial,
+    _fit_cover,
     _make_hook_scene,
     _make_scene,
     _make_video_overlay,
@@ -454,22 +454,19 @@ class SceneRenderTests(unittest.TestCase):
         self.assertEqual(fetch_photos.call_args.args[0], "fiuk")
         self.assertEqual(fetch_videos.call_args.args[0], "fiuk")
 
-    def test_editorial_fit_preserves_full_landscape_photo(self) -> None:
+    def test_cover_fit_fills_portrait_frame_and_respects_horizontal_focus(self) -> None:
         source = Image.new("RGB", (800, 450), "black")
         for x in range(800):
-            source.putpixel((x, 225), (x % 256, 20, 20))
+            color = (round(255 * x / 799), 20, 20)
+            for y in range(450):
+                source.putpixel((x, y), color)
 
-        fitted = _fit_editorial(source, (760, 1050), 0.34)
+        left = _fit_cover(source, (760, 1050), 0.34, 0.0)
+        right = _fit_cover(source, (760, 1050), 0.34, 1.0)
 
-        # The full 16:9 frame is letterboxed inside the portrait card instead
-        # of throwing away both horizontal edges with a center crop.
-        expected_height = round(450 * (760 / 800))
-        top = (1050 - expected_height) // 2
-        self.assertEqual(fitted.getpixel((0, top + expected_height // 2))[0], 0)
-        self.assertGreater(
-            fitted.getpixel((759, top + expected_height // 2))[0],
-            20,
-        )
+        self.assertEqual(left.size, (760, 1050))
+        self.assertEqual(right.size, (760, 1050))
+        self.assertLess(left.getpixel((380, 525))[0], right.getpixel((380, 525))[0])
 
     def test_reference_style_requires_multiple_verified_visuals(self) -> None:
         news = type(

@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 from moviepy.editor import (
     AudioFileClip,
     ColorClip,
@@ -152,29 +152,6 @@ def _fit_cover(
     return resized.crop((left, top, left + size[0], top + size[1]))
 
 
-def _fit_editorial(
-    image: Image.Image,
-    size: tuple[int, int],
-    focus_y: float = 0.5,
-) -> Image.Image:
-    """Preserve the full subject when source and frame aspect ratios disagree."""
-    image = image.convert("RGB")
-    source_ratio = image.width / max(image.height, 1)
-    target_ratio = size[0] / max(size[1], 1)
-    ratio_delta = source_ratio / target_ratio
-    if 0.72 <= ratio_delta <= 1.38:
-        return _fit_cover(image, size, focus_y)
-
-    background = _fit_cover(image, size, focus_y)
-    background = background.filter(ImageFilter.GaussianBlur(28))
-    background = ImageEnhance.Brightness(background).enhance(0.42)
-    contained = ImageOps.contain(image, size, method=Image.Resampling.LANCZOS)
-    left = (size[0] - contained.width) // 2
-    top = (size[1] - contained.height) // 2
-    background.paste(contained, (left, top))
-    return background
-
-
 def _fit_hook_panel(
     image: Image.Image,
     size: tuple[int, int],
@@ -182,12 +159,8 @@ def _fit_hook_panel(
     side: str,
 ) -> Image.Image:
     """Create a close hook crop without centering between two people."""
-    source_ratio = image.width / max(image.height, 1)
-    target_ratio = size[0] / max(size[1], 1)
-    if source_ratio > target_ratio * 1.38:
-        focus_x = 0.26 if side == "left" else 0.74
-        return _fit_cover(image, size, 0.30, focus_x)
-    return _fit_editorial(image, size, 0.30)
+    focus_x = 0.26 if side == "left" else 0.74
+    return _fit_cover(image, size, 0.30, focus_x)
 
 
 def _gradient(accent: str) -> Image.Image:
@@ -697,7 +670,7 @@ def _make_scene(
         canvas.alpha_composite(shadow, (x + 20, y + 28))
         canvas.alpha_composite(person, (x, y))
     elif source_image and layout == "card":
-        picture = _fit_editorial(source_image, (760, 1050), 0.34)
+        picture = _fit_cover(source_image, (760, 1050), 0.34, 0.32)
         card = Image.new("RGBA", (820, 1110), (248, 246, 242, 255))
         card.alpha_composite(picture.convert("RGBA"), (30, 30))
         card = card.rotate(
@@ -711,7 +684,7 @@ def _make_scene(
         canvas.alpha_composite(shadow, ((WIDTH - card.width) // 2 + 20, 330))
         canvas.alpha_composite(card, ((WIDTH - card.width) // 2, 300))
     elif source_image:
-        picture = _fit_editorial(source_image, (860, 1180), 0.34)
+        picture = _fit_cover(source_image, (860, 1180), 0.34, 0.68)
         x, y = 110, 245
         shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
         ImageDraw.Draw(shadow).rounded_rectangle(
