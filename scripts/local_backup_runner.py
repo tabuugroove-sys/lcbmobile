@@ -225,7 +225,7 @@ def _sync_remote_sources(uploads: list[dict[str, str]], store: Store) -> None:
 
 
 def _shorts_today(uploads: list[dict[str, str]], tz: ZoneInfo, today) -> int:
-    count = 0
+    unique_shorts: set[str] = set()
     for upload in uploads:
         text = f"{upload['title']} {upload['description']}".lower()
         if "#shorts" not in text:
@@ -235,8 +235,13 @@ def _shorts_today(uploads: list[dict[str, str]], tz: ZoneInfo, today) -> int:
         except ValueError:
             continue
         if published.astimezone(tz).date() == today:
-            count += 1
-    return count
+            source_url = extract_source_url(upload["description"])
+            if source_url:
+                key = f"source:{_normalize_url(source_url)}"
+            else:
+                key = f"video:{upload['video_id']}"
+            unique_shorts.add(key)
+    return len(unique_shorts)
 
 
 def _run_pipeline() -> int:

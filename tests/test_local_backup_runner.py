@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from scripts.local_backup_runner import (
     _alert_posting_gap,
     _run_pipeline,
+    _shorts_today,
     expected_posts,
     extract_source_url,
     parse_publish_slots,
@@ -50,6 +51,32 @@ class LocalBackupRunnerTests(unittest.TestCase):
 
     def test_missing_source_url(self) -> None:
         self.assertIsNone(extract_source_url("Sem link de fonte"))
+
+    def test_shorts_today_counts_duplicate_source_url_once(self) -> None:
+        uploads = [
+            {
+                "video_id": "first",
+                "title": "Primeira versao #Shorts",
+                "description": "Fonte: https://example.com/news",
+                "published_at": "2026-08-31T12:30:00Z",
+            },
+            {
+                "video_id": "duplicate",
+                "title": "Outra manchete #Shorts",
+                "description": (
+                    "Fonte: http://www.example.com/news/?utm_source=backup"
+                ),
+                "published_at": "2026-08-31T12:31:00Z",
+            },
+            {
+                "video_id": "other",
+                "title": "Outra noticia #Shorts",
+                "description": "Fonte: https://example.com/other",
+                "published_at": "2026-08-31T12:32:00Z",
+            },
+        ]
+
+        self.assertEqual(_shorts_today(uploads, self.tz, self._at(9, 40).date()), 2)
 
     @patch("scripts.local_backup_runner.subprocess.run")
     def test_pipeline_timeout_returns_standard_timeout_code(self, run) -> None:
