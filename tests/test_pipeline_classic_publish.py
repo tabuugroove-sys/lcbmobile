@@ -29,6 +29,34 @@ class _SuccessfulYouTubePublisher:
 
 
 class ClassicPublishPipelineTests(unittest.TestCase):
+    def test_related_media_pool_finds_other_articles_about_rick(self) -> None:
+        primary = NewsItem(
+            source_id="g1",
+            source_name="G1",
+            category="music",
+            url="https://example.com/rick-flight",
+            title="Fantástico refaz trajeto onde estava cantor Rick",
+        )
+        related = NewsItem(
+            source_id="g1",
+            source_name="G1",
+            category="music",
+            url="https://example.com/rick-wife",
+            title="Viúva de Rick se despede do cantor",
+        )
+        unrelated = NewsItem(
+            source_id="g1",
+            source_name="G1",
+            category="music",
+            url="https://example.com/shakira",
+            title="Shakira anuncia novo álbum",
+        )
+
+        self.assertEqual(
+            pipeline._related_media_items(primary, [primary, unrelated, related]),
+            [related],
+        )
+
     def test_prefers_video_candidate_over_earlier_photo_only_story(self) -> None:
         photo_only = NewsItem(
             source_id="test-feed",

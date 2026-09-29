@@ -424,6 +424,67 @@ class SceneRenderTests(unittest.TestCase):
         self.assertEqual(videos, [])
         fetch_source.assert_called_once()
 
+    def test_visual_lookup_adds_distinct_images_from_related_articles(self) -> None:
+        news = NewsItem(
+            source_id="source",
+            source_name="Fonte Teste",
+            category="music",
+            url="https://example.com/main",
+            title="Cantor Rick vira tema de reportagem",
+        )
+        related = news.model_copy(
+            update={
+                "url": "https://example.com/related",
+                "title": "Viúva de Rick presta homenagem",
+            }
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def asset(name: str, color: tuple[int, int, int], page: str) -> LicensedImage:
+                path = root / name
+                Image.new("RGB", (1200, 800), color).save(path)
+                return LicensedImage(
+                    path=str(path),
+                    title=name,
+                    creator="Fonte Teste",
+                    license=SOURCE_ARTICLE_LICENSE,
+                    license_url=page,
+                    source_page=page,
+                    source_url=f"https://cdn.example.com/{name}",
+                    width=1200,
+                    height=800,
+                )
+
+            hero = asset("hero.jpg", (35, 80, 160), news.url)
+            context = asset("context.jpg", (190, 65, 85), related.url)
+
+            def source_images(item, *_args, **_kwargs):
+                return [hero] if item.url == news.url else [context]
+
+            with mock.patch(
+                "src.video.generator.fetch_licensed_artist_images",
+                return_value=[],
+            ), mock.patch(
+                "src.video.generator.fetch_source_article_images",
+                side_effect=source_images,
+            ) as fetch_source, mock.patch(
+                "src.video.generator.fetch_licensed_artist_videos",
+                return_value=[],
+            ), mock.patch(
+                "src.video.generator.fetch_youtube_artist_videos",
+                return_value=[],
+            ):
+                artist, photos, _ = resolve_visual_media(
+                    news,
+                    root,
+                    related_items=[related],
+                )
+
+        self.assertEqual(artist, "rick e renner")
+        self.assertEqual([photo.title for photo in photos], ["hero.jpg", "context.jpg"])
+        self.assertEqual(fetch_source.call_count, 2)
+
     def test_visual_lookup_uses_headline_subject_not_later_relative(self) -> None:
         news = NewsItem(
             source_id="source",

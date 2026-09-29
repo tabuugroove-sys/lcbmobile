@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from .analytics import refresh_youtube_metrics, select_best_candidates
 from .config import ROOT, settings
-from .editorial import is_music_news
+from .editorial import find_music_act_query, is_music_news
 from .models import GeneratedAssets, NewsItem, RewrittenPost
 from .notify import notify, notify_error, notify_summary
 from .processor import rewrite
@@ -33,6 +33,36 @@ class RunReport:
     def __post_init__(self) -> None:
         if self.publish_results is None:
             self.publish_results = []
+
+
+def _related_media_items(
+    item: NewsItem,
+    pool: list[NewsItem],
+    *,
+    limit: int = 6,
+) -> list[NewsItem]:
+    """Find other collected articles about the same musician for visual assets."""
+    subject = find_music_act_query(item.title)
+    if not subject:
+        return []
+    subject_tokens = {token for token in subject.split() if len(token) > 2}
+    related: list[NewsItem] = []
+    for candidate in pool:
+        if candidate.fingerprint() == item.fingerprint():
+            continue
+        candidate_subject = find_music_act_query(candidate.title)
+        candidate_text = candidate.title.casefold()
+        same_subject = candidate_subject == subject
+        if subject == "rick e renner" and "rick" in candidate_text:
+            same_subject = True
+        elif not same_subject and subject_tokens:
+            same_subject = all(token in candidate_text for token in subject_tokens)
+        if not same_subject:
+            continue
+        related.append(candidate)
+        if len(related) >= limit:
+            break
+    return related
 
 
 def _retry_wait(item: NewsItem, attempt: int) -> None:
@@ -258,6 +288,13 @@ def run(
 
     for item in fresh:
         store.record_item_features(item)
+        related_items = _related_media_items(item, items)
+        if related_items:
+            log.info(
+                "Found %d related article(s) for additional visuals: %s",
+                len(related_items),
+                item.title,
+            )
         for attempt in range(1, settings.max_attempts_per_item + 1):
             log.info(
                 "Processing %s (attempt %d/%d)",
@@ -280,6 +317,7 @@ def run(
                     settings.output_dir,
                     lang=settings.content_lang,
                     enforce_media_requirements=not classic_render,
+                    related_items=related_items,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.exception("Video render failed for %s", item.url)

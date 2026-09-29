@@ -119,6 +119,16 @@ _KNOWN_MUSIC_ACTS = (
     "ze neto",
 )
 
+_NAME_TOKEN = r"[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9'’-]*"
+_ROLE_NAMED_ACT_RE = re.compile(
+    rf"\b(?i:cantor(?:a)?|rapper|funkeir[oa]|dj|vocalista|m[uú]sico|"
+    rf"sertanej[oa]|banda|dupla)\s+({_NAME_TOKEN}(?:\s+{_NAME_TOKEN}){{0,2}})"
+)
+_ROLE_ACT_ALIASES = {
+    "rick": "rick e renner",
+    "rick sollo": "rick e renner",
+}
+
 _SCREEN_TERMS = {
     "ator",
     "atores",
@@ -169,6 +179,23 @@ def find_known_music_act(text: str) -> str | None:
     """
     matches = find_known_music_acts(text)
     return matches[0] if matches else None
+
+
+def find_music_act_query(text: str) -> str | None:
+    """Return a useful media-search query for a named musician in a headline.
+
+    The curated registry remains the safest first choice. The role pattern
+    covers current artists that are absent from that list, such as ``cantor
+    Rick`` or ``rapper Nome Sobrenome``.
+    """
+    known = find_known_music_act(text)
+    if known:
+        return known
+    match = _ROLE_NAMED_ACT_RE.search(text or "")
+    if not match:
+        return None
+    extracted = _plain(match.group(1)).strip()
+    return _ROLE_ACT_ALIASES.get(extracted, extracted) or None
 
 
 def is_music_news(item: NewsItem) -> bool:

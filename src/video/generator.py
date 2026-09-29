@@ -24,7 +24,7 @@ from moviepy.editor import (
 )
 
 from ..config import settings
-from ..editorial import find_known_music_act, find_known_music_acts
+from ..editorial import find_known_music_act, find_known_music_acts, find_music_act_query
 from ..models import GeneratedAssets, NewsItem, RewrittenPost
 from .commons_media import LicensedImage, fetch_licensed_artist_images
 from .commons_video import LicensedVideo, fetch_licensed_artist_videos
@@ -426,7 +426,7 @@ def resolve_hook_media(
         )
 
     secondary_people: list[LicensedImage] = []
-    primary_artist = find_known_music_act(item.title)
+    primary_artist = find_music_act_query(item.title)
     named_people = find_known_music_acts(f"{item.title} {item.summary}")
     for person in named_people:
         if person == primary_artist:
@@ -906,7 +906,7 @@ def _make_hook_scene(
         width=5,
     )
 
-    artist = find_known_music_act(item.title)
+    artist = find_music_act_query(item.title)
     label = (artist or "MÚSICA AGORA").upper()
     draw.rounded_rectangle((60, 55, 1020, 150), 24, fill=(5, 5, 9, 225))
     _draw_centered(
@@ -1018,7 +1018,8 @@ def _build_scene_images(
                 )
             )
             continue
-        asset = media[index % len(media)] if media else None
+        media_index = index - 1
+        asset = media[media_index] if media_index < len(media) else None
         scenes.append(
             _make_scene(
                 index=index,
@@ -1112,12 +1113,14 @@ def _item_output_dir(item: NewsItem, output_dir: Path) -> Path:
 def resolve_visual_media(
     item: NewsItem,
     output_dir: Path,
+    *,
+    related_items: list[NewsItem] | None = None,
 ) -> tuple[str | None, list[LicensedImage], list[LicensedVideo]]:
     """Resolve reusable artist visuals into the item's persistent render cache."""
     base = _item_output_dir(item, output_dir)
     # The artist must be the explicit subject of the headline. A name buried in
     # a festival roundup cannot safely determine the visuals for the whole story.
-    artist_query = find_known_music_act(item.title)
+    artist_query = find_music_act_query(item.title)
     photo_search_limit = max(PHOTO_SEARCH_LIMIT, settings.min_visual_media_assets)
     photos = fetch_licensed_artist_images(
         artist_query,
@@ -1133,6 +1136,17 @@ def resolve_visual_media(
         photos = _unique_visual_assets([*photos, *source_photos])[
             :photo_search_limit
         ]
+        for index, related in enumerate(related_items or [], start=1):
+            if len(photos) >= photo_search_limit:
+                break
+            related_photos = fetch_source_article_images(
+                related,
+                base / "related_source_media" / f"{index:02d}",
+                limit=min(2, photo_search_limit - len(photos)),
+            )
+            photos = _unique_visual_assets([*photos, *related_photos])[
+                :photo_search_limit
+            ]
     videos = fetch_licensed_artist_videos(
         artist_query,
         base / "licensed_video",
@@ -1231,19 +1245,19 @@ def build_short(
     *,
     lang: str = "pt-BR",
     enforce_media_requirements: bool = True,
+    related_items: list[NewsItem] | None = None,
 ) -> GeneratedAssets:
     output_dir.mkdir(parents=True, exist_ok=True)
     base = _item_output_dir(item, output_dir)
-    artist_query, photos, videos = resolve_visual_media(item, output_dir)
-    classic_media_fallback = (
-        not enforce_media_requirements
-        and settings.require_visual_media
-        and len(photos) < settings.min_visual_media_assets
+    artist_query, photos, videos = resolve_visual_media(
+        item,
+        output_dir,
+        related_items=related_items,
     )
+    classic_media_fallback = not enforce_media_requirements and len(photos) < 2
     if classic_media_fallback:
         log.warning(
-            "Classic render: discarding %d insufficient photo(s) to avoid "
-            "repeating one image across the whole Short",
+            "Classic render: only %d photo(s); using the legacy no-montage format",
             len(photos),
         )
         photos = []

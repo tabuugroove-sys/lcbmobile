@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from src.editorial import find_known_music_act, find_known_music_acts, is_music_news
+from src.editorial import (
+    find_known_music_act,
+    find_known_music_acts,
+    find_music_act_query,
+    is_music_news,
+)
 from src.models import NewsItem
 
 
@@ -79,6 +84,19 @@ class MusicFilterTests(unittest.TestCase):
             ),
             ["fiuk", "fabio jr"],
         )
+
+    def test_extracts_named_musician_after_role_for_media_search(self) -> None:
+        self.assertEqual(
+            find_music_act_query(
+                "Fantástico refaz trajeto onde estava cantor Rick"
+            ),
+            "rick e renner",
+        )
+        self.assertEqual(
+            find_music_act_query("Cantora Marina Lima anuncia novo disco"),
+            "marina lima",
+        )
+        self.assertIsNone(find_music_act_query("Cantora anuncia novo disco"))
 
 
 if __name__ == "__main__":
