@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 from ..config import settings
-from ..models import GeneratedAssets, RewrittenPost
+from ..models import GeneratedAssets, RewrittenPost, _normalize_url
 from .base import PublishResult
 
 log = logging.getLogger(__name__)
@@ -22,6 +23,48 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
+
+_SOURCE_URL_RE = re.compile(r"^Fonte:\s*(https?://\S+)", re.IGNORECASE | re.MULTILINE)
+
+
+def _source_urls(description: str) -> set[str]:
+    """Return canonical source URLs embedded in a YouTube description."""
+    return {
+        normalized
+        for raw_url in _SOURCE_URL_RE.findall(description or "")
+        if (normalized := _normalize_url(raw_url.rstrip(".,;)")))
+    }
+
+
+def _existing_upload_for_source(service, source_url: str) -> tuple[str, str] | None:
+    """Find an already-uploaded video for the same article URL.
+
+    This is intentionally called immediately before upload. A render can take
+    many minutes, so the server and a fallback runner may both pass the earlier
+    pipeline dedupe check while neither video exists yet.
+    """
+    expected = _normalize_url(source_url)
+    if not expected:
+        return None
+
+    channel_response = service.channels().list(
+        part="contentDetails", mine=True
+    ).execute()
+    channels = channel_response.get("items") or []
+    if not channels:
+        raise RuntimeError("Authenticated Google account has no YouTube channel")
+    playlist_id = channels[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    response = service.playlistItems().list(
+        part="snippet", playlistId=playlist_id, maxResults=50
+    ).execute()
+    for row in response.get("items") or []:
+        snippet = row.get("snippet") or {}
+        if expected not in _source_urls(str(snippet.get("description") or "")):
+            continue
+        video_id = str((snippet.get("resourceId") or {}).get("videoId") or "")
+        if video_id:
+            return video_id, str(snippet.get("title") or "")
+    return None
 
 
 class YouTubePublisher:
@@ -49,6 +92,21 @@ class YouTubePublisher:
     def publish(self, post: RewrittenPost, assets: GeneratedAssets) -> PublishResult:
         try:
             yt = self._service()
+            existing = _existing_upload_for_source(yt, post.source_url)
+            if existing:
+                video_id, title = existing
+                log.warning(
+                    "Remote dedupe blocked duplicate upload for %s; reusing %s (%s)",
+                    post.source_url,
+                    video_id,
+                    title,
+                )
+                return PublishResult(
+                    platform=self.name,
+                    ok=True,
+                    remote_id=video_id,
+                    url=f"https://youtube.com/shorts/{video_id}",
+                )
             tags = post.hashtags + ["Shorts", "fofoca", "celebridades", "Brasil"]
             credits_path = Path(assets.video_path).parent / "media_credits.txt"
             media_credits = ""
