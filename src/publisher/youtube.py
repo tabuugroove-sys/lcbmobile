@@ -106,6 +106,7 @@ class YouTubePublisher:
                     ok=True,
                     remote_id=video_id,
                     url=f"https://youtube.com/shorts/{video_id}",
+                    reused_existing=True,
                 )
             tags = post.hashtags + ["Shorts", "fofoca", "celebridades", "Brasil"]
             credits_path = Path(assets.video_path).parent / "media_credits.txt"

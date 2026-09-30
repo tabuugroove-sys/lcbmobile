@@ -14,6 +14,7 @@ class PublishResult:
     remote_id: str | None = None
     error: str | None = None
     url: str | None = None
+    reused_existing: bool = False
 
 
 class Publisher(Protocol):

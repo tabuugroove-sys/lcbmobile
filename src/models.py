@@ -116,3 +116,4 @@ class GeneratedAssets(BaseModel):
     video_path: str
     thumbnail_path: Optional[str] = None
     duration_seconds: float = 0.0
+    photo_count: int = 0

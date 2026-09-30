@@ -164,6 +164,7 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         assets = GeneratedAssets(
             video_path="/tmp/classic-without-media.mp4",
             duration_seconds=30.0,
+            photo_count=0,
         )
         publisher = _SuccessfulYouTubePublisher()
 
@@ -207,6 +208,7 @@ class ClassicPublishPipelineTests(unittest.TestCase):
                 mock.patch("src.pipeline.build_publishers", return_value=[publisher]),
                 mock.patch("src.pipeline.notify"),
                 mock.patch("src.pipeline.notify_error"),
+                mock.patch("src.pipeline.notify_urgent", return_value=True) as urgent,
                 mock.patch("src.pipeline.notify_summary"),
             ):
                 report = pipeline.run(
@@ -222,6 +224,48 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         build.assert_called_once()
         self.assertFalse(build.call_args.kwargs["enforce_media_requirements"])
         media_ready.assert_called_once_with(item, test_settings.output_dir)
+        urgent.assert_called_once()
+        alert = urgent.call_args.args[0]
+        self.assertIn("without photos", alert)
+        self.assertIn("classic-without-media", alert)
+        self.assertIn(item.url, alert)
+
+    def test_does_not_alert_for_photo_post_or_reused_upload(self) -> None:
+        item = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/story",
+            title="Artista anuncia novidade",
+        )
+        post = RewrittenPost(
+            source_url=item.url,
+            headline="Artista confirma novidade",
+            short_caption="Novidade.",
+            long_caption="Novidade.",
+            script_voiceover="O artista confirmou uma novidade.",
+        )
+        with mock.patch("src.pipeline.notify_urgent") as urgent:
+            photo_alerted = pipeline._alert_youtube_post_without_photos(
+                item,
+                post,
+                GeneratedAssets(video_path="/tmp/with-photo.mp4", photo_count=1),
+                PublishResult(platform="youtube", ok=True, remote_id="photo-video"),
+            )
+            reused_alerted = pipeline._alert_youtube_post_without_photos(
+                item,
+                post,
+                GeneratedAssets(video_path="/tmp/no-photo.mp4", photo_count=0),
+                PublishResult(
+                    platform="youtube",
+                    ok=True,
+                    remote_id="video-id",
+                    reused_existing=True,
+                ),
+            )
+        self.assertFalse(photo_alerted)
+        self.assertFalse(reused_alerted)
+        urgent.assert_not_called()
 
 
 if __name__ == "__main__":

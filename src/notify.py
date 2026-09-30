@@ -29,7 +29,7 @@ async def _send_message(
 
     bot = Bot(token=token)
     try:
-        await bot.send_message(
+        message = await bot.send_message(
             chat_id=chat,
             text=text[:3900],
             disable_notification=silent,
@@ -38,6 +38,11 @@ async def _send_message(
     except Exception as exc:  # noqa: BLE001
         log.warning("Failed to push status through %s bot: %s", label, exc)
         return False
+    log.info(
+        "Status delivered through %s bot: message_id=%s",
+        label,
+        getattr(message, "message_id", "unknown"),
+    )
     return True
 
 

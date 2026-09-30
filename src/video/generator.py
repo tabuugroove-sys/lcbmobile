@@ -1410,4 +1410,5 @@ def build_short(
         video_path=str(video_path),
         thumbnail_path=str(thumb_path),
         duration_seconds=float(duration),
+        photo_count=len(credited_photos),
     )

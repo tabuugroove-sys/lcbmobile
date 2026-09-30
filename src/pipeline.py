@@ -12,7 +12,7 @@ from .analytics import refresh_youtube_metrics, select_best_candidates
 from .config import ROOT, settings
 from .editorial import find_music_act_query, is_music_news
 from .models import GeneratedAssets, NewsItem, RewrittenPost
-from .notify import notify, notify_error, notify_summary
+from .notify import notify, notify_error, notify_summary, notify_urgent
 from .processor import rewrite
 from .publisher import build_publishers, PublishResult
 from .publisher.youtube import hours_since_latest_short
@@ -77,6 +77,40 @@ def _retry_wait(item: NewsItem, attempt: int) -> None:
         settings.max_attempts_per_item,
     )
     time.sleep(delay)
+
+
+def _alert_youtube_post_without_photos(
+    item: NewsItem,
+    post: RewrittenPost,
+    assets: GeneratedAssets,
+    result: PublishResult,
+) -> bool:
+    if (
+        result.platform != "youtube"
+        or not result.ok
+        or assets.photo_count > 0
+        or result.reused_existing
+    ):
+        return False
+    video_url = result.url
+    if not video_url and result.remote_id:
+        video_url = f"https://youtube.com/shorts/{result.remote_id}"
+    message = "\n".join(
+        [
+            "[URGENT] LCBMobile published a Short without photos",
+            "Fallback: text-only (0 photos)",
+            f"Title: {post.headline}",
+            f"Source: {item.url}",
+            f"YouTube: {video_url or 'URL unavailable'}",
+        ]
+    )
+    if not notify_urgent(message):
+        log.error(
+            "Could not deliver urgent no-photo alert for YouTube post %s",
+            result.remote_id or item.url,
+        )
+        return False
+    return True
 
 
 def _select_with_classic_fallback(
@@ -359,6 +393,7 @@ def run(
                 )
                 if result.ok:
                     any_ok = True
+                    _alert_youtube_post_without_photos(item, post, assets, result)
                 else:
                     if optional:
                         log.warning(
