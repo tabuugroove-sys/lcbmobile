@@ -87,7 +87,7 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         ), mock.patch(
             "src.pipeline.video_media_ready",
             side_effect=lambda item, _output: item is with_video,
-        ), mock.patch("src.pipeline.visual_media_ready") as photo_ready:
+        ), mock.patch("src.pipeline.photo_media_ready") as photo_ready:
             selected, classic = pipeline._select_with_classic_fallback(
                 [photo_only, with_video],
                 mock.Mock(),
@@ -129,7 +129,7 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         ), mock.patch(
             "src.pipeline.video_media_ready", return_value=False
         ), mock.patch(
-            "src.pipeline.visual_media_ready",
+            "src.pipeline.photo_media_ready",
             side_effect=lambda item, _output: item is with_photo,
         ):
             selected, classic = pipeline._select_with_classic_fallback(
@@ -140,7 +140,7 @@ class ClassicPublishPipelineTests(unittest.TestCase):
             )
 
         self.assertEqual(selected, [with_photo])
-        self.assertFalse(classic)
+        self.assertTrue(classic)
 
     def test_publishes_when_no_photo_or_video_is_available(self) -> None:
         item = NewsItem(
@@ -200,7 +200,7 @@ class ClassicPublishPipelineTests(unittest.TestCase):
                 mock.patch("src.pipeline.select_best_candidates", side_effect=choose),
                 mock.patch("src.pipeline.video_media_ready", return_value=False),
                 mock.patch(
-                    "src.pipeline.visual_media_ready", return_value=False
+                    "src.pipeline.photo_media_ready", return_value=False
                 ) as media_ready,
                 mock.patch("src.pipeline.rewrite", return_value=post),
                 mock.patch("src.pipeline.build_short", return_value=assets) as build,

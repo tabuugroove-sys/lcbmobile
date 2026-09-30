@@ -983,6 +983,7 @@ def _build_scene_images(
     output_dir: Path,
     *,
     hook_media: list[LicensedImage] | None = None,
+    repeat_single_media: bool = False,
 ) -> list[Path]:
     # Mixed-media Shorts have exactly two video beats and three photo beats.
     # Keeping five scenes prevents a third video slot from repeating one of the
@@ -1019,7 +1020,10 @@ def _build_scene_images(
             )
             continue
         media_index = index - 1
-        asset = media[media_index] if media_index < len(media) else None
+        if repeat_single_media and len(media) == 1:
+            asset = media[0]
+        else:
+            asset = media[media_index] if media_index < len(media) else None
         scenes.append(
             _make_scene(
                 index=index,
@@ -1209,6 +1213,19 @@ def visual_media_ready(
     return ready
 
 
+def photo_media_ready(item: NewsItem, output_dir: Path) -> bool:
+    """Return whether a story has at least one usable still for classic mode."""
+    artist_query, photos, _videos = resolve_visual_media(item, output_dir)
+    ready = bool(photos)
+    if not ready:
+        log.info(
+            "Skipping photo-poor candidate: artist=%r photos=0 title=%s",
+            artist_query,
+            item.title,
+        )
+    return ready
+
+
 def video_media_ready(item: NewsItem, output_dir: Path) -> bool:
     """Return whether the story has enough media for a real mixed-media cut."""
     artist_query, photos, videos = resolve_visual_media(item, output_dir)
@@ -1254,13 +1271,15 @@ def build_short(
         output_dir,
         related_items=related_items,
     )
-    classic_media_fallback = not enforce_media_requirements and len(photos) < 2
-    if classic_media_fallback:
+    single_photo_fallback = not enforce_media_requirements and len(photos) == 1
+    text_only_fallback = not enforce_media_requirements and not photos
+    if single_photo_fallback:
         log.warning(
-            "Classic render: only %d photo(s); using the legacy no-montage format",
-            len(photos),
+            "Classic render: keeping the single photo in the legacy no-montage format"
         )
-        photos = []
+        videos = []
+    elif text_only_fallback:
+        log.warning("Classic render: no usable photo; using the text-only fallback")
         videos = []
     if (
         enforce_media_requirements
@@ -1283,11 +1302,12 @@ def build_short(
             f"requires {settings.min_video_media_assets}"
         )
 
-    hook_media = (
-        []
-        if classic_media_fallback
-        else resolve_hook_media(item, photos, base / "hook_media")
-    )
+    if single_photo_fallback:
+        hook_media = photos
+    elif text_only_fallback:
+        hook_media = []
+    else:
+        hook_media = resolve_hook_media(item, photos, base / "hook_media")
     credited_photos = _unique_visual_assets([*photos, *hook_media])
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -1307,6 +1327,7 @@ def build_short(
             photos,
             base,
             hook_media=hook_media,
+            repeat_single_media=single_photo_fallback,
         )
         hook_duration = min(2.2, max(1.2, duration * 0.08))
         content_scene_duration = (duration - hook_duration) / max(

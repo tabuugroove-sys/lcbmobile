@@ -9,18 +9,20 @@ from unittest import mock
 import httpx
 from PIL import Image
 
-from src.models import NewsItem
+from src.models import NewsItem, RewrittenPost
 from src.video.commons_media import LicensedImage, _candidate, fetch_licensed_artist_images
 from src.video.commons_video import LicensedVideo, fetch_licensed_artist_videos
 from src.video.generator import (
     HEIGHT,
     WIDTH,
+    build_short,
     _fit_cover,
     _make_hook_scene,
     _make_scene,
     _make_video_overlay,
     resolve_hook_media,
     resolve_visual_media,
+    photo_media_ready,
     video_media_ready,
     visual_media_ready,
 )
@@ -648,6 +650,79 @@ class SceneRenderTests(unittest.TestCase):
                 )
             )
         resolve.assert_not_called()
+
+    def test_photo_fallback_accepts_one_usable_photo(self) -> None:
+        news = type(
+            "Item",
+            (),
+            {"title": "Cantor anuncia novidade", "summary": ""},
+        )()
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch(
+            "src.video.generator.resolve_visual_media",
+            return_value=(None, [mock.sentinel.photo], []),
+        ):
+            self.assertTrue(photo_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
+
+    def test_single_photo_classic_render_keeps_photo_without_montage(self) -> None:
+        news = NewsItem(
+            source_id="source",
+            source_name="Fonte Teste",
+            category="music",
+            url="https://example.com/story",
+            title="Cantor anuncia novidade",
+        )
+        post = RewrittenPost(
+            source_url=news.url,
+            headline="Cantor anuncia novidade",
+            short_caption="Novidade confirmada.",
+            long_caption="Novidade confirmada pela fonte.",
+            script_voiceover="O cantor confirmou a novidade.",
+            on_screen_text=["NOVIDADE"],
+            hashtags=["Musica"],
+            category="music",
+        )
+        voice = mock.Mock(duration=12.0)
+        voice.set_duration.return_value = voice
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            photo_path = Path(temp_dir) / "artist.jpg"
+            Image.new("RGB", (1200, 1600), (35, 80, 140)).save(photo_path)
+            photo = LicensedImage(
+                path=str(photo_path),
+                title="Cantor",
+                creator="Fonte Teste",
+                license=SOURCE_ARTICLE_LICENSE,
+                license_url=news.url,
+                source_page=news.url,
+                source_url="https://cdn.example.com/artist.jpg",
+                width=1200,
+                height=1600,
+            )
+            with mock.patch(
+                "src.video.generator.resolve_visual_media",
+                return_value=("cantor", [photo], []),
+            ), mock.patch(
+                "src.video.generator._tts", return_value=Path(temp_dir) / "voice.mp3"
+            ), mock.patch(
+                "src.video.generator.AudioFileClip", return_value=voice
+            ), mock.patch(
+                "src.video.generator._mix_voice_with_background",
+                return_value=mock.sentinel.audio,
+            ), mock.patch(
+                "src.video.generator._build_scene_images",
+                side_effect=RuntimeError("scene-probe"),
+            ) as build_scenes:
+                with self.assertRaisesRegex(RuntimeError, "scene-probe"):
+                    build_short(
+                        news,
+                        post,
+                        Path(temp_dir),
+                        enforce_media_requirements=False,
+                    )
+
+            self.assertEqual(build_scenes.call_args.args[2], [photo])
+            self.assertEqual(build_scenes.call_args.kwargs["hook_media"], [photo])
+            self.assertTrue(build_scenes.call_args.kwargs["repeat_single_media"])
 
     def test_scene_is_vertical_and_contains_safe_editorial_layout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
