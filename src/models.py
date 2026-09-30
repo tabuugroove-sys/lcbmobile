@@ -117,3 +117,4 @@ class GeneratedAssets(BaseModel):
     thumbnail_path: Optional[str] = None
     duration_seconds: float = 0.0
     photo_count: int = 0
+    thumbnail_face_detected: Optional[bool] = None

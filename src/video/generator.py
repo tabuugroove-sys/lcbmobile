@@ -307,6 +307,35 @@ def _try_cutout(source: Path, target: Path) -> Image.Image | None:
     return result
 
 
+def _thumbnail_has_detectable_face(path: Path) -> bool | None:
+    """Return whether the rendered thumbnail contains a clear frontal face."""
+    try:
+        import cv2
+    except ImportError:
+        log.warning("OpenCV unavailable; thumbnail face detection skipped")
+        return None
+
+    image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if image is None:
+        log.warning("Cannot read thumbnail for face detection: %s", path)
+        return None
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    min_size = max(36, round(min(image.shape[:2]) * 0.055))
+    cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
+    if cascade.empty():
+        log.warning("OpenCV frontal-face cascade is unavailable")
+        return None
+    faces = cascade.detectMultiScale(
+        gray,
+        scaleFactor=1.08,
+        minNeighbors=4,
+        minSize=(min_size, min_size),
+    )
+    return bool(len(faces))
+
+
 def _subtitle_chunks(text: str, count: int) -> list[str]:
     sentences = [part.strip() for part in SENTENCE_RE.split(text) if part.strip()]
     if len(sentences) >= count:
@@ -1390,6 +1419,7 @@ def build_short(
         )
         thumb_path = base / "thumb.jpg"
         Image.open(scene_paths[0]).convert("RGB").save(thumb_path, "JPEG", quality=90)
+        thumbnail_face_detected = _thumbnail_has_detectable_face(thumb_path)
         _write_render_manifest(
             base=base,
             item=item,
@@ -1411,4 +1441,5 @@ def build_short(
         thumbnail_path=str(thumb_path),
         duration_seconds=float(duration),
         photo_count=len(credited_photos),
+        thumbnail_face_detected=thumbnail_face_detected,
     )

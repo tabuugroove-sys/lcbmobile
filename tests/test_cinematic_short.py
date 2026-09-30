@@ -20,6 +20,7 @@ from src.video.generator import (
     _make_hook_scene,
     _make_scene,
     _make_video_overlay,
+    _thumbnail_has_detectable_face,
     resolve_hook_media,
     resolve_visual_media,
     photo_media_ready,
@@ -198,6 +199,13 @@ class SourceArticleMediaTests(unittest.TestCase):
 
 
 class SceneRenderTests(unittest.TestCase):
+    def test_blank_thumbnail_has_no_detectable_face(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            thumbnail = Path(temp_dir) / "blank.jpg"
+            Image.new("RGB", (1080, 1920), "black").save(thumbnail)
+
+            self.assertFalse(_thumbnail_has_detectable_face(thumbnail))
+
     def test_first_frame_is_a_curiosity_collage(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

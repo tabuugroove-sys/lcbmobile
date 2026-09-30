@@ -267,6 +267,85 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         self.assertFalse(reused_alerted)
         urgent.assert_not_called()
 
+    def test_alerts_when_published_thumbnail_has_no_face(self) -> None:
+        item = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/no-face-thumbnail",
+            title="Cantor anuncia novidade",
+        )
+        post = RewrittenPost(
+            source_url=item.url,
+            headline="Cantor confirma novidade",
+            short_caption="Novidade.",
+            long_caption="Novidade.",
+            script_voiceover="O cantor confirmou uma novidade.",
+        )
+        assets = GeneratedAssets(
+            video_path="/tmp/no-face.mp4",
+            photo_count=2,
+            thumbnail_face_detected=False,
+        )
+        result = PublishResult(
+            platform="youtube",
+            ok=True,
+            remote_id="no-face-video",
+        )
+
+        with mock.patch("src.pipeline.notify_urgent", return_value=True) as urgent:
+            alerted = pipeline._alert_youtube_post_without_face(
+                item, post, assets, result
+            )
+
+        self.assertTrue(alerted)
+        urgent.assert_called_once()
+        alert = urgent.call_args.args[0]
+        self.assertIn("no detectable face", alert)
+        self.assertIn("no-face-video", alert)
+
+    def test_no_face_alert_skips_unknown_and_reused_results(self) -> None:
+        item = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/story",
+            title="Artista anuncia novidade",
+        )
+        post = RewrittenPost(
+            source_url=item.url,
+            headline="Artista confirma novidade",
+            short_caption="Novidade.",
+            long_caption="Novidade.",
+            script_voiceover="O artista confirmou uma novidade.",
+        )
+        with mock.patch("src.pipeline.notify_urgent") as urgent:
+            unknown = pipeline._alert_youtube_post_without_face(
+                item,
+                post,
+                GeneratedAssets(video_path="/tmp/unknown.mp4", photo_count=1),
+                PublishResult(platform="youtube", ok=True, remote_id="unknown"),
+            )
+            reused = pipeline._alert_youtube_post_without_face(
+                item,
+                post,
+                GeneratedAssets(
+                    video_path="/tmp/reused.mp4",
+                    photo_count=1,
+                    thumbnail_face_detected=False,
+                ),
+                PublishResult(
+                    platform="youtube",
+                    ok=True,
+                    remote_id="reused",
+                    reused_existing=True,
+                ),
+            )
+
+        self.assertFalse(unknown)
+        self.assertFalse(reused)
+        urgent.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

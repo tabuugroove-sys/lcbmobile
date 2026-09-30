@@ -113,6 +113,40 @@ def _alert_youtube_post_without_photos(
     return True
 
 
+def _alert_youtube_post_without_face(
+    item: NewsItem,
+    post: RewrittenPost,
+    assets: GeneratedAssets,
+    result: PublishResult,
+) -> bool:
+    if (
+        result.platform != "youtube"
+        or not result.ok
+        or assets.photo_count == 0
+        or assets.thumbnail_face_detected is not False
+        or result.reused_existing
+    ):
+        return False
+    video_url = result.url
+    if not video_url and result.remote_id:
+        video_url = f"https://youtube.com/shorts/{result.remote_id}"
+    message = "\n".join(
+        [
+            "[URGENT] LCBMobile Short thumbnail has no detectable face",
+            f"Title: {post.headline}",
+            f"Source: {item.url}",
+            f"YouTube: {video_url or 'URL unavailable'}",
+        ]
+    )
+    if not notify_urgent(message):
+        log.error(
+            "Could not deliver urgent no-face alert for YouTube post %s",
+            result.remote_id or item.url,
+        )
+        return False
+    return True
+
+
 def _select_with_classic_fallback(
     candidates: list[NewsItem],
     store: Store,
@@ -394,6 +428,7 @@ def run(
                 if result.ok:
                     any_ok = True
                     _alert_youtube_post_without_photos(item, post, assets, result)
+                    _alert_youtube_post_without_face(item, post, assets, result)
                 else:
                     if optional:
                         log.warning(
