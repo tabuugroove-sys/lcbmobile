@@ -439,6 +439,50 @@ def _unique_visual_assets(media: list[LicensedImage]) -> list[LicensedImage]:
     return unique
 
 
+HOOK_CONTEXT_TERMS = (
+    "audience",
+    "award",
+    "ceremony",
+    "crowd",
+    "fans",
+    "plateia",
+    "premio",
+    "publico",
+    "red carpet",
+    "tapete vermelho",
+)
+
+
+def _asset_has_clear_face(asset: LicensedImage) -> bool:
+    return _thumbnail_has_detectable_face(Path(asset.path)) is True
+
+
+def _hook_pair_is_meaningful(
+    item: NewsItem,
+    first: LicensedImage,
+    second: LicensedImage,
+) -> bool:
+    """Allow a question-mark split only for an explainable visual contrast."""
+    first_title = re.sub(r"[_\-.]+", " ", first.title)
+    second_title = re.sub(r"[_\-.]+", " ", second.title)
+    first_person = find_known_music_act(first_title)
+    second_person = find_known_music_act(second_title)
+    story_people = set(find_known_music_acts(f"{item.title} {item.summary}"))
+    if (
+        first_person
+        and second_person
+        and first_person != second_person
+        and first_person in story_people
+        and second_person in story_people
+    ):
+        return True
+
+    context = second_title.casefold()
+    return second.license == SOURCE_ARTICLE_LICENSE and any(
+        term in context for term in HOOK_CONTEXT_TERMS
+    )
+
+
 def resolve_hook_media(
     item: NewsItem,
     primary_media: list[LicensedImage],
@@ -474,13 +518,21 @@ def resolve_hook_media(
     ordered = _unique_visual_assets([*primary, *secondary_people, *source_context])
     if not ordered:
         return []
-    hero = primary[0] if primary else ordered[0]
-    pair = [hero]
+    primary_faces = [asset for asset in primary if _asset_has_clear_face(asset)]
+    all_faces = [asset for asset in ordered if _asset_has_clear_face(asset)]
+    hero = (
+        primary_faces[0]
+        if primary_faces
+        else (all_faces[0] if all_faces else (primary[0] if primary else ordered[0]))
+    )
     for candidate in [*secondary_people, *source_context, *primary[1:]]:
-        if not _same_visual(hero, candidate):
-            pair.append(candidate)
-            break
-    return pair
+        if (
+            not _same_visual(hero, candidate)
+            and _asset_has_clear_face(candidate)
+            and _hook_pair_is_meaningful(item, hero, candidate)
+        ):
+            return [hero, candidate]
+    return [hero]
 
 
 def _video_creator_credit(media: LicensedVideo) -> str:
@@ -823,6 +875,63 @@ def _make_scene(
     return output
 
 
+def _make_single_subject_hook_scene(
+    *,
+    item: NewsItem,
+    media: LicensedImage,
+    output: Path,
+) -> Path:
+    """Render one clear subject with the real story headline and no question mark."""
+    source = Image.open(media.path).convert("RGB")
+    canvas = _fit_cover(source, (WIDTH, HEIGHT), 0.28, 0.5).convert("RGBA")
+    canvas = ImageEnhance.Color(canvas).enhance(0.92)
+    shade = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    shade_draw = ImageDraw.Draw(shade, "RGBA")
+    shade_draw.rectangle((0, 0, WIDTH, 190), fill=(4, 4, 8, 178))
+    shade_draw.rectangle((0, 1260, WIDTH, HEIGHT), fill=(4, 4, 8, 218))
+    canvas.alpha_composite(shade)
+
+    draw = ImageDraw.Draw(canvas, "RGBA")
+    bold_path = _find_font(DEFAULT_FONT_CANDIDATES)
+    narrow_path = _find_font(CONDENSED_FONT_CANDIDATES) or bold_path
+    artist = find_music_act_query(item.title)
+    label = (artist or "MÚSICA AGORA").upper()
+    draw.rounded_rectangle((60, 55, 1020, 150), 24, fill=(5, 5, 9, 225))
+    _draw_centered(
+        draw,
+        (WIDTH // 2, 103),
+        label,
+        _font(bold_path, 43 if len(label) < 18 else 34),
+        stroke=3,
+    )
+
+    headline_lines = _headline_lines(item.title.upper())[:3]
+    headline_font = _fit_headline_font(headline_lines, draw, narrow_path, 900)
+    line_height = getattr(headline_font, "size", 60) + 12
+    title_y = 1430
+    for line_no, line in enumerate(headline_lines):
+        _draw_centered(
+            draw,
+            (WIDTH // 2, title_y + line_no * line_height),
+            line,
+            headline_font,
+            stroke=6,
+        )
+
+    source_label = re.sub(r"\s+", " ", item.source_name).strip().upper()[:48]
+    draw.rectangle((0, 1888, WIDTH, HEIGHT), fill=(6, 5, 10, 242))
+    draw.rectangle((0, 1888, round(WIDTH / 5), 1902), fill="#ff335c")
+    draw.text(
+        (60, 1911),
+        f"FONTE DA NOTÍCIA: {source_label}",
+        font=_font(bold_path, 22),
+        fill=(230, 230, 230),
+        anchor="ls",
+    )
+    canvas.convert("RGB").save(output, "JPEG", quality=93)
+    return output
+
+
 def _make_hook_scene(
     *,
     item: NewsItem,
@@ -835,8 +944,8 @@ def _make_hook_scene(
         return _make_scene(
             index=0,
             count=5,
-            headline="O QUE ACONTECEU?",
-            subtitle="ENTENDA O CASO",
+            headline=item.title,
+            subtitle="NOTÍCIA EM DESTAQUE",
             source_name=item.source_name,
             media=None,
             cutout=None,
@@ -844,24 +953,43 @@ def _make_hook_scene(
             output=output,
         )
 
-    images: list[Image.Image] = []
-    for asset in _unique_visual_assets(media)[:2]:
+    loaded: list[tuple[LicensedImage, Image.Image]] = []
+    for asset in _unique_visual_assets(media):
         try:
-            images.append(Image.open(asset.path).convert("RGB"))
+            loaded.append((asset, Image.open(asset.path).convert("RGB")))
         except Exception as exc:  # noqa: BLE001
             log.warning("Cannot open hook media %s: %s", asset.path, exc)
-    if not images:
+    if not loaded:
         return _make_scene(
             index=0,
             count=5,
-            headline="O QUE ACONTECEU?",
-            subtitle="ENTENDA O CASO",
+            headline=item.title,
+            subtitle="NOTÍCIA EM DESTAQUE",
             source_name=item.source_name,
             media=None,
             cutout=None,
             credits=credits,
             output=output,
         )
+
+    face_media = [row for row in loaded if _asset_has_clear_face(row[0])]
+    pair: list[tuple[LicensedImage, Image.Image]] = []
+    for first_index, first in enumerate(face_media):
+        for second in face_media[first_index + 1 :]:
+            if _hook_pair_is_meaningful(item, first[0], second[0]):
+                pair = [first, second]
+                break
+        if pair:
+            break
+    if not pair:
+        hero = face_media[0][0] if face_media else loaded[0][0]
+        return _make_single_subject_hook_scene(
+            item=item,
+            media=hero,
+            output=output,
+        )
+
+    images = [row[1] for row in pair]
     canvas = _fit_cover(images[0], (WIDTH, HEIGHT), 0.35).filter(
         ImageFilter.GaussianBlur(30)
     ).convert("RGBA")
@@ -884,44 +1012,12 @@ def _make_hook_scene(
         side="left",
     )
     canvas.alpha_composite(left.convert("RGBA"), (card_x, card_y))
-    if len(images) > 1:
-        right = _fit_hook_panel(
-            images[1],
-            (card_w - card_w // 2, card_h),
-            side="right",
-        )
-        canvas.alpha_composite(right.convert("RGBA"), (card_x + card_w // 2, card_y))
-    else:
-        draw = ImageDraw.Draw(canvas, "RGBA")
-        right_x = card_x + card_w // 2
-        draw.rectangle(
-            (right_x, card_y, card_x + card_w, card_y + card_h),
-            fill=(9, 8, 14, 255),
-        )
-        draw.polygon(
-            (
-                (right_x, card_y + 160),
-                (card_x + card_w, card_y),
-                (card_x + card_w, card_y + 230),
-                (right_x, card_y + 390),
-            ),
-            fill=(255, 51, 92, 210),
-        )
-        _draw_centered(
-            draw,
-            (right_x + card_w // 4, card_y + 560),
-            "FATO\nNOVO",
-            _font(narrow_path, 78),
-            fill="#ffd34d",
-            stroke=5,
-        )
-        _draw_centered(
-            draw,
-            (right_x + card_w // 4, card_y + 745),
-            "ENTENDA",
-            _font(bold_path, 38),
-            stroke=3,
-        )
+    right = _fit_hook_panel(
+        images[1],
+        (card_w - card_w // 2, card_h),
+        side="right",
+    )
+    canvas.alpha_composite(right.convert("RGBA"), (card_x + card_w // 2, card_y))
     shade = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     ImageDraw.Draw(shade).rectangle(
         (card_x, card_y, card_x + card_w, card_y + card_h),

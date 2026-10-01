@@ -19,6 +19,7 @@ from src.video.generator import (
     _fit_cover,
     _make_hook_scene,
     _make_scene,
+    _make_single_subject_hook_scene,
     _make_video_overlay,
     _thumbnail_has_detectable_face,
     resolve_hook_media,
@@ -216,7 +217,7 @@ class SceneRenderTests(unittest.TestCase):
                 assets.append(
                     LicensedImage(
                         path=str(path),
-                        title=f"Shakira {index}.jpg",
+                        title=("Shakira.jpg" if index == 0 else "Anitta.jpg"),
                         creator="Example Photographer",
                         license="CC BY 2.0",
                         license_url="https://creativecommons.org/licenses/by/2.0",
@@ -230,15 +231,22 @@ class SceneRenderTests(unittest.TestCase):
             news = type(
                 "Item",
                 (),
-                {"title": "Shakira quebra o silêncio", "source_name": "Fonte Teste"},
+                {
+                    "title": "Shakira responde a Anitta após polêmica",
+                    "summary": "As duas artistas comentaram o caso.",
+                    "source_name": "Fonte Teste",
+                },
             )()
 
-            _make_hook_scene(
-                item=news,  # type: ignore[arg-type]
-                media=assets,
-                credits="FOTOS: Example Photographer / CC BY",
-                output=output,
-            )
+            with mock.patch(
+                "src.video.generator._asset_has_clear_face", return_value=True
+            ):
+                _make_hook_scene(
+                    item=news,  # type: ignore[arg-type]
+                    media=assets,
+                    credits="FOTOS: Example Photographer / CC BY",
+                    output=output,
+                )
 
             with Image.open(output) as rendered:
                 self.assertEqual(rendered.size, (WIDTH, HEIGHT))
@@ -267,18 +275,20 @@ class SceneRenderTests(unittest.TestCase):
                 {"title": "Artista revela mudança", "source_name": "Fonte Teste"},
             )()
 
-            _make_hook_scene(
-                item=news,  # type: ignore[arg-type]
-                media=[asset, asset],
-                credits="FOTO: Example Photographer / CC BY",
-                output=output,
-            )
+            with mock.patch(
+                "src.video.generator._make_single_subject_hook_scene",
+                wraps=_make_single_subject_hook_scene,
+            ) as single_hook:
+                _make_hook_scene(
+                    item=news,  # type: ignore[arg-type]
+                    media=[asset, asset],
+                    credits="FOTO: Example Photographer / CC BY",
+                    output=output,
+                )
 
             with Image.open(output) as rendered:
-                self.assertNotEqual(
-                    rendered.getpixel((280, 1050)),
-                    rendered.getpixel((800, 1050)),
-                )
+                self.assertEqual(rendered.size, (WIDTH, HEIGHT))
+            single_hook.assert_called_once()
 
     def test_hook_pair_uses_article_context_when_no_named_opponent(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -312,6 +322,8 @@ class SceneRenderTests(unittest.TestCase):
             with mock.patch(
                 "src.video.generator.fetch_source_article_images",
                 return_value=[hero, context],
+            ), mock.patch(
+                "src.video.generator._asset_has_clear_face", return_value=True
             ):
                 pair = resolve_hook_media(news, [hero], root / "hook")
 
@@ -354,11 +366,60 @@ class SceneRenderTests(unittest.TestCase):
             ), mock.patch(
                 "src.video.generator.fetch_licensed_artist_images",
                 return_value=[opponent],
-            ) as fetch_secondary:
+            ) as fetch_secondary, mock.patch(
+                "src.video.generator._asset_has_clear_face",
+                return_value=True,
+            ):
                 pair = resolve_hook_media(news, [hero], root / "hook")
 
         self.assertEqual([row.title for row in pair], ["fiuk.jpg", "fabio-jr.jpg"])
         self.assertEqual(fetch_secondary.call_args.args[0], "fabio jr")
+
+    def test_incoherent_object_and_face_pair_falls_back_to_single_face(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def asset(name: str, color: tuple[int, int, int]) -> LicensedImage:
+                path = root / name
+                Image.new("RGB", (1200, 1600), color).save(path)
+                return LicensedImage(
+                    path=str(path),
+                    title=name,
+                    creator="Example Photographer",
+                    license="CC BY 2.0",
+                    license_url="https://creativecommons.org/licenses/by/2.0",
+                    source_page=f"https://commons.wikimedia.org/{name}",
+                    source_url=f"https://upload.wikimedia.org/{name}",
+                    width=1200,
+                    height=1600,
+                )
+
+            prop = asset("metronome.jpg", (40, 90, 170))
+            artist = asset("Shakira.jpg", (190, 65, 80))
+            news = NewsItem(
+                source_id="source",
+                source_name="Fonte Teste",
+                category="music",
+                url="https://example.com/story",
+                title="Shakira anuncia novidade",
+            )
+            output = root / "hook.jpg"
+            with mock.patch(
+                "src.video.generator._asset_has_clear_face",
+                side_effect=lambda row: row.title == "Shakira.jpg",
+            ), mock.patch(
+                "src.video.generator._make_single_subject_hook_scene",
+                wraps=_make_single_subject_hook_scene,
+            ) as single_hook:
+                _make_hook_scene(
+                    item=news,
+                    media=[prop, artist],
+                    credits="FOTOS: Example Photographer / CC BY",
+                    output=output,
+                )
+
+        single_hook.assert_called_once()
+        self.assertEqual(single_hook.call_args.kwargs["media"].title, "Shakira.jpg")
 
     def test_visual_lookup_requires_artist_in_headline(self) -> None:
         news = type(
