@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 import httpx
+import numpy as np
+from moviepy.editor import AudioClip, VideoFileClip
 from PIL import Image
 
 from src.models import NewsItem, RewrittenPost
@@ -731,6 +734,9 @@ class SceneRenderTests(unittest.TestCase):
             return_value=(None, [mock.sentinel.photo], []),
         ):
             self.assertTrue(photo_media_ready(news, Path(temp_dir)))  # type: ignore[arg-type]
+            self.assertFalse(
+                photo_media_ready(news, Path(temp_dir), min_photos=2)  # type: ignore[arg-type]
+            )
 
     def test_single_photo_classic_render_keeps_photo_without_montage(self) -> None:
         news = NewsItem(
@@ -750,8 +756,7 @@ class SceneRenderTests(unittest.TestCase):
             hashtags=["Musica"],
             category="music",
         )
-        voice = mock.Mock(duration=12.0)
-        voice.set_duration.return_value = voice
+        voice = AudioClip(lambda time: time * 0.0, duration=9.0, fps=22050)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             photo_path = Path(temp_dir) / "artist.jpg"
@@ -767,6 +772,15 @@ class SceneRenderTests(unittest.TestCase):
                 width=1200,
                 height=1600,
             )
+
+            def make_static_scene(*, item, media, output):
+                self.assertEqual(item, news)
+                self.assertEqual(media, photo)
+                image = Image.new("RGB", (120, 200), (35, 80, 140))
+                image.paste((190, 40, 20), (0, 0, 60, 100))
+                image.save(output)
+                return output
+
             with mock.patch(
                 "src.video.generator.resolve_visual_media",
                 return_value=("cantor", [photo], []),
@@ -776,22 +790,40 @@ class SceneRenderTests(unittest.TestCase):
                 "src.video.generator.AudioFileClip", return_value=voice
             ), mock.patch(
                 "src.video.generator._mix_voice_with_background",
-                return_value=mock.sentinel.audio,
+                side_effect=lambda audio, _duration, **_kwargs: audio,
             ), mock.patch(
-                "src.video.generator._build_scene_images",
-                side_effect=RuntimeError("scene-probe"),
-            ) as build_scenes:
-                with self.assertRaisesRegex(RuntimeError, "scene-probe"):
-                    build_short(
-                        news,
-                        post,
-                        Path(temp_dir),
-                        enforce_media_requirements=False,
-                    )
+                "src.video.generator._make_single_subject_hook_scene",
+                side_effect=make_static_scene,
+            ) as make_scene, mock.patch(
+                "src.video.generator.resolve_hook_media"
+            ) as hook_media, mock.patch(
+                "src.video.generator._thumbnail_has_detectable_face", return_value=None
+            ), mock.patch("src.video.generator.WIDTH", 120), mock.patch(
+                "src.video.generator.HEIGHT", 200
+            ):
+                assets = build_short(
+                    news,
+                    post,
+                    Path(temp_dir),
+                    enforce_media_requirements=False,
+                )
 
-            self.assertEqual(build_scenes.call_args.args[2], [photo])
-            self.assertEqual(build_scenes.call_args.kwargs["hook_media"], [photo])
-            self.assertTrue(build_scenes.call_args.kwargs["repeat_single_media"])
+            make_scene.assert_called_once()
+            hook_media.assert_not_called()
+            self.assertEqual(assets.photo_count, 1)
+            self.assertAlmostEqual(assets.duration_seconds, 8.95)
+            manifest_path = Path(assets.video_path).parent / "render_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["style"], "static_single_photo")
+            self.assertEqual(manifest["scene_count"], 1)
+            with VideoFileClip(assets.video_path) as rendered:
+                self.assertAlmostEqual(rendered.duration, assets.duration_seconds, delta=0.1)
+                first = rendered.get_frame(0.5)
+                self.assertGreater(float(first.std()), 10.0)
+                np.testing.assert_array_equal(first, rendered.get_frame(4.0))
+                np.testing.assert_array_equal(first, rendered.get_frame(8.0))
+
+        voice.close()
 
     def test_scene_is_vertical_and_contains_safe_editorial_layout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

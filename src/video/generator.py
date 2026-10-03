@@ -1108,8 +1108,16 @@ def _build_scene_images(
     output_dir: Path,
     *,
     hook_media: list[LicensedImage] | None = None,
-    repeat_single_media: bool = False,
+    static_single_photo: bool = False,
 ) -> list[Path]:
+    if static_single_photo and len(media) == 1:
+        return [
+            _make_single_subject_hook_scene(
+                item=item,
+                media=media[0],
+                output=output_dir / "scene-01.jpg",
+            )
+        ]
     # Mixed-media Shorts have exactly two video beats and three photo beats.
     # Keeping five scenes prevents a third video slot from repeating one of the
     # two curated source files merely because Commons returned six photographs.
@@ -1145,10 +1153,7 @@ def _build_scene_images(
             )
             continue
         media_index = index - 1
-        if repeat_single_media and len(media) == 1:
-            asset = media[0]
-        else:
-            asset = media[media_index] if media_index < len(media) else None
+        asset = media[media_index] if media_index < len(media) else None
         scenes.append(
             _make_scene(
                 index=index,
@@ -1181,7 +1186,11 @@ def _write_render_manifest(
     (base / "render_manifest.json").write_text(
         json.dumps(
             {
-                "style": "cinematic_mixed_media_v4_semantic_hook",
+                "style": (
+                    "static_single_photo"
+                    if len(scenes) == 1
+                    else "cinematic_mixed_media_v4_semantic_hook"
+                ),
                 "language": settings.content_lang,
                 "source_url": item.url,
                 "artist_query": artist_query,
@@ -1338,14 +1347,18 @@ def visual_media_ready(
     return ready
 
 
-def photo_media_ready(item: NewsItem, output_dir: Path) -> bool:
-    """Return whether a story has at least one usable still for classic mode."""
+def photo_media_ready(
+    item: NewsItem, output_dir: Path, *, min_photos: int = 1
+) -> bool:
+    """Return whether a story meets the fallback photo count."""
     artist_query, photos, _videos = resolve_visual_media(item, output_dir)
-    ready = bool(photos)
+    ready = len(photos) >= max(1, min_photos)
     if not ready:
         log.info(
-            "Skipping photo-poor candidate: artist=%r photos=0 title=%s",
+            "Skipping photo-poor candidate: artist=%r photos=%d/%d title=%s",
             artist_query,
+            len(photos),
+            min_photos,
             item.title,
         )
     return ready
@@ -1396,11 +1409,11 @@ def build_short(
         output_dir,
         related_items=related_items,
     )
-    single_photo_fallback = not enforce_media_requirements and len(photos) == 1
+    single_photo_fallback = len(photos) == 1 and not videos
     text_only_fallback = not enforce_media_requirements and not photos
     if single_photo_fallback:
         log.warning(
-            "Classic render: keeping the single photo in the legacy no-montage format"
+            "Single-photo render: one static frame for the full voiceover"
         )
         videos = []
     elif text_only_fallback:
@@ -1452,7 +1465,7 @@ def build_short(
             photos,
             base,
             hook_media=hook_media,
-            repeat_single_media=single_photo_fallback,
+            static_single_photo=single_photo_fallback,
         )
         hook_duration = min(2.2, max(1.2, duration * 0.08))
         content_scene_duration = (duration - hook_duration) / max(
@@ -1463,6 +1476,9 @@ def build_short(
         subtitles = _subtitle_chunks(post.script_voiceover, len(scene_paths))
         headlines = _headline_chunks(post, len(scene_paths))
         for index, scene_path in enumerate(scene_paths):
+            if single_photo_fallback:
+                clips.append(ImageClip(str(scene_path)).set_duration(duration))
+                continue
             scene_duration = hook_duration if index == 0 else content_scene_duration
             if index % 2 == 1 and videos:
                 video_asset = videos[(index // 2) % len(videos)]

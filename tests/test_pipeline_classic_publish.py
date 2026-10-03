@@ -130,7 +130,9 @@ class ClassicPublishPipelineTests(unittest.TestCase):
             "src.pipeline.video_media_ready", return_value=False
         ), mock.patch(
             "src.pipeline.photo_media_ready",
-            side_effect=lambda item, _output: item is with_photo,
+            side_effect=lambda item, _output, *, min_photos=1: (
+                item is with_photo and min_photos == 1
+            ),
         ):
             selected, classic = pipeline._select_with_classic_fallback(
                 [without_photo, with_photo],
@@ -140,6 +142,50 @@ class ClassicPublishPipelineTests(unittest.TestCase):
             )
 
         self.assertEqual(selected, [with_photo])
+        self.assertTrue(classic)
+
+    def test_prefers_multiple_photos_over_earlier_single_photo_story(self) -> None:
+        single_photo = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/single-photo",
+            title="Cantor anuncia novidade com uma foto",
+        )
+        multiple_photos = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/multiple-photos",
+            title="Shakira anuncia novidade com varias fotos",
+        )
+
+        def choose(candidates, _store, *, limit, stage, eligibility=None):
+            del stage
+            return [
+                item for item in candidates
+                if eligibility is None or eligibility(item)
+            ][:limit]
+
+        def has_photos(item, _output, *, min_photos=1):
+            count = 1 if item is single_photo else 2
+            return count >= min_photos
+
+        with mock.patch(
+            "src.pipeline.select_best_candidates", side_effect=choose
+        ), mock.patch(
+            "src.pipeline.video_media_ready", return_value=False
+        ), mock.patch(
+            "src.pipeline.photo_media_ready", side_effect=has_photos
+        ):
+            selected, classic = pipeline._select_with_classic_fallback(
+                [single_photo, multiple_photos],
+                mock.Mock(),
+                limit=1,
+                stage="fresh",
+            )
+
+        self.assertEqual(selected, [multiple_photos])
         self.assertTrue(classic)
 
     def test_publishes_when_no_photo_or_video_is_available(self) -> None:
@@ -223,7 +269,10 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         self.assertEqual(len(publisher.calls), 1)
         build.assert_called_once()
         self.assertFalse(build.call_args.kwargs["enforce_media_requirements"])
-        media_ready.assert_called_once_with(item, test_settings.output_dir)
+        self.assertEqual(media_ready.call_args_list, [
+            mock.call(item, test_settings.output_dir, min_photos=2),
+            mock.call(item, test_settings.output_dir),
+        ])
         urgent.assert_called_once()
         alert = urgent.call_args.args[0]
         self.assertIn("without photos", alert)

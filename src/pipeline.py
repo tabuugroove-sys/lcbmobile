@@ -168,6 +168,20 @@ def _select_with_classic_fallback(
         candidates,
         store,
         limit=limit,
+        stage=f"{stage}:multi_photo",
+        eligibility=lambda item: photo_media_ready(
+            item,
+            settings.output_dir,
+            min_photos=2,
+        ),
+    )
+    if selected:
+        return selected, True
+
+    selected = select_best_candidates(
+        candidates,
+        store,
+        limit=limit,
         stage=f"{stage}:photo",
         eligibility=lambda item: photo_media_ready(item, settings.output_dir),
     )
