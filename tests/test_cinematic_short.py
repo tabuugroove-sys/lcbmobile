@@ -203,6 +203,12 @@ class SourceArticleMediaTests(unittest.TestCase):
 
 
 class SceneRenderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        for name in ("fetch_youtube_artist_videos", "cached_mac_artist_videos", "fetch_mac_artist_videos"):
+            patcher = mock.patch(f"src.video.generator.{name}", return_value=[])
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_blank_thumbnail_has_no_detectable_face(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             thumbnail = Path(temp_dir) / "blank.jpg"

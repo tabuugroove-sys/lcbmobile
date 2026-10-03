@@ -33,6 +33,7 @@ from .source_media import (
     fetch_source_article_images,
 )
 from .youtube_media import fetch_youtube_artist_videos
+from .mac_media import cached_mac_artist_videos, fetch_mac_artist_videos
 from .tts import get_tts_provider
 
 log = logging.getLogger(__name__)
@@ -1298,11 +1299,19 @@ def resolve_visual_media(
                 artist_query,
             )
         else:
-            youtube_videos = fetch_youtube_artist_videos(
+            youtube_videos = cached_mac_artist_videos(
+                artist_query,
+                max_videos=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
+            ) or fetch_youtube_artist_videos(
                 artist_query,
                 base / "youtube_video",
                 max_videos=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
             )
+            if not youtube_videos:
+                youtube_videos = fetch_mac_artist_videos(
+                    artist_query,
+                    max_videos=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
+                )
             if youtube_videos:
                 log.info(
                     "Video source: YouTube ingestion (%d clip(s)) for %r",

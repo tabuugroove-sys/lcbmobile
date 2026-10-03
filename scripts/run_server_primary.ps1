@@ -34,6 +34,9 @@ $env:REQUIRE_VIDEO_MEDIA = "true"
 $env:MIN_VIDEO_MEDIA_ASSETS = "1"
 $env:YOUTUBE_VIDEO_ENABLED = "true"
 $env:YOUTUBE_VIDEO_MODE = "fallback"
+$env:MAC_MEDIA_ROOT = Join-Path $RepoDir "data\mac_media"
+$env:MAC_MEDIA_WAIT_SECONDS = "90"
+$env:MAC_MEDIA_TOTAL_WAIT_SECONDS = "120"
 $YoutubeCookies = Join-Path $SecretsDir "youtube_cookies.txt"
 if (Test-Path $YoutubeCookies) {
     $env:YOUTUBE_COOKIES_FILE = $YoutubeCookies

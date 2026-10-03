@@ -40,6 +40,10 @@ class FakeYoutubeDL:
         return False
 
     def extract_info(self, url, download=False):
+        if download and self.script.get("fail_on_download_auth"):
+            raise RuntimeError("Sign in to confirm you're not a bot")
+        if download and url in self.script.get("fail_on_urls", []):
+            raise RuntimeError("This video is unavailable")
         if "download_ranges" in self.opts and self.script.get("fail_on_sections"):
             raise RuntimeError("sections not supported")
         if self.script.get("fail_always"):
@@ -322,3 +326,41 @@ def test_missing_cookies_file_is_ignored(monkeypatch, tmp_path):
 
     assert len(videos) == 1
     assert all("cookiesfile" not in opts for opts in script["ydl_opts_seen"])
+
+
+def test_failed_candidate_does_not_hide_later_video(monkeypatch, tmp_path):
+    entries = [_entry("bad", 120.0), _entry("good", 120.0)]
+    script = _script(entries, fail_on_urls=[entries[0]["url"]],
+                     infos={entries[1]["url"]: _info("good")})
+    monkeypatch.setattr(youtube_media, "yt_dlp", _fake_module(script))
+    videos = fetch_youtube_artist_videos("rihanna", tmp_path, max_videos=1)
+    assert len(videos) == 1
+    assert videos[0].source_page == entries[1]["url"]
+
+
+def test_authentication_failure_stops_repeated_downloads(monkeypatch, tmp_path):
+    script = _script([_entry("first", 120.0), _entry("second", 120.0)],
+                     fail_on_download_auth=True)
+    monkeypatch.setattr(youtube_media, "yt_dlp", _fake_module(script))
+    assert fetch_youtube_artist_videos("rihanna", tmp_path) == []
+    download_opts = [opts for opts in script["ydl_opts_seen"] if opts.get("outtmpl")]
+    assert len(download_opts) == 1
+    manifest = json.loads((tmp_path / "rights_manifest.json").read_text())
+    assert manifest["status"] == "authentication_required"
+
+
+def test_mac_worker_can_search_editorial_footage(monkeypatch, tmp_path):
+    script = _script([])
+    monkeypatch.setattr(youtube_media, "yt_dlp", _fake_module(script))
+    fetch_youtube_artist_videos("rihanna", tmp_path, search_query="rihanna red carpet interview")
+    assert script["search_queries"] == ["ytsearch10:rihanna red carpet interview"]
+
+
+def test_cloud_resolver_uses_mac_when_youtube_fails(monkeypatch, tmp_path):
+    _patch_common(monkeypatch, tmp_path, enabled=True)
+    monkeypatch.setattr(generator, "cached_mac_artist_videos", lambda *a, **k: [])
+    monkeypatch.setattr(generator, "fetch_youtube_artist_videos", lambda *a, **k: [])
+    backup = _fake_video(tmp_path / "backup.mp4", "Mac footage")
+    monkeypatch.setattr(generator, "fetch_mac_artist_videos", lambda *a, **k: [backup])
+    _, _, videos = generator.resolve_visual_media(_item(), tmp_path)
+    assert videos == [backup]

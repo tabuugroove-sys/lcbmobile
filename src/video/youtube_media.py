@@ -48,6 +48,10 @@ _LIVE_STATUSES = {"is_live", "is_upcoming", "post_live"}
 _BLOCKED_AVAILABILITY = {"subscriber_only", "premium_only", "private", "needs_auth"}
 
 
+class YouTubeAuthenticationRequired(RuntimeError):
+    """Stop repeated requests when YouTube requires a valid user session."""
+
+
 def _write_manifest(
     path: Path,
     query: str | None,
@@ -132,9 +136,12 @@ def _download_opts(outtmpl: str, *, section_seconds: float | None) -> dict[str, 
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
+        "overwrites": True,
+        "continuedl": False,
         "retries": 2,
         "fragment_retries": 2,
         "socket_timeout": 30,
+        "external_downloader_args": {"ffmpeg": ["-loglevel", "error", "-nostats"]},
     }
     if section_seconds is not None:
         # Requires ffmpeg (already present for moviepy): fetch only the head
@@ -210,6 +217,8 @@ def _download_candidate(
             partial = attempt_sections is not None
             break
         except Exception as exc:  # noqa: BLE001
+            if "sign in to confirm" in str(exc).lower():
+                raise YouTubeAuthenticationRequired("YouTube requires session verification") from exc
             if attempt_sections is not None:
                 log.warning(
                     "Partial YouTube download failed (%s), retrying full file: %s",
@@ -274,6 +283,7 @@ def fetch_youtube_artist_videos(
     min_duration: float = MIN_DURATION_SECONDS,
     max_duration: float = MAX_DURATION_SECONDS,
     section_seconds: float | None = SECTION_SECONDS,
+    search_query: str | None = None,
 ) -> list[LicensedVideo]:
     """Search YouTube for the artist and download up to ``max_videos`` clips.
 
@@ -311,7 +321,7 @@ def fetch_youtube_artist_videos(
 
     try:
         with yt_dlp.YoutubeDL(_search_opts()) as ydl:
-            result = ydl.extract_info(f"ytsearch{search_limit}:{artist}", download=False)
+            result = ydl.extract_info(f"ytsearch{search_limit}:{search_query or artist}", download=False)
     except Exception as exc:  # noqa: BLE001 — bot checks, network, extractor drift
         log.warning("YouTube search failed for %r: %s", artist, exc)
         _write_manifest(manifest_path, artist, "error", [])
@@ -334,18 +344,28 @@ def fetch_youtube_artist_videos(
     )
 
     assets: list[LicensedVideo] = []
-    for index, candidate in enumerate(candidates[:max_videos], start=1):
-        asset = _download_candidate(
-            candidate, output_dir, index, section_seconds=section_seconds
-        )
+    authentication_required = False
+    for candidate in candidates[:search_limit]:
+        try:
+            asset = _download_candidate(
+                candidate, output_dir, len(assets) + 1, section_seconds=section_seconds
+            )
+        except YouTubeAuthenticationRequired:
+            authentication_required = True
+            log.warning("YouTube session verification required for %r; stopping retries", artist)
+            break
         if asset is not None:
             assets.append(asset)
+        if len(assets) >= max_videos:
+            break
 
     wanted = min(max_videos, len(candidates))
     if wanted and len(assets) >= wanted:
         status = "verified"
     elif assets:
         status = "incomplete"
+    elif authentication_required:
+        status = "authentication_required"
     else:
         status = "no_suitable_video"
     _write_manifest(manifest_path, artist, status, assets)

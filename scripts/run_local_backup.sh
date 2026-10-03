@@ -28,6 +28,7 @@ export REQUIRE_VIDEO_MEDIA="${REQUIRE_VIDEO_MEDIA:-true}"
 export MIN_VIDEO_MEDIA_ASSETS="${MIN_VIDEO_MEDIA_ASSETS:-1}"
 export YOUTUBE_VIDEO_ENABLED="${YOUTUBE_VIDEO_ENABLED:-true}"
 export YOUTUBE_VIDEO_MODE="${YOUTUBE_VIDEO_MODE:-fallback}"
+export YOUTUBE_COOKIES_FILE="${REPO_DIR}/secrets/youtube_cookies.txt"
 
 if [[ "${TTS_PROVIDER:-}" == "elevenlabs" && -z "${ELEVENLABS_API_KEY:-}" ]]; then
   ELEVENLABS_API_KEY="$(/usr/bin/security find-generic-password \

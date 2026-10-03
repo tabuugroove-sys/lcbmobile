@@ -14,6 +14,7 @@ rsync -a --delete \
   --exclude '.env.local' \
   --exclude 'client_secret*.json' \
   --exclude 'youtube_token.json' \
+  --exclude 'secrets/' \
   --exclude 'data/' \
   --exclude 'out/' \
   "${SOURCE_DIR}/" "${RUNTIME_DIR}/"
@@ -39,5 +40,12 @@ chmod +x \
 launchctl bootout "gui/$(id -u)/${LABEL}" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "${AGENT_FILE}"
 launchctl kickstart -k "gui/$(id -u)/${LABEL}"
+
+MEDIA_LABEL="com.tabuugroove.lcbmobile.mac-media"
+MEDIA_AGENT="/Users/a1111/Library/LaunchAgents/${MEDIA_LABEL}.plist"
+cp "${SOURCE_DIR}/ops/${MEDIA_LABEL}.plist" "${MEDIA_AGENT}"
+launchctl bootout "gui/$(id -u)/${MEDIA_LABEL}" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "${MEDIA_AGENT}"
+launchctl kickstart -k "gui/$(id -u)/${MEDIA_LABEL}"
 
 echo "Installed ${LABEL} in ${RUNTIME_DIR}"
