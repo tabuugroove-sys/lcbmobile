@@ -18,6 +18,7 @@ _MUSIC_ROLES = {
     "funkeira",
     "musico",
     "musica",
+    "maestro",
     "rapper",
     "sertanejo",
     "sertaneja",
@@ -76,35 +77,46 @@ _KNOWN_MUSIC_ACTS = (
     "chris martin",
     "coldplay",
     "dua lipa",
+    "drake",
+    "dj topo",
     "ed sheeran",
     "fafa de belem",
     "fabio jr",
     "fiuk",
     "gilberto gil",
+    "george henrique e rodrigo",
     "gusttavo lima",
     "harry styles",
     "ivete sangalo",
     "iza",
     "j balvin",
     "jota quest",
+    "joao bosco",
     "joao gomes",
+    "joelma",
     "justin bieber",
     "katy perry",
+    "karina zeviani",
+    "karol g",
     "lady gaga",
     "leonardo",
     "luan santana",
     "ludmilla",
     "madonna",
+    "mc cabelinho",
     "maiara",
     "maraisa",
     "maroon 5",
     "maria bethania",
+    "matheus aleixo",
     "mc daniel",
     "miley cyrus",
     "nattan",
     "ney matogrosso",
     "oliver tree",
     "pabllo vittar",
+    "phil collins",
+    "priscilla",
     "rihanna",
     "rick e renner",
     "roberto carlos",
@@ -115,6 +127,7 @@ _KNOWN_MUSIC_ACTS = (
     "the weeknd",
     "tim maia",
     "wesley safadao",
+    "xande de pilares",
     "ze felipe",
     "ze neto",
 )
@@ -122,7 +135,7 @@ _KNOWN_MUSIC_ACTS = (
 _NAME_TOKEN = r"[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9'’-]*"
 _ROLE_NAMED_ACT_RE = re.compile(
     rf"\b(?i:cantor(?:a)?|rapper|funkeir[oa]|dj|vocalista|m[uú]sico|"
-    rf"sertanej[oa]|banda|dupla)\s+({_NAME_TOKEN}(?:\s+{_NAME_TOKEN}){{0,2}})"
+    rf"sertanej[oa]|maestro|banda|dupla)\s+({_NAME_TOKEN}(?:\s+{_NAME_TOKEN}){{0,2}})"
 )
 _ROLE_ACT_ALIASES = {
     "rick": "rick e renner",
@@ -211,7 +224,7 @@ def is_music_news(item: NewsItem) -> bool:
         phrase in text for phrase in _MUSIC_PHRASES
     )
     has_known_act = find_known_music_act(text) is not None
-    has_screen_subject = bool(tokens & _SCREEN_TERMS) or any(
+    has_screen_subject = bool(tokens & (_SCREEN_TERMS - {"ator", "atores", "atriz", "atrizes", "elenco"})) or any(
         phrase in text for phrase in _SCREEN_PHRASES
     )
 

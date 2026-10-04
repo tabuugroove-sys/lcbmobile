@@ -46,7 +46,7 @@ def shorts_today(rows: list[dict], tz: ZoneInfo, today) -> int:
 
 
 def current_short_count(token_file: Path, tz: ZoneInfo) -> int:
-    credentials = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+    credentials = Credentials.from_authorized_user_file(str(token_file))
     if not credentials.valid:
         if not credentials.refresh_token:
             raise RuntimeError("YouTube token has no refresh token")

@@ -47,7 +47,7 @@ def _service():
         log.error("Comment responder: token file %s not found", token_file)
         return None
 
-    creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+    creds = Credentials.from_authorized_user_file(str(token_file))
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
         token_file.write_text(creds.to_json())

@@ -64,8 +64,8 @@ class CloudTransport:
         rows = json.loads(raw or "[]")
         return rows if isinstance(rows, list) else []
 
-    def publish(self, artist: str, videos: list, *, requested_at: str = "") -> None:
-        key = artist_key(artist)
+    def publish(self, artist: str, videos: list, *, requested_at: str = "", profile: str = "") -> None:
+        key = artist_key(f"{artist}|{profile}") if profile else artist_key(artist)
         folder = f"{self.root}/assets/{key}"
         self.command(f"New-Item -ItemType Directory -Force '{folder}' | Out-Null")
         rows = []
@@ -92,19 +92,26 @@ class CloudTransport:
 
 def process_request(request: dict, transport: CloudTransport) -> bool:
     artist = str(request.get("artist") or "").strip()
-    if not artist or len(artist) > 120 or request.get("key") != artist_key(artist):
+    profile = str(request.get("profile") or "")
+    if profile and not re.fullmatch(r"horizontal-\d{4}-\d{2}-\d{2}", profile):
+        raise ValueError("Invalid media request profile")
+    key = artist_key(f"{artist}|{profile}") if profile else artist_key(artist)
+    if not artist or len(artist) > 120 or request.get("key") != key:
         raise ValueError("Invalid media request")
     stamp = datetime.fromisoformat(str(request["requested_at"]).replace("Z", "+00:00"))
     if stamp.tzinfo is None or not -10 <= (datetime.now(timezone.utc) - stamp).total_seconds() <= 900:
-        transport.publish(artist, [], requested_at=str(request["requested_at"]))
+        transport.publish(artist, [], requested_at=str(request["requested_at"]), **({"profile": profile} if profile else {}))
         return False
     transport.heartbeat("busy")
     videos = fetch_youtube_artist_videos(
-        artist, ROOT / "data" / "mac_media_worker" / artist_key(artist),
-        max_videos=1,
-        search_query=f"{artist} red carpet interview",
+        artist, ROOT / "data" / "mac_media_worker" / key,
+        max_videos=min(2, max(1, int(request.get("max_videos", 1)))),
+        search_query=f"{artist} ao vivo entrevista oficial" if profile else f"{artist} red carpet interview",
+        section_seconds=90 if profile else 30,
+        excluded_sources={str(s) for s in request.get("excluded_sources", [])[:25]},
+        min_aspect_ratio=1.55 if profile else 0,
     )
-    transport.publish(artist, videos, requested_at=str(request["requested_at"]))
+    transport.publish(artist, videos, requested_at=str(request["requested_at"]), **({"profile": profile} if profile else {}))
     transport.heartbeat()
     log.info("Supplied %d clip(s) to the cloud for %r", len(videos), artist)
     return bool(videos)

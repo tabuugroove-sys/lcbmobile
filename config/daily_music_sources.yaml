@@ -1,0 +1,13 @@
+sources:
+  - id: popline
+    name: POPline
+    type: rss
+    url: https://portalpopline.com.br/feed/
+    category: celebridades
+    weight: 1.0
+  - id: hugogloss_daily
+    name: Hugo Gloss
+    type: rss
+    url: https://hugogloss.uol.com.br/feed/
+    category: fofoca
+    weight: 1.0

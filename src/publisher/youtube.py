@@ -77,7 +77,7 @@ class YouTubePublisher:
         token_file = Path(settings.youtube_token_file)
         creds: Credentials | None = None
         if token_file.exists():
-            creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+            creds = Credentials.from_authorized_user_file(str(token_file))
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())

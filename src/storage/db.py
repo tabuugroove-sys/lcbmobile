@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS youtube_metrics (
     analytics_view_count INTEGER,
     subscribers_gained   INTEGER NOT NULL DEFAULT 0,
     title                TEXT,
+    content_format       TEXT,
     collected_at         TEXT NOT NULL,
     analytics_collected_at TEXT
 );
@@ -121,6 +122,7 @@ class Store:
             "INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE youtube_metrics ADD COLUMN title TEXT",
             "ALTER TABLE youtube_metrics ADD COLUMN analytics_collected_at TEXT",
+            "ALTER TABLE youtube_metrics ADD COLUMN content_format TEXT",
         ]:
             try:
                 conn.execute(ddl)
@@ -370,6 +372,7 @@ class Store:
         view_count: int,
         subscribers_gained: int,
         title: str | None = None,
+        content_format: str | None = None,
     ) -> None:
         now = datetime.utcnow().isoformat()
         with self._conn() as conn:
@@ -377,8 +380,8 @@ class Store:
                 """INSERT INTO youtube_metrics
                    (video_id, fingerprint, view_count, like_count,
                     comment_count, analytics_view_count, subscribers_gained, title,
-                    collected_at, analytics_collected_at)
-                   VALUES (?, ?, 0, 0, 0, ?, ?, ?, ?, ?)
+                    collected_at, analytics_collected_at, content_format)
+                   VALUES (?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(video_id) DO UPDATE SET
                        fingerprint = CASE
                            WHEN youtube_metrics.fingerprint LIKE 'youtube:%'
@@ -388,6 +391,7 @@ class Store:
                        analytics_view_count = excluded.analytics_view_count,
                        subscribers_gained = excluded.subscribers_gained,
                        title = COALESCE(excluded.title, youtube_metrics.title),
+                       content_format = COALESCE(excluded.content_format, youtube_metrics.content_format),
                        analytics_collected_at = excluded.analytics_collected_at""",
                 (
                     video_id,
@@ -397,6 +401,7 @@ class Store:
                     title,
                     now,
                     now,
+                    content_format,
                 ),
             )
 
@@ -472,7 +477,8 @@ class Store:
                      ON p.platform = 'youtube' AND p.remote_id = m.video_id
                    LEFT JOIN item_features f ON f.fingerprint = m.fingerprint
                    LEFT JOIN seen_items s ON s.fingerprint = m.fingerprint
-                   WHERE p.status = 'ok' OR m.title IS NOT NULL
+                   WHERE (p.status = 'ok' OR m.title IS NOT NULL)
+                     AND COALESCE(m.content_format, 'short') != 'long'
                    ORDER BY COALESCE(
                        p.posted_at, m.analytics_collected_at, m.collected_at
                    ) DESC

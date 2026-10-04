@@ -59,11 +59,12 @@ def mac_is_available(root: Path) -> bool:
     return heartbeat.get("status") in {"ready", "busy"} and -10 <= _age(heartbeat) <= ttl
 
 
-def cached_mac_artist_videos(artist: str | None, *, max_videos: int = 2) -> list[LicensedVideo]:
+def cached_mac_artist_videos(artist: str | None, *, max_videos: int = 2, profile: str = "") -> list[LicensedVideo]:
     root = _root()
     if root is None or not artist:
         return []
-    folder = root / "assets" / artist_key(artist)
+    key = artist_key(f"{artist}|{profile}") if profile else artist_key(artist)
+    folder = root / "assets" / key
     manifest = _read_json(folder / "manifest.json")
     if manifest.get("artist") != artist or not -10 <= _age(manifest) <= 30 * 86400:
         return []
@@ -95,15 +96,15 @@ def cached_mac_artist_videos(artist: str | None, *, max_videos: int = 2) -> list
     return assets
 
 
-def fetch_mac_artist_videos(artist: str | None, *, max_videos: int = 2) -> list[LicensedVideo]:
+def fetch_mac_artist_videos(artist: str | None, *, max_videos: int = 2, profile: str = "", excluded_sources: set[str] | None = None) -> list[LicensedVideo]:
     global _wait_spent
-    cached = cached_mac_artist_videos(artist, max_videos=max_videos)
+    cached = [a for a in cached_mac_artist_videos(artist, max_videos=max_videos, profile=profile) if a.source_page not in (excluded_sources or set())]
     if cached:
         return cached
     root = _root()
     if root is None or not artist or not mac_is_available(root):
         return []
-    key = artist_key(artist)
+    key = artist_key(f"{artist}|{profile}") if profile else artist_key(artist)
     response_path = root / "assets" / key / "manifest.json"
     previous = _read_json(response_path)
     if previous.get("artist") == artist and not previous.get("assets") and 0 <= _age(previous) < 900:
@@ -118,10 +119,11 @@ def fetch_mac_artist_videos(artist: str | None, *, max_videos: int = 2) -> list[
         write_json(root / "requests" / f"{key}.json", {
             "artist": artist, "key": key, "max_videos": min(2, max(1, max_videos)),
             "requested_at": requested_at,
+            "profile": profile, "excluded_sources": sorted(excluded_sources or set())[:25],
         })
         log.info("Requesting optional Mac footage for %r (wait <= %.0fs)", artist, wait)
         while time.monotonic() - started < wait:
-            cached = cached_mac_artist_videos(artist, max_videos=max_videos)
+            cached = [a for a in cached_mac_artist_videos(artist, max_videos=max_videos, profile=profile) if a.source_page not in (excluded_sources or set())]
             if cached:
                 log.info("Received %d Mac-downloaded clip(s) for %r", len(cached), artist)
                 return cached

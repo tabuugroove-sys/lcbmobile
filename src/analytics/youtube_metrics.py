@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -145,23 +146,27 @@ def _refresh_growth_metrics(
     return refreshed
 
 
-def _video_titles(service: Any, video_ids: list[str]) -> dict[str, str]:
-    titles: dict[str, str] = {}
+def _video_metadata(service: Any, video_ids: list[str]) -> dict[str, dict[str, str | None]]:
+    metadata: dict[str, dict[str, str | None]] = {}
     if service is None:
-        return titles
+        return metadata
     for start in range(0, len(video_ids), 50):
         chunk = video_ids[start : start + 50]
         response = (
             service.videos()
-            .list(part="snippet", id=",".join(chunk))
+            .list(part="snippet,contentDetails", id=",".join(chunk))
             .execute()
         )
         for video in response.get("items", []):
             video_id = str(video.get("id") or "")
             title = str((video.get("snippet") or {}).get("title") or "")
             if video_id and title:
-                titles[video_id] = title
-    return titles
+                raw = str((video.get("contentDetails") or {}).get("duration") or "")
+                match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", raw)
+                seconds = sum(int(v or 0) * multiplier for v, multiplier in zip(match.groups(), (3600, 60, 1))) if match else 0
+                kind = "long" if seconds > 180 or "radar musical" in title.lower() else "short" if "#shorts" in title.lower() else None
+                metadata[video_id] = {"title": title, "content_format": kind}
+    return metadata
 
 
 def _refresh_channel_history(store: Store, analytics_service: Any, data_service: Any) -> int:
@@ -179,7 +184,7 @@ def _refresh_channel_history(store: Store, analytics_service: Any, data_service:
         .execute()
     )
     rows = _analytics_rows(response)
-    titles = _video_titles(
+    metadata = _video_metadata(
         data_service,
         [str(row["video_id"]) for row in rows],
     )
@@ -190,7 +195,8 @@ def _refresh_channel_history(store: Store, analytics_service: Any, data_service:
             video_id=video_id,
             view_count=int(row["view_count"]),
             subscribers_gained=int(row["subscribers_gained"]),
-            title=titles.get(video_id),
+            title=metadata.get(video_id, {}).get("title"),
+            content_format=metadata.get(video_id, {}).get("content_format"),
         )
     return len(rows)
 

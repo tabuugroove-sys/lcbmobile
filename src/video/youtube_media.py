@@ -12,6 +12,7 @@ import json
 import logging
 import subprocess
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from .commons_video import LicensedVideo
 from ..config import settings
@@ -22,6 +23,15 @@ except ImportError:  # pragma: no cover
     yt_dlp = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
+
+
+def _source_key(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.netloc.endswith("youtu.be"):
+        return parsed.path.strip("/")
+    if "youtube.com" in parsed.netloc:
+        return (parse_qs(parsed.query).get("v") or [parsed.path.strip("/").split("/")[-1]])[0]
+    return value
 
 MANIFEST_POLICY_VERSION = 1
 
@@ -284,6 +294,8 @@ def fetch_youtube_artist_videos(
     max_duration: float = MAX_DURATION_SECONDS,
     section_seconds: float | None = SECTION_SECONDS,
     search_query: str | None = None,
+    excluded_sources: set[str] | None = None,
+    min_aspect_ratio: float = 0,
 ) -> list[LicensedVideo]:
     """Search YouTube for the artist and download up to ``max_videos`` clips.
 
@@ -294,6 +306,7 @@ def fetch_youtube_artist_videos(
     back to the photo/classic path instead of crashing.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    excluded_keys = {_source_key(source) for source in (excluded_sources or set())}
     manifest_path = output_dir / "rights_manifest.json"
     if not artist:
         _write_manifest(manifest_path, artist, "no_query", [])
@@ -309,6 +322,8 @@ def fetch_youtube_artist_videos(
                 and cached.get("status") == "verified"
                 and len(assets) >= max_videos
                 and all(Path(asset.path).exists() for asset in assets)
+                and all(_source_key(asset.source_page) not in excluded_keys for asset in assets)
+                and all(asset.width / max(1, asset.height) >= min_aspect_ratio for asset in assets)
             ):
                 return assets[:max_videos]
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
@@ -332,6 +347,7 @@ def fetch_youtube_artist_videos(
         entry
         for entry in entries
         if entry
+        and _source_key(str(entry.get("id") or entry.get("webpage_url") or entry.get("url") or "")) not in excluded_keys
         and _candidate_ok(
             entry, min_duration=min_duration, max_duration=max_duration
         )
@@ -354,7 +370,7 @@ def fetch_youtube_artist_videos(
             authentication_required = True
             log.warning("YouTube session verification required for %r; stopping retries", artist)
             break
-        if asset is not None:
+        if asset is not None and asset.width / max(1, asset.height) >= min_aspect_ratio:
             assets.append(asset)
         if len(assets) >= max_videos:
             break

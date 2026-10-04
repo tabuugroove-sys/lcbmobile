@@ -142,7 +142,9 @@ _TOPIC_TERMS = {
         "acusacao",
         "barraco",
         "briga",
-        "critica",
+        "criticou",
+        "criticado",
+        "criticada",
         "detona",
         "exposto",
         "exposta",
@@ -195,6 +197,7 @@ _TOPIC_TERMS = {
         "termino",
         "traicao",
     },
+    "family_reveal": {"filho", "filha", "gravidez", "bebe", "paternidade", "maternidade"},
 }
 
 _TOPIC_PHRASES = {
@@ -214,6 +217,7 @@ _TOPIC_PRIORS = {
     "loss_mourning": 0.78,
     "health_crisis": 0.70,
     "relationship_drama": 0.68,
+    "family_reveal": 0.65,
 }
 
 

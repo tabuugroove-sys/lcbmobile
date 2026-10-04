@@ -1,15 +1,12 @@
-name: Daily legal multinews 16x9
+name: Daily music news 16x9 fallback
 
 on:
   schedule:
-    # 15:00 America/Sao_Paulo = 18:00 UTC.
-    - cron: "0 18 * * *"
+    # Server primary: 15:00 BRT. Cloud fallback: 16:00, 18:00, 21:00 BRT.
+    - cron: "0 19,21 * * *"
+    - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
-      limit:
-        description: "Number of top RSS news items to include"
-        required: false
-        default: "5"
       publish:
         description: "Publish to YouTube after building"
         required: false
@@ -18,18 +15,6 @@ on:
         options:
           - "true"
           - "false"
-      force:
-        description: "Ignore today's daily dedupe marker"
-        required: false
-        type: choice
-        default: "false"
-        options:
-          - "false"
-          - "true"
-      traffic_profile:
-        description: "auto, conflict_first, star_name_first, or fast_countdown"
-        required: false
-        default: "auto"
 
 concurrency:
   group: daily-legal-multinews
@@ -41,7 +26,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -67,17 +52,21 @@ jobs:
             lcb-state-
 
       - name: Materialize YouTube secret files
-        if: ${{ github.event.inputs.publish != 'false' }}
         run: |
+          umask 077
           if [ -n "${YOUTUBE_CLIENT_SECRET}" ]; then
             echo "$YOUTUBE_CLIENT_SECRET" > client_secret.json
           fi
           if [ -n "${YOUTUBE_TOKEN}" ]; then
             echo "$YOUTUBE_TOKEN" > youtube_token.json
           fi
+          if [ -n "${YOUTUBE_COOKIES}" ]; then
+            echo "$YOUTUBE_COOKIES" > youtube_cookies.txt
+          fi
         env:
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
 
       - name: Build and optionally publish daily multinews
         env:
@@ -92,6 +81,14 @@ jobs:
           YOUTUBE_METRICS_REFRESH_HOURS: ${{ vars.YOUTUBE_METRICS_REFRESH_HOURS || '6' }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           DRAMA_SIGNAL_WEIGHT: ${{ vars.DRAMA_SIGNAL_WEIGHT || '0.9' }}
+          REWRITE_PROVIDER: template
+          FALLBACK_TO_YESTERDAY: 'true'
+          YOUTUBE_EXPECTED_CHANNEL_ID: UC-TFUUc4YHleNoIFXBVaj7A
+          YOUTUBE_COOKIES_FILE: youtube_cookies.txt
+          LCBAND_URGENT_BOT_TOKEN: ${{ secrets.LCBAND_URGENT_BOT_TOKEN }}
+          LCBAND_URGENT_CHAT_ID: ${{ secrets.LCBAND_URGENT_CHAT_ID }}
+          ESCALATION_BOT_TOKEN: ${{ secrets.ESCALATION_BOT_TOKEN }}
+          ESCALATION_BOT_CHAT_ID: ${{ secrets.ESCALATION_BOT_CHAT_ID }}
           DJ_CATEGORY_BOOST_HOURS: ${{ vars.DJ_CATEGORY_BOOST_HOURS || '12' }}
 
           CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'LCB Mobile' }}
@@ -101,33 +98,28 @@ jobs:
           OUTPUT_DIR: out
           BACKGROUND_MUSIC_PATH: ${{ vars.BACKGROUND_MUSIC_PATH || 'assets/audio/primeira_for_youtube.wav' }}
           BACKGROUND_MUSIC_VOLUME: ${{ vars.BACKGROUND_MUSIC_VOLUME || '0.25' }}
-          YOUTUBE_TRAFFIC_PROFILE: ${{ github.event.inputs.traffic_profile || vars.YOUTUBE_TRAFFIC_PROFILE || 'auto' }}
 
           TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'elevenlabs' }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB' }}
           ELEVENLABS_MODEL: ${{ vars.ELEVENLABS_MODEL || 'eleven_multilingual_v2' }}
           ELEVENLABS_STABILITY: ${{ vars.ELEVENLABS_STABILITY || '0.62' }}
           ELEVENLABS_SIMILARITY: ${{ vars.ELEVENLABS_SIMILARITY || '0.78' }}
           ELEVENLABS_STYLE: ${{ vars.ELEVENLABS_STYLE || '0.18' }}
           ELEVENLABS_SPEED: ${{ vars.ELEVENLABS_SPEED || '0.82' }}
-          YOUTUBE_CATEGORY_ID: ${{ vars.YOUTUBE_CATEGORY_ID || '24' }}
+          YOUTUBE_CATEGORY_ID: '10'
         run: |
-          ARGS="-v --limit ${{ github.event.inputs.limit || '5' }}"
+          ARGS=""
           if [ "${{ github.event.inputs.publish || 'true' }}" = "false" ]; then
             ARGS="$ARGS --no-publish"
           fi
-          if [ "${{ github.event.inputs.force || 'false' }}" = "true" ]; then
-            ARGS="$ARGS --force"
-          fi
-          ARGS="$ARGS --traffic-profile ${YOUTUBE_TRAFFIC_PROFILE}"
-          python -m scripts.run_daily_legal_multinews $ARGS
+          python -m scripts.run_daily_music_news $ARGS
 
       - name: Upload generated assets
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: daily-legal-multinews-${{ github.run_id }}
-          path: out/daily_legal_multinews
+          path: out/daily_music_news
           if-no-files-found: ignore
           retention-days: 7

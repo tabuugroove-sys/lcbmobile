@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -100,14 +101,16 @@ class DailyMultinewsStoryboardTests(unittest.TestCase):
 
     def test_youtube_metadata_uses_actual_item_count(self) -> None:
         profile = choose_traffic_profile("test", "fast_countdown")
-        title, description, _ = _youtube_metadata(
-            [
-                item(1, "Ronaldinho lança álbum"),
-                item(2, "Caetano Veloso participa de campanha"),
-                item(3, "México abre portas para a Copa do Mundo"),
-            ],
-            profile,
-        )
+        with TemporaryDirectory() as tmpdir, patch("scripts.run_daily_legal_multinews.OUT", Path(tmpdir)):
+            (Path(tmpdir) / "credits.txt").write_text("Fixture credits", encoding="utf-8")
+            title, description, _ = _youtube_metadata(
+                [
+                    item(1, "Ronaldinho lança álbum"),
+                    item(2, "Caetano Veloso participa de campanha"),
+                    item(3, "México abre portas para a Copa do Mundo"),
+                ],
+                profile,
+            )
         self.assertIn("Top 3", title)
         self.assertIn("Top 3", description)
 

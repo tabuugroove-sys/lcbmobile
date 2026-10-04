@@ -177,7 +177,7 @@ def _alert_posting_gap(
 
 def _youtube_service():
     token_file = Path(os.environ["YOUTUBE_TOKEN_FILE"])
-    credentials = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+    credentials = Credentials.from_authorized_user_file(str(token_file))
     if not credentials.valid:
         if not credentials.refresh_token:
             raise RuntimeError("Local YouTube token has no refresh token")
