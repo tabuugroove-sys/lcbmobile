@@ -56,6 +56,32 @@ def test_remote_election_public_first_then_earliest_private():
     assert daily.edition_upload([remote("yesterday", edition="2026-10-03")], "2026-10-04") is None
 
 
+def test_football_coach_in_summary_cannot_nominate_music_footage(tmp_path):
+    football = item("Flamengo anuncia contrato com volante")
+    football.summary = "O elenco do tecnico Leonardo Jardim recebe um jogador."
+    assert not daily.candidates_for_day([football], "2026-10-04", Store(tmp_path / "state.db"), set())
+
+
+def test_four_stories_are_publishable_and_metadata_does_not_claim_five(tmp_path):
+    candidates = [item(f"{name} anuncia novidade", f"https://example.com/{i}")
+                  for i, name in enumerate(("Anitta", "Shakira", "Rihanna", "Pabllo Vittar"))]
+    assets = [SimpleNamespace(width=1280, height=720, source_page=f"https://youtube.com/watch?v={i}",
+                as_manifest=lambda i=i: {"sha256": "fixture", "creator": "Fixture", "source_page": f"https://youtube.com/watch?v={i}"}) for i in range(2)]
+    def select(rows, store, *, limit, stage, eligibility):
+        return [r for r in rows if eligibility(r)][:limit]
+    with patch.object(daily, "select_best_candidates", side_effect=select), \
+         patch.object(daily, "rewrite", return_value=SimpleNamespace(headline="Novidade", script_voiceover="Uma noticia confirmada.")), \
+         patch.object(daily, "fetch_youtube_artist_videos", return_value=assets), \
+         patch.object(daily, "reviewed_ranges", return_value=[[0, 100]]):
+        stories = daily.prepare_stories(candidates, Mock(), "2026-10-12", tmp_path, set())
+        assert len(stories) == 4
+        with pytest.raises(RuntimeError, match="at least 4"):
+            daily.prepare_stories(candidates[:3], Mock(), "2026-10-12", tmp_path, set())
+    details = daily.metadata(stories, "2026-10-12", [])
+    assert "4 noticias" in details["title"]
+    assert details["description"].startswith("4 noticias")
+
+
 def test_staged_video_resumes_without_second_insert(tmp_path):
     service = Mock()
     staged, public = remote("pending"), remote("pending", privacy="public")

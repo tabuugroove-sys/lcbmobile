@@ -275,7 +275,8 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         ])
         urgent.assert_called_once()
         alert = urgent.call_args.args[0]
-        self.assertIn("without photos", alert)
+        self.assertIn("static visual", alert)
+        self.assertEqual(urgent.call_args.kwargs["kind"], "short_static_visual")
         self.assertIn("classic-without-media", alert)
         self.assertIn(item.url, alert)
 
@@ -298,7 +299,7 @@ class ClassicPublishPipelineTests(unittest.TestCase):
             photo_alerted = pipeline._alert_youtube_post_without_photos(
                 item,
                 post,
-                GeneratedAssets(video_path="/tmp/with-photo.mp4", photo_count=1),
+                GeneratedAssets(video_path="/tmp/with-photo.mp4", photo_count=1, video_count=1),
                 PublishResult(platform="youtube", ok=True, remote_id="photo-video"),
             )
             reused_alerted = pipeline._alert_youtube_post_without_photos(

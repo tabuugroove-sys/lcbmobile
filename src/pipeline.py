@@ -88,7 +88,8 @@ def _alert_youtube_post_without_photos(
     if (
         result.platform != "youtube"
         or not result.ok
-        or assets.photo_count > 0
+        or assets.photo_count > 1
+        or assets.video_count > 0
         or result.reused_existing
     ):
         return False
@@ -97,14 +98,14 @@ def _alert_youtube_post_without_photos(
         video_url = f"https://youtube.com/shorts/{result.remote_id}"
     message = "\n".join(
         [
-            "[URGENT] LCBMobile published a Short without photos",
-            "Fallback: text-only (0 photos)",
+            "[URGENT] LCBMobile published a Short with a static visual",
+            f"Visuals: {assets.photo_count} photo(s), no video footage",
             f"Title: {post.headline}",
             f"Source: {item.url}",
             f"YouTube: {video_url or 'URL unavailable'}",
         ]
     )
-    if not notify_urgent(message):
+    if not notify_urgent(message, kind="short_static_visual"):
         log.error(
             "Could not deliver urgent no-photo alert for YouTube post %s",
             result.remote_id or item.url,
@@ -442,7 +443,6 @@ def run(
                 if result.ok:
                     any_ok = True
                     _alert_youtube_post_without_photos(item, post, assets, result)
-                    _alert_youtube_post_without_face(item, post, assets, result)
                 else:
                     if optional:
                         log.warning(

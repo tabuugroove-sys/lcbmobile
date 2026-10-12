@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, time as clock_time
+from datetime import datetime, time as clock_time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -146,8 +146,10 @@ def _alert_posting_gap(
     target: int,
     return_code: int,
 ) -> bool:
-    """Notify once for each missed daily quota milestone."""
-    alert_key = _posting_alert_key(now, target)
+    """Notify once when a completed local day had no verified Shorts."""
+    if current != 0 or now.hour != 23 or now.minute != 59:
+        return False
+    alert_key = _posting_alert_key(now, 0)
     if _load_state().get("last_posting_alert_key") == alert_key:
         LOG.info("Urgent posting alert already sent for %s", alert_key)
         return False
@@ -156,15 +158,14 @@ def _alert_posting_gap(
     host = os.getenv("COMPUTERNAME") or platform.node() or "unknown"
     message = "\n".join(
         [
-            "[URGENT] LCBMobile posting stalled",
-            f"YouTube Shorts today: {current}/{target}",
-            f"Missed quota: {alert_key}",
+            "[URGENT] LCBMobile: no YouTube Shorts were published yesterday",
+            f"Date (BRT): {now.date().isoformat()}",
             f"Runner: {runner} on {host}",
-            f"Pipeline exit code: {return_code}",
+            "Verification: YouTube API, public processed videos only.",
             "Automatic retries remain enabled.",
         ]
     )
-    if not notify_urgent(message):
+    if not notify_urgent(message, kind="no_shorts_today"):
         LOG.error("Could not deliver urgent posting alert for %s", alert_key)
         return False
     _save_state(
@@ -188,11 +189,12 @@ def _youtube_service():
 
 def _recent_uploads(service) -> list[dict[str, str]]:
     channel_response = service.channels().list(
-        part="contentDetails", mine=True
+        part="id,contentDetails", mine=True
     ).execute()
     channels = channel_response.get("items") or []
-    if not channels:
-        raise RuntimeError("Authenticated Google account has no YouTube channel")
+    expected = os.getenv("YOUTUBE_EXPECTED_CHANNEL_ID", "UC-TFUUc4YHleNoIFXBVaj7A")
+    if len(channels) != 1 or channels[0].get("id") != expected:
+        raise RuntimeError("OAuth is connected to the wrong YouTube channel")
     playlist_id = channels[0]["contentDetails"]["relatedPlaylists"]["uploads"]
     response = service.playlistItems().list(
         part="snippet", playlistId=playlist_id, maxResults=50
@@ -208,7 +210,19 @@ def _recent_uploads(service) -> list[dict[str, str]]:
                 "published_at": str(snippet.get("publishedAt") or ""),
             }
         )
-    return uploads
+    ids = [row["video_id"] for row in uploads if row["video_id"]]
+    if not ids:
+        return []
+    videos = service.videos().list(part="snippet,status,processingDetails", id=",".join(ids)).execute().get("items", [])
+    return [
+        {"video_id": row["id"], "title": row["snippet"].get("title", ""),
+         "description": row["snippet"].get("description", ""),
+         "published_at": row["snippet"].get("publishedAt", "")}
+        for row in videos
+        if row.get("status", {}).get("privacyStatus") == "public"
+        and (row.get("status", {}).get("uploadStatus") == "processed"
+             or row.get("processingDetails", {}).get("processingStatus") == "succeeded")
+    ]
 
 
 def _sync_remote_sources(uploads: list[dict[str, str]], store: Store) -> None:
@@ -286,6 +300,16 @@ def main() -> int:
 
     tz = ZoneInfo(os.getenv("TIMEZONE", "America/Sao_Paulo"))
     now = datetime.now(tz)
+    if now.hour in (0, 1):
+        try:
+            uploads = _recent_uploads(_youtube_service())
+            yesterday = now.date() - timedelta(days=1)
+            _alert_posting_gap(
+                datetime.combine(yesterday, clock_time(23, 59), tzinfo=tz),
+                current=_shorts_today(uploads, tz, yesterday), target=0, return_code=0,
+            )
+        except Exception:
+            LOG.exception("Could not verify yesterday's Shorts; no absence alert sent")
     target = expected_posts(now)
     if target == 0:
         LOG.info("No publishing slot is due yet")
@@ -348,12 +372,6 @@ def main() -> int:
         LOG.info("Local fallback publication verified on YouTube (%d/%d)", verified, target)
         return 0
     LOG.error("Local fallback did not produce a verified YouTube Short")
-    _alert_posting_gap(
-        datetime.now(tz),
-        current=verified,
-        target=target,
-        return_code=return_code or 3,
-    )
     return return_code or 3
 
 

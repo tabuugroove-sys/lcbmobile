@@ -5,11 +5,12 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from zoneinfo import ZoneInfo
 
 from scripts.local_backup_runner import (
     _alert_posting_gap,
+    _recent_uploads,
     _run_pipeline,
     _shorts_today,
     expected_posts,
@@ -21,6 +22,21 @@ from scripts.local_backup_runner import (
 class LocalBackupRunnerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tz = ZoneInfo("America/Sao_Paulo")
+
+    def test_counts_only_public_processed_uploads(self) -> None:
+        service = Mock()
+        service.channels.return_value.list.return_value.execute.return_value = {"items": [{
+            "id": "UC-TFUUc4YHleNoIFXBVaj7A", "contentDetails": {"relatedPlaylists": {"uploads": "playlist"}}
+        }]}
+        service.playlistItems.return_value.list.return_value.execute.return_value = {"items": [
+            {"snippet": {"resourceId": {"videoId": str(i)}}} for i in range(3)
+        ]}
+        service.videos.return_value.list.return_value.execute.return_value = {"items": [
+            {"id": "0", "snippet": {"title": "News #Shorts"}, "status": {"privacyStatus": "public", "uploadStatus": "processed"}},
+            {"id": "1", "snippet": {}, "status": {"privacyStatus": "private", "uploadStatus": "processed"}},
+            {"id": "2", "snippet": {}, "status": {"privacyStatus": "public", "uploadStatus": "uploaded"}},
+        ]}
+        self.assertEqual([r["video_id"] for r in _recent_uploads(service)], ["0"])
 
     def _at(self, hour: int, minute: int) -> datetime:
         return datetime(2026, 8, 31, hour, minute, tzinfo=self.tz)
@@ -93,16 +109,17 @@ class LocalBackupRunnerTests(unittest.TestCase):
             return_value=True,
         ) as notify:
             first = _alert_posting_gap(
-                self._at(13, 45), current=1, target=2, return_code=3
+                self._at(23, 59), current=0, target=0, return_code=0
             )
             second = _alert_posting_gap(
-                self._at(13, 50), current=1, target=2, return_code=3
+                self._at(23, 59), current=0, target=0, return_code=0
             )
 
         self.assertTrue(first)
         self.assertFalse(second)
         notify.assert_called_once()
-        self.assertIn("YouTube Shorts today: 1/2", notify.call_args.args[0])
+        self.assertIn("no YouTube Shorts", notify.call_args.args[0])
+        self.assertEqual(notify.call_args.kwargs["kind"], "no_shorts_today")
 
     def test_failed_alert_delivery_is_retried(self) -> None:
         with TemporaryDirectory() as temp_dir, patch(
@@ -113,15 +130,21 @@ class LocalBackupRunnerTests(unittest.TestCase):
             side_effect=[False, True],
         ) as notify:
             first = _alert_posting_gap(
-                self._at(20, 45), current=2, target=3, return_code=124
+                self._at(23, 59), current=0, target=0, return_code=0
             )
             second = _alert_posting_gap(
-                self._at(20, 50), current=2, target=3, return_code=124
+                self._at(23, 59), current=0, target=0, return_code=0
             )
 
         self.assertFalse(first)
         self.assertTrue(second)
         self.assertEqual(notify.call_count, 2)
+
+    def test_quota_misses_and_incomplete_days_do_not_alert(self) -> None:
+        with patch("scripts.local_backup_runner.notify_urgent") as notify:
+            self.assertFalse(_alert_posting_gap(self._at(23, 59), current=1, target=3, return_code=3))
+            self.assertFalse(_alert_posting_gap(self._at(19, 45), current=0, target=3, return_code=3))
+        notify.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -124,8 +124,11 @@ def notify(text: str) -> None:
     _run(_send(text))
 
 
-def notify_urgent(text: str) -> bool:
+def notify_urgent(text: str, *, kind: str | None = None) -> bool:
     """Send an audible urgent alert, falling back to the normal notify bot."""
+    if kind not in {"no_shorts_today", "short_static_visual"}:
+        log.info("Suppressed urgent notification: kind=%s", kind)
+        return False
     targets = _urgent_targets()
     if not targets:
         log.error("No urgent or notify Telegram bot target is configured")

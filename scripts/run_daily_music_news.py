@@ -18,7 +18,6 @@ from src.analytics import refresh_youtube_metrics, select_best_candidates
 from src.config import ROOT, settings
 from src.editorial.music_filter import find_music_act_query, is_music_news
 from src.models import NewsItem
-from src.notify import notify_urgent
 from src.processor.ai_writer import rewrite
 from src.publisher.youtube import YouTubePublisher
 from src.scraper.music_daily import collect_daily_music_news
@@ -94,7 +93,7 @@ def candidates_for_day(items: list[NewsItem], edition: str, store: Store, previo
         key = item.content_hash()
         if key in seen or store.already_published(item.fingerprint(), PLATFORM) or store.already_published_by_content(key, PLATFORM):
             continue
-        if not find_music_act_query(f"{item.title} {item.summary}"):
+        if not find_music_act_query(item.title):
             continue
         seen.add(key)
         candidates.append(item)
@@ -106,7 +105,7 @@ def prepare_stories(candidates: list[NewsItem], store: Store, edition: str, fold
     stories, artists = {}, set()
 
     def eligible(item: NewsItem) -> bool:
-        artist = find_music_act_query(f"{item.title} {item.summary}")
+        artist = find_music_act_query(item.title)
         if not artist or artist.casefold() in artists:
             return False
         key = item.content_hash()
@@ -131,7 +130,7 @@ def prepare_stories(candidates: list[NewsItem], store: Store, edition: str, fold
                     seen_sources.add(asset.source_page)
             coverage = sum(b - a for row in usable for a, b in row["reviewed_ranges"])
             # Generous budget at the relaxed voice speed; exact coverage is checked again after TTS.
-            required = max(40.0, len(post.script_voiceover.split()) / (1.7 * settings.elevenlabs_speed) + 8)
+            required = max(40.0, len(post.script_voiceover.split()) / (2.0 * settings.elevenlabs_speed) + 4)
             if len(usable) < 2 or coverage < required:
                 log.warning("Trying another story: %s has %d sources / %.1fs reviewed footage", artist, len(usable), coverage)
                 return False
@@ -143,16 +142,17 @@ def prepare_stories(candidates: list[NewsItem], store: Store, edition: str, fold
             log.warning("Media preparation failed for %s: %s", artist, exc)
             return False
 
-    selected = select_best_candidates(candidates, store, limit=5, stage="daily_music_news", eligibility=eligible)
-    if len(selected) < 5:
-        raise RuntimeError(f"Only {len(selected)} of 5 music stories have sufficient artist footage; choosing new candidates on retry")
+    target = max(4, min(5, int(os.getenv("DAILY_MUSIC_STORY_LIMIT", "5"))))
+    selected = select_best_candidates(candidates, store, limit=target, stage="daily_music_news", eligibility=eligible)
+    if len(selected) < 4:
+        raise RuntimeError(f"Only {len(selected)} music stories have sufficient artist footage; requires at least 4")
     return [stories[item.fingerprint()] for item in selected]
 
 
 def metadata(stories: list[dict], edition: str, chapters: list[dict]) -> dict:
     headline = stories[0]["headline"][:52]
-    title = f"{headline} | Radar Musical {edition[8:10]}/{edition[5:7]} | 5 noticias"
-    lines = [f"Cinco noticias musicais em pauta. {marker(edition)}", ""]
+    title = f"{headline} | Radar Musical {edition[8:10]}/{edition[5:7]} | {len(stories)} noticias"
+    lines = [f"{len(stories)} noticias musicais em pauta. {marker(edition)}", ""]
     for chapter in chapters:
         minutes, seconds = divmod(int(chapter["start"]), 60)
         lines.append(f"{minutes:02d}:{seconds:02d} {chapter['artist']}: {chapter['headline']}")
@@ -352,7 +352,6 @@ def main() -> None:
             return
         except Exception as exc:
             log.exception("Daily edition %s attempt %d failed", edition, attempt)
-            notify_urgent(f"LCB daily 16:9 {edition}: attempt {attempt}/{attempts} failed. {str(exc)[:600]}")
             if attempt == attempts:
                 raise
             time.sleep(settings.retry_delay_seconds)
