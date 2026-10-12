@@ -193,15 +193,42 @@ def overlay(story: dict, index: int, edition: str, folder: Path) -> Path:
     return path
 
 
+def full_track_lengths(lengths: list[float], capacities: list[float], minimum: float) -> list[float]:
+    """Extend cuts only with unused reviewed footage, sharing the music tail."""
+    result = list(lengths)
+    remaining = max(0.0, minimum - sum(result))
+    while remaining > .001:
+        available = [i for i in range(len(result)) if capacities[i] - result[i] > .001]
+        if not available:
+            raise RuntimeError("Not enough reviewed footage for the complete music track")
+        share = remaining / len(available)
+        for i in available:
+            addition = min(share, capacities[i] - result[i])
+            result[i] += addition
+            remaining -= addition
+    return result
+
+
 def render(stories: list[dict], edition: str, folder: Path) -> Path:
     from imageio_ffmpeg import get_ffmpeg_exe
 
     folder = folder.resolve()
     parts, chapters, timeline, cues = [], [], [], []
+    music = settings.background_music_path
+    music_enabled = settings.background_music_volume > 0
+    if music_enabled and not music.exists():
+        raise RuntimeError("Daily music track is missing")
+    lengths = [duration(folder / f"voice-{s['id']}.mp3") + .35 for s in stories]
+    if music_enabled:
+        capacities = [sum(b-a for asset in s["assets"] for a,b in asset["reviewed_ranges"]) for s in stories]
+        try:
+            lengths = full_track_lengths(lengths, capacities, duration(music) + .05)
+        except RuntimeError as exc:
+            raise RuntimeError(f"{', '.join(s['artist'] for s in stories)}: {exc}") from exc
     cursor = 0.0
     for index, story in enumerate(stories):
         audio = folder / f"voice-{story['id']}.mp3"
-        length = duration(audio) + .35
+        length = lengths[index]
         try:
             shots = plan_shots(story["assets"], length)
         except RuntimeError as exc:
@@ -252,15 +279,16 @@ def render(stories: list[dict], edition: str, folder: Path) -> Path:
     joined, final = folder / "joined.mp4", folder / f"radar-musical-{edition}-16x9.mp4"
     run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(joined)], folder)
     music_args, audio_filter, audio_map = [], [], "0:a"
-    music = settings.background_music_path
     if settings.background_music_volume > 0 and music.exists():
         def mean_db(path: Path) -> float:
             result = run(["ffmpeg", "-v", "info", "-i", str(path), "-vn", "-af", "volumedetect", "-f", "null", "-"], folder)
             return float(re.search(r"mean_volume: (-?[0-9.]+) dB", result.stderr).group(1))
         gain = 10 ** ((mean_db(joined) - mean_db(music) + settings.background_music_db_under_voice) / 20) * settings.background_music_volume
-        music_args = ["-i", str(music)]
-        audio_filter = ["-filter_complex", f"[1:a]volume={gain:.6f},afade=t=out:st={max(0, duration(music)-2):.3f}:d=2,apad[music];"
-                        "[0:a][music]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"]
+        music_args = ["-stream_loop", "-1", "-i", str(music)]
+        fade_start = max(duration(music), cursor - 2)
+        fade_length = max(.01, cursor - fade_start)
+        audio_filter = ["-filter_complex", f"[1:a]volume={gain:.6f},afade=t=out:st={fade_start:.6f}:d={fade_length:.6f}[music];"
+                        "[0:a][music]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=false[a]"]
         audio_map = "[a]"
     # Relative ASS path avoids Windows drive-letter/filter escaping issues.
     run([get_ffmpeg_exe(), "-v", "error", "-y", "-i", str(joined), *music_args,
@@ -298,7 +326,14 @@ def review(video: Path, stories: list[dict], timeline: list[dict], folder: Path)
               "voice_provider": "elevenlabs", "voice_ids": sorted({
                   json.loads((folder / f"alignment-{s['id']}.json").read_text()).get("voice_id", "cached_fixture")
                   for s in stories}), "language": "pt-BR",
-              "background_music_ratio": settings.background_music_volume, "background_music_loops": False}
+              "background_music_ratio": settings.background_music_volume, "background_music_loops": settings.background_music_volume > 0}
+    if settings.background_music_volume > 0 and settings.background_music_path.exists():
+        music = settings.background_music_path
+        report["background_music_sha256"] = hashlib.sha256(music.read_bytes()).hexdigest()
+        report["background_music_duration"] = duration(music)
+        report["background_music_complete_pass"] = duration(video) + .02 >= duration(music)
+        if not report["background_music_complete_pass"]:
+            raise RuntimeError("Daily video truncates the full music track")
     save(folder / "qa-report.json", report)
     sheet = Image.new("RGB", (1440, math.ceil(len(timeline) / 3) * 298), "#171717")
     draw, font = ImageDraw.Draw(sheet), ImageFont.truetype(font_file(), 18)

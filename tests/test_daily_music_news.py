@@ -15,7 +15,7 @@ from src.models import NewsItem
 from src.publisher.youtube import YouTubePublisher
 from src.scraper.music_daily import _article_schema, clean_title
 from src.storage import Store
-from src.video.horizontal_news import plan_shots, subtitle_cues
+from src.video.horizontal_news import full_track_lengths, plan_shots, subtitle_cues
 from bs4 import BeautifulSoup
 
 
@@ -103,6 +103,21 @@ def test_subtitles_use_real_character_timestamps():
     cues = subtitle_cues(data, 60)
     assert cues[0] == (60, 61.7, "Uma noticia real.")
     assert cues[1][0] == 61.8
+
+
+def test_full_track_keeps_complete_music_without_looping_video():
+    lengths = full_track_lengths([40] * 5, [60] * 5, 221.05)
+    assert sum(lengths) == pytest.approx(221.05)
+    assert all(x == pytest.approx(44.21) for x in lengths)
+    assert full_track_lengths([50] * 5, [60] * 5, 221.05) == [50] * 5
+
+
+def test_full_track_redistributes_tail_when_one_story_has_no_spare_footage():
+    lengths = full_track_lengths([40] * 5, [40, 50, 50, 50, 50], 221.05)
+    assert lengths[0] == 40
+    assert sum(lengths) == pytest.approx(221.05)
+    with pytest.raises(RuntimeError, match="reviewed footage"):
+        full_track_lengths([40] * 5, [41] * 5, 221.05)
 
 
 def test_views_growth_history_excludes_long_and_preserves_format(tmp_path):

@@ -41,6 +41,7 @@ assets/generated/
 *.mp3
 !assets/audio/
 !assets/audio/travel_todos_momentos.wav
+!assets/audio/primeira_classe_extended.wav
 *.png
 !assets/template.png
 !assets/logo.png

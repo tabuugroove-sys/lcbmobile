@@ -163,6 +163,8 @@ def metadata(stories: list[dict], edition: str, chapters: list[dict]) -> dict:
     for story in stories:
         for asset in story["assets"]:
             lines.append(f"{story['artist']} / {asset['creator'][:60]}: {asset['source_page']}")
+    if settings.background_music_volume > 0 and settings.background_music_path.name == "primeira_classe_extended.wav":
+        lines += ["", "Musica de fundo: Primeira Classe (extended) - TABUU."]
     lines += ["", "#NoticiasMusicais #MusicaBrasileira"]
     return {"title": title[:100], "description": "\n".join(lines)[:4900],
             "categoryId": "10", "defaultLanguage": "pt-BR", "defaultAudioLanguage": "pt-BR",
@@ -263,6 +265,16 @@ def run_edition(store: Store, edition: str, folder: Path, publish: bool, preflig
         save(package, {"edition": edition, "stories": stories})
     prepare_voice(stories, folder)
     video = folder / f"radar-musical-{edition}-16x9.mp4"
+    qa_file = folder / "qa-report.json"
+    if video.exists() and qa_file.exists() and settings.background_music_volume > 0:
+        music = settings.background_music_path
+        previous = json.loads(qa_file.read_text())
+        if (not music.exists() or not previous.get("background_music_complete_pass")
+                or previous.get("background_music_sha256") != hashlib.sha256(music.read_bytes()).hexdigest()
+                or previous.get("background_music_ratio") != settings.background_music_volume):
+            suffix = time.time_ns()
+            video.replace(folder / f"before-full-track-{suffix}.mp4")
+            qa_file.replace(folder / f"before-full-track-{suffix}.json")
     if not video.exists() or not (folder / "qa-report.json").exists():
         try:
             video = render(stories, edition, folder)
