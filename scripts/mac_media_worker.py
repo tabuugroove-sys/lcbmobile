@@ -33,9 +33,9 @@ class CloudTransport:
         script = "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); " + script
         encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", self.host,
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=15", self.host,
              f"powershell -NoProfile -NonInteractive -EncodedCommand {encoded}"],
-            capture_output=True, text=True, timeout=30, check=True,
+            capture_output=True, text=True, timeout=90, check=True,
         )
         return result.stdout.strip()
 
@@ -106,7 +106,7 @@ def process_request(request: dict, transport: CloudTransport) -> bool:
     videos = fetch_youtube_artist_videos(
         artist, ROOT / "data" / "mac_media_worker" / key,
         max_videos=min(2, max(1, int(request.get("max_videos", 1)))),
-        search_query=f"{artist} ao vivo entrevista oficial" if profile else f"{artist} red carpet interview",
+        search_query=f"{artist} ao vivo entrevista oficial" if profile else f"{artist} ao vivo entrevista shorts",
         section_seconds=90 if profile else 30,
         excluded_sources={str(s) for s in request.get("excluded_sources", [])[:25]},
         min_aspect_ratio=1.55 if profile else 0,

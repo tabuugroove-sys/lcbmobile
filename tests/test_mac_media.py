@@ -129,8 +129,16 @@ def test_worker_uses_editorial_query_and_never_publishes_a_post(monkeypatch):
     transport = mock.Mock()
     request = {"artist": "rihanna", "key": mac_media.artist_key("rihanna"), "requested_at": stamp()}
     assert mac_media_worker.process_request(request, transport)
-    assert download.call_args.kwargs["search_query"] == "rihanna red carpet interview"
+    assert download.call_args.kwargs["search_query"] == "rihanna ao vivo entrevista shorts"
     transport.publish.assert_called_once_with("rihanna", [mock.sentinel.video], requested_at=request["requested_at"])
+
+
+def test_transport_allows_slow_server_without_unbounded_wait(monkeypatch):
+    command = mock.Mock(return_value=mock.Mock(stdout="ready"))
+    monkeypatch.setattr(mac_media_worker.subprocess, "run", command)
+    assert mac_media_worker.CloudTransport().command("Write-Output ready") == "ready"
+    assert command.call_args.kwargs["timeout"] == 90
+    assert "ServerAliveInterval=15" in command.call_args.args[0]
 
 
 def test_cookie_export_excludes_every_other_site(monkeypatch, tmp_path):

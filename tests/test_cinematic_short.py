@@ -609,6 +609,28 @@ class SceneRenderTests(unittest.TestCase):
         self.assertEqual(right.size, (760, 1050))
         self.assertLess(left.getpixel((380, 525))[0], right.getpixel((380, 525))[0])
 
+    def test_photo_scenes_fill_screen_without_card_or_cutout(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            photo = root / "photo.png"
+            Image.new("RGB", (800, 1000), (20, 90, 160)).save(photo)
+            media = LicensedImage(
+                path=str(photo), title="Artist", creator="Test", license="CC0",
+                license_url="https://example.com/license", source_page="https://example.com/photo",
+                source_url="https://example.com/photo.png", width=800, height=1000,
+            )
+            for index in (0, 1, 2):
+                output = _make_scene(
+                    index=index, count=4, headline="NOTICIA", subtitle="Texto",
+                    source_name="Test", media=media,
+                    cutout=Image.new("RGBA", (100, 100), "red"),
+                    credits="", output=root / f"scene-{index}.jpg",
+                )
+                with Image.open(output) as scene:
+                    self.assertEqual(scene.size, (WIDTH, HEIGHT))
+                    for point in ((10, 300), (WIDTH - 10, 300), (10, 1000), (WIDTH - 10, 1000)):
+                        self.assertTrue(all(abs(a-b) <= 3 for a,b in zip(scene.getpixel(point), (20, 90, 160))))
+
     def test_reference_style_requires_multiple_verified_visuals(self) -> None:
         news = type(
             "Item",

@@ -712,10 +712,6 @@ def _make_scene(
     output: Path,
 ) -> Path:
     accent = ACCENTS[index % len(ACCENTS)]
-    canvas = _gradient(accent)
-    _add_filmstrip(canvas, accent)
-    draw = ImageDraw.Draw(canvas, "RGBA")
-
     source_image: Image.Image | None = None
     if media:
         try:
@@ -724,60 +720,18 @@ def _make_scene(
             log.warning("Cannot open licensed media %s: %s", media.path, exc)
 
     if source_image:
-        background = _fit_cover(source_image, (WIDTH, HEIGHT), 0.4)
-        background = ImageEnhance.Color(background).enhance(0.50)
-        background = background.filter(ImageFilter.GaussianBlur(24)).convert("RGBA")
-        background.putalpha(105)
-        canvas.alpha_composite(background)
-    draw.rectangle((0, 0, WIDTH, HEIGHT), fill=(4, 4, 9, 62))
-
-    layout = "cutout" if cutout is not None and index == 1 else ("card" if index % 2 else "full")
-    if layout == "cutout" and cutout is not None:
-        person = cutout.copy()
-        target_height = 1330
-        ratio = target_height / person.height
-        person = person.resize(
-            (round(person.width * ratio), target_height), Image.Resampling.LANCZOS
+        canvas = _fit_cover(
+            source_image, (WIDTH, HEIGHT), 0.28, 0.45 if index % 2 else 0.55
+        ).convert("RGBA")
+        shade = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+        ImageDraw.Draw(shade, "RGBA").rectangle(
+            (0, 1240, WIDTH, HEIGHT), fill=(4, 4, 9, 125)
         )
-        if person.width > 1000:
-            ratio = 1000 / person.width
-            person = person.resize(
-                (1000, round(person.height * ratio)), Image.Resampling.LANCZOS
-            )
-        alpha = person.getchannel("A")
-        shadow = Image.new("RGBA", person.size, (0, 0, 0, 190))
-        shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(14)))
-        x = WIDTH - person.width + 70
-        y = 270
-        canvas.alpha_composite(shadow, (x + 20, y + 28))
-        canvas.alpha_composite(person, (x, y))
-    elif source_image and layout == "card":
-        picture = _fit_cover(source_image, (760, 1050), 0.34, 0.32)
-        card = Image.new("RGBA", (820, 1110), (248, 246, 242, 255))
-        card.alpha_composite(picture.convert("RGBA"), (30, 30))
-        card = card.rotate(
-            -2.0 if index % 4 == 1 else 2.0,
-            expand=True,
-            resample=Image.Resampling.BICUBIC,
-        )
-        shadow = Image.new("RGBA", card.size, (0, 0, 0, 170)).filter(
-            ImageFilter.GaussianBlur(18)
-        )
-        canvas.alpha_composite(shadow, ((WIDTH - card.width) // 2 + 20, 330))
-        canvas.alpha_composite(card, ((WIDTH - card.width) // 2, 300))
-    elif source_image:
-        picture = _fit_cover(source_image, (860, 1180), 0.34, 0.68)
-        x, y = 110, 245
-        shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-        ImageDraw.Draw(shadow).rounded_rectangle(
-            (x + 20, y + 28, x + 880, y + 1208), 22, fill=(0, 0, 0, 150)
-        )
-        canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(20)))
-        canvas.alpha_composite(picture.convert("RGBA"), (x, y))
-        draw.rounded_rectangle(
-            (x, y, x + 860, y + 1180), 18, outline=(255, 255, 255, 185), width=5
-        )
+        canvas.alpha_composite(shade)
     else:
+        canvas = _gradient(accent)
+        _add_filmstrip(canvas, accent)
+        draw = ImageDraw.Draw(canvas, "RGBA")
         draw.ellipse((180, 310, 900, 1030), outline=accent, width=18)
         draw.ellipse((250, 380, 830, 960), outline=(255, 255, 255, 34), width=3)
 
@@ -808,7 +762,7 @@ def _make_scene(
     headline_lines = _headline_lines(headline)
     headline_font = _fit_headline_font(headline_lines, draw, narrow_path, 930)
     line_height = getattr(headline_font, "size", 60) + 10
-    title_y = 820 - (len(headline_lines) - 1) * line_height // 2
+    title_y = (1380 if source_image else 820) - (len(headline_lines) - 1) * line_height // 2
     for line_no, line in enumerate(headline_lines[:3]):
         _draw_centered(
             draw,
@@ -999,14 +953,7 @@ def _make_hook_scene(
     bold_path = _find_font(DEFAULT_FONT_CANDIDATES)
     narrow_path = _find_font(CONDENSED_FONT_CANDIDATES) or bold_path
 
-    card_x, card_y, card_w, card_h = 54, 300, 972, 1080
-    draw.rounded_rectangle(
-        (card_x - 8, card_y - 8, card_x + card_w + 8, card_y + card_h + 8),
-        26,
-        fill=(0, 0, 0, 155),
-        outline=(255, 255, 255, 100),
-        width=3,
-    )
+    card_x, card_y, card_w, card_h = 0, 0, WIDTH, HEIGHT
     left = _fit_hook_panel(
         images[0],
         (card_w // 2, card_h),
@@ -1306,6 +1253,7 @@ def resolve_visual_media(
                 artist_query,
                 base / "youtube_video",
                 max_videos=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
+                search_query=f"{artist_query} ao vivo entrevista shorts",
             )
             if not youtube_videos:
                 youtube_videos = fetch_mac_artist_videos(
