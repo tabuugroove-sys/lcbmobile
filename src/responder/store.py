@@ -13,6 +13,15 @@ from pathlib import Path
 from typing import Iterator
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS comment_queue (
+    comment_id TEXT PRIMARY KEY,
+    video_id TEXT NOT NULL,
+    parent_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    author TEXT NOT NULL,
+    text TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS replied_comments (
     comment_id  TEXT PRIMARY KEY,
     video_id    TEXT NOT NULL,
@@ -24,6 +33,7 @@ CREATE TABLE IF NOT EXISTS replied_comments (
 """
 
 RETRYABLE_REASON_PREFIXES = (
+    "minimax error:",
     "anthropic error:",
     "gemini error:",
     "no llm available",
@@ -36,6 +46,9 @@ class CommentStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as conn:
             conn.executescript(SCHEMA)
+            columns = {r[1] for r in conn.execute('PRAGMA table_info(comment_queue)')}
+            if 'thread_id' not in columns:
+                conn.execute("ALTER TABLE comment_queue ADD COLUMN thread_id TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -96,3 +109,24 @@ class CommentStore:
                 (today,),
             ).fetchone()
             return int(row[0]) if row else 0
+
+    def enqueue(self, comment: dict) -> None:
+        if self.is_handled(comment["comment_id"]):
+            return
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO comment_queue (comment_id,video_id,parent_id,thread_id,author,text,context)
+                   VALUES (:comment_id,:video_id,:parent_id,:thread_id,:author,:text,:context)
+                   ON CONFLICT(comment_id) DO UPDATE SET text=excluded.text,
+                   author=excluded.author,context=excluded.context,thread_id=excluded.thread_id""", comment,
+            )
+
+    def pending(self) -> list[dict]:
+        with self._conn() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM comment_queue ORDER BY rowid").fetchall()
+        return [dict(r) for r in rows if not self.is_handled(r['comment_id'])]
+
+    def dequeue(self, comment_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM comment_queue WHERE comment_id=?", (comment_id,))

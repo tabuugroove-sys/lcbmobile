@@ -149,14 +149,24 @@ def run_comment_responder(*, dry_run: bool = False) -> dict[str, int]:
 
     service = _service()
     if service is None:
+        if os.getenv("COMMENT_SCAN_ALL", "false").lower() == "true":
+            raise RuntimeError("Full-channel responder requires valid youtube.force-ssl OAuth")
         notify("⚠️ Comment responder: sem token YouTube valido (force-ssl).")
         return stats
 
     ctx = _channel_context(service)
     if not ctx:
+        if os.getenv("COMMENT_SCAN_ALL", "false").lower() == "true":
+            raise RuntimeError("Full-channel responder cannot resolve its channel")
         log.error("Comment responder: could not resolve channel")
         return stats
     our_channel_id, uploads_playlist = ctx
+    expected = os.getenv("YOUTUBE_EXPECTED_CHANNEL_ID", "UC-TFUUc4YHleNoIFXBVaj7A")
+    if our_channel_id != expected:
+        raise RuntimeError("Comment responder: unexpected YouTube channel")
+    if os.getenv("COMMENT_SCAN_ALL", "false").lower() == "true":
+        from .full_channel import respond_all
+        return respond_all(service, store, our_channel_id, dry_run=dry_run)
 
     already_today = store.replied_count_today()
     budget = max(0, min(max_per_run, daily_cap - already_today))
@@ -198,7 +208,7 @@ def run_comment_responder(*, dry_run: bool = False) -> dict[str, int]:
             if not decision["should_reply"]:
                 reason = str(decision["reason"] or "")
                 generation_failed = reason.casefold().startswith(
-                    ("anthropic error:", "gemini error:", "no llm available")
+                    ("anthropic error:", "gemini error:", "minimax error:", "no llm available")
                 )
                 if generation_failed:
                     stats["errors"] += 1

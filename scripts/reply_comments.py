@@ -36,6 +36,10 @@ def main(dry_run: bool, verbose: bool) -> None:
         f"replied={stats['replied']} skipped={stats['skipped']} "
         f"errors={stats['errors']}"
     )
+    if 'queued' in stats:
+        click.echo(f"queued={stats['queued']}")
+    if stats['errors']:
+        raise click.exceptions.Exit(1)
 
 
 if __name__ == "__main__":
