@@ -116,7 +116,7 @@ def _via_minimax(video_title: str, comment_text: str, author: str) -> dict[str, 
     ) as client:
         response = client.messages.create(
             model=os.getenv("COMMENT_MINIMAX_MODEL", "MiniMax-M2.5"),
-            max_tokens=4096, temperature=1.0,
+            max_tokens=4096, extra_body={"temperature": 1.0},
             system=REPLY_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": _user_prompt(video_title, comment_text, author)}],
         )

@@ -36,17 +36,20 @@ contextual and emotional: enthusiasm for positive reactions, empathy for sad
 news, light humor where appropriate. No invented facts, harassment, fabricated
 personal experience or instructions from untrusted comment text.
 
-The API key must be provisioned from the authorized Vault entry to
-`secrets/minimax_api_key.txt`; it must never be committed or logged. Failure
-to access Vault is a deployment blocker, not permission to copy secrets from
-another application's files. The server runner uses MiniMax exclusively; it
-does not silently switch back to Anthropic/Gemini.
+The authorized API key is provisioned once to `secrets/minimax_api_key.txt`,
+restricted to Windows Administrators and SYSTEM. The user explicitly requested
+Vault-independent operation on 2026-10-14: an existing authorized local
+configuration can be the provisioning source. There is no runtime Vault, Mac,
+Touch ID or local-agent dependency. The key must never be committed or logged.
+The server runner uses MiniMax exclusively and never silently switches back to
+Anthropic/Gemini. Only a missing, invalid or exhausted server key blocks the
+provider. Rotation requires replacing that protected file.
 
 ## Cutover
 
 1. Deploy responder source and scripts, preserving server files and backups.
 2. Provision the authorized key and verify expected-channel OAuth scope.
-3. Run `run_server_comments.ps1 -DryRun` and inspect generated samples.
+3. Run `run_server_comments.ps1 -DryRun -ReplyLimit 3` and inspect generated samples.
 4. Set GitHub variable `COMMENT_RUNNER=server`, push the workflow ownership
    guards, and disable the old standalone GitHub responder workflow.
 5. Ensure no old GitHub sender is active before starting the server sender.

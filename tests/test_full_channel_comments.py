@@ -135,6 +135,7 @@ class FullCommentsTests(unittest.TestCase):
         self.assertEqual(payload['reply'], 'Que alegria!')
         self.assertEqual(client.call_args.kwargs['base_url'], 'https://api.minimax.io/anthropic')
         self.assertGreater(api.messages.create.call_args.kwargs['max_tokens'], 300)
+        self.assertEqual(api.messages.create.call_args.kwargs['extra_body'], {'temperature':1.0})
 
 
 if __name__ == '__main__':

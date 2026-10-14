@@ -1,4 +1,4 @@
-param([switch]$DryRun)
+param([switch]$DryRun, [ValidateRange(1, 100)][int]$ReplyLimit = 40)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $root = 'C:\lcbmobile-news'
@@ -11,9 +11,12 @@ $env:COMMENTS_DB_PATH = "$root\data\comments.db"
 $env:COMMENT_REPLY_PROVIDER = 'minimax'
 $env:COMMENT_MINIMAX_MODEL = 'MiniMax-M2.5'
 $env:MINIMAX_BASE_URL = 'https://api.minimax.io/anthropic'
-$env:MINIMAX_API_KEY = (Get-Content "$root\secrets\minimax_api_key.txt" -Raw).Trim()
+$keyFile = "$root\secrets\minimax_api_key.txt"
+if (-not (Test-Path $keyFile)) { throw 'MiniMax server key is missing; provision secrets/minimax_api_key.txt. Vault is not required.' }
+$env:MINIMAX_API_KEY = (Get-Content $keyFile -Raw).Trim()
+if (-not $env:MINIMAX_API_KEY) { throw 'MiniMax server key is empty.' }
 $env:COMMENT_SCAN_ALL = 'true'
-$env:COMMENT_MAX_PER_RUN = '40'
+$env:COMMENT_MAX_PER_RUN = "$ReplyLimit"
 $env:COMMENT_REPLY_DELAY_SECONDS = '5'
 $env:COMMENT_DRY_RUN = 'false'
 New-Item -ItemType Directory -Force "$root\logs" | Out-Null
@@ -24,8 +27,11 @@ try {
     if (-not $held) { exit 0 }
     $flags = @()
     if ($DryRun) { $flags += '--dry-run' }
-    & "$root\.venv\Scripts\python.exe" -m scripts.reply_comments @flags *>> "$root\logs\comment-responder.log"
-    $code = $LASTEXITCODE
+    $ErrorActionPreference = 'Continue'
+    try {
+        & "$root\.venv\Scripts\python.exe" -m scripts.reply_comments @flags *>> "$root\logs\comment-responder.log"
+        $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = 'Stop' }
 } finally {
     if ($held) { $mutex.ReleaseMutex() }
     $mutex.Dispose()
