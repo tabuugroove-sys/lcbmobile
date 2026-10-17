@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ from src.publisher.youtube import YouTubePublisher
 from src.scraper.music_daily import _article_schema, clean_title
 from src.storage import Store
 from src.video.horizontal_news import full_track_lengths, plan_shots, subtitle_cues
+from src.video.youtube_media import YOUTUBE_LICENSE
 from bs4 import BeautifulSoup
 
 
@@ -80,6 +82,51 @@ def test_four_stories_are_publishable_and_metadata_does_not_claim_five(tmp_path)
     details = daily.metadata(stories, "2026-10-12", [])
     assert "4 noticias" in details["title"]
     assert details["description"].startswith("4 noticias")
+
+
+def description_story(license_name=YOUTUBE_LICENSE):
+    return {"artist": "roberto carlos", "headline": "Noticia musical",
+            "item": {"url": "https://example.com/news"},
+            "assets": [{"creator": "Primer Impacto", "title": "Entrevista",
+                        "license": license_name,
+                        "license_url": "https://creativecommons.org/licenses/by/3.0/",
+                        "source_page": "https://www.youtube.com/watch?v=cAdJBnM2TD0"}]}
+
+
+def test_spotify_replaces_optional_youtube_reference_list():
+    music = replace(daily.settings, background_music_volume=.25,
+                    background_music_path=Path("primeira_classe_extended.wav"))
+    with patch.object(daily, "settings", music):
+        details = daily.metadata([description_story()], "2026-10-17", [])
+    description = details["description"]
+    assert daily.PRIMEIRA_CLASSE_SPOTIFY in description
+    assert "Imagens de arquivo / creditos:" not in description
+    assert "youtube.com/watch?v=cAdJBnM2TD0" not in description
+    assert "https://example.com/news" in description
+    assert "lcb-source-cAdJBnM2TD0" in details["tags"]
+
+
+@pytest.mark.parametrize("license_name", ["CC BY 3.0", "Custom permission requiring credit", ""])
+def test_compact_description_keeps_required_and_unknown_credits(license_name):
+    details = daily.metadata([description_story(license_name)], "2026-10-17", [])
+    assert "Primer Impacto" in details["description"]
+    assert "youtube.com/watch?v=cAdJBnM2TD0" in details["description"]
+    if license_name:
+        assert license_name in details["description"]
+        assert "https://creativecommons.org/licenses/by/3.0/" in details["description"]
+
+
+def test_compact_description_keeps_remote_media_dedup_without_cache():
+    details = daily.metadata([description_story()], "2026-10-16", [])
+    videos, news = daily.previous_sources([{"snippet": details}], "2026-10-17")
+    assert videos == {"https://www.youtube.com/watch?v=cAdJBnM2TD0"}
+    assert "https://example.com/news" in news
+
+
+def test_spotify_is_not_advertised_when_music_is_off():
+    with patch.object(daily, "settings", replace(daily.settings, background_music_volume=0)):
+        details = daily.metadata([description_story()], "2026-10-17", [])
+    assert "Spotify" not in details["description"]
 
 
 def test_staged_video_resumes_without_second_insert(tmp_path):

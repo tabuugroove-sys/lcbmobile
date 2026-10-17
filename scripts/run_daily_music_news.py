@@ -10,6 +10,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 from googleapiclient.http import MediaFileUpload
@@ -24,12 +25,25 @@ from src.scraper.music_daily import collect_daily_music_news
 from src.storage import Store
 from src.video.horizontal_news import prepare_voice, render, reviewed_ranges, save
 from src.video.mac_media import fetch_mac_artist_videos
-from src.video.youtube_media import fetch_youtube_artist_videos
+from src.video.youtube_media import YOUTUBE_LICENSE, fetch_youtube_artist_videos
 
 log = logging.getLogger(__name__)
 PLATFORM = "youtube_daily_multinews"
 EXPECTED_CHANNEL = "UC-TFUUc4YHleNoIFXBVaj7A"
 TZ = ZoneInfo("America/Sao_Paulo")
+SOURCE_TAG_PREFIX = "lcb-source-"
+PRIMEIRA_CLASSE_SPOTIFY = "https://open.spotify.com/track/4LBoUSn9qI1fMZBsjatd7r"
+
+
+def youtube_source_id(url: str) -> str | None:
+    parsed = urlparse(url)
+    if parsed.hostname in {"youtu.be", "www.youtu.be"}:
+        video_id = parsed.path.strip("/")
+    elif parsed.hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+        video_id = (parse_qs(parsed.query).get("v") or [parsed.path.rsplit("/", 1)[-1]])[0]
+    else:
+        return None
+    return video_id if re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id) else None
 
 
 def marker(edition: str) -> str:
@@ -74,6 +88,12 @@ def previous_sources(rows: list[dict], edition: str) -> tuple[set[str], set[str]
             continue
         for url in re.findall(r"https?://[^\s|]+", snippet.get("description", "")):
             (videos if "youtube.com/" in url or "youtu.be/" in url else news).add(url.rstrip(".,)"))
+        # Source IDs survive compact public descriptions and a cold fallback cache.
+        for tag in snippet.get("tags", []):
+            if tag.startswith(SOURCE_TAG_PREFIX):
+                video_id = tag[len(SOURCE_TAG_PREFIX):]
+                if re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+                    videos.add(f"https://www.youtube.com/watch?v={video_id}")
         # Only the most recent daily edition, not the entire channel, limits source reuse.
         break
     return videos, news
@@ -153,22 +173,36 @@ def metadata(stories: list[dict], edition: str, chapters: list[dict]) -> dict:
     headline = stories[0]["headline"][:52]
     title = f"{headline} | Radar Musical {edition[8:10]}/{edition[5:7]} | {len(stories)} noticias"
     lines = [f"{len(stories)} noticias musicais em pauta. {marker(edition)}", ""]
+    if settings.background_music_volume > 0 and settings.background_music_path.name == "primeira_classe_extended.wav":
+        lines += ["Musica de fundo: Primeira Classe (extended) - TABUU.",
+                  f"Ouca Primeira Classe no Spotify: {PRIMEIRA_CLASSE_SPOTIFY}", ""]
     for chapter in chapters:
         minutes, seconds = divmod(int(chapter["start"]), 60)
         lines.append(f"{minutes:02d}:{seconds:02d} {chapter['artist']}: {chapter['headline']}")
     lines += ["", "Narracao original em portugues. Imagens de arquivo, nao necessariamente dos eventos noticiados.", "", "Fontes:"]
     for story in stories:
         lines.append(f"{story['artist']}: {story['item']['url']}")
-    lines += ["", "Imagens de arquivo / creditos:"]
+    credits, source_tags = [], []
     for story in stories:
         for asset in story["assets"]:
-            lines.append(f"{story['artist']} / {asset['creator'][:60]}: {asset['source_page']}")
-    if settings.background_music_volume > 0 and settings.background_music_path.name == "primeira_classe_extended.wav":
-        lines += ["", "Musica de fundo: Primeira Classe (extended) - TABUU."]
+            video_id = youtube_source_id(asset["source_page"])
+            if video_id:
+                source_tags.append(f"{SOURCE_TAG_PREFIX}{video_id}")
+            # Keep attribution for CC and unknown terms. Full provenance remains
+            # in package.json; standard YouTube references need not fill the page.
+            if asset.get("license") == YOUTUBE_LICENSE and video_id:
+                continue
+            credit = f"{story['artist']} / {asset['creator'][:60]}: {asset['source_page']}"
+            if asset.get("license"):
+                credit += f" | {asset.get('title', '')} | {asset['license']} {asset.get('license_url', '')}"
+            credits.append(credit)
+    if credits:
+        lines += ["", "Creditos das imagens:", *dict.fromkeys(credits)]
     lines += ["", "#NoticiasMusicais #MusicaBrasileira"]
     return {"title": title[:100], "description": "\n".join(lines)[:4900],
             "categoryId": "10", "defaultLanguage": "pt-BR", "defaultAudioLanguage": "pt-BR",
-            "tags": ["noticias musicais", "musica brasileira"] + [s["artist"] for s in stories]}
+            "tags": list(dict.fromkeys(["noticias musicais", "musica brasileira"]
+                    + [s["artist"] for s in stories] + source_tags))}
 
 
 def publish_verified(service, video: Path | None, snippet: dict | None, edition: str, state_file: Path) -> str:
