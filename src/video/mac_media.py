@@ -11,6 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .commons_video import LicensedVideo
+from .subject import matches_subject
 
 log = logging.getLogger(__name__)
 _wait_spent = 0.0
@@ -87,7 +88,7 @@ def cached_mac_artist_videos(artist: str | None, *, max_videos: int = 2, profile
             if digest != spec.get("sha256"):
                 continue
             asset = LicensedVideo(path=str(path), **spec)
-            if asset.duration >= 8 and asset.width > 0 and asset.height > 0:
+            if asset.duration >= 8 and asset.width > 0 and asset.height > 0 and matches_subject(artist, asset.title, asset.creator):
                 assets.append(asset)
         except (OSError, KeyError, TypeError, ValueError):
             continue

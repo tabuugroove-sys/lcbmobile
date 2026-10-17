@@ -13,12 +13,13 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+from .subject import matches_subject
 
 log = logging.getLogger(__name__)
 
 API_URL = "https://commons.wikimedia.org/w/api.php"
 USER_AGENT = "LCBMobileNews/1.1 (https://github.com/tabuugroove-sys/lcbmobile)"
-MANIFEST_POLICY_VERSION = 4
+MANIFEST_POLICY_VERSION = 5
 ALLOWED_LICENSE_PREFIXES = ("CC BY ", "CC0", "Public domain")
 # Minimum accepted size on the shorter side. Lowered from 700 to 400 so that
 # smaller but still usable licensed photos are not discarded; the vertical
@@ -92,6 +93,8 @@ def _candidate(page: dict[str, object], query: str) -> dict[str, object] | None:
     if min(width, height) < MIN_SHORT_SIDE_PIXELS:
         return None
     title = str(page.get("title") or "")
+    if not matches_subject(query, title):
+        return None
     plain_title = _plain(title.removeprefix("File:").replace("_", " "))
     compact_title = plain_title.replace(" ", "")
     plain_query = _plain(query)
@@ -163,7 +166,7 @@ def fetch_licensed_artist_images(
     if manifest_path.exists():
         try:
             cached = json.loads(manifest_path.read_text(encoding="utf-8"))
-            cached_assets = [LicensedImage(**row) for row in cached.get("assets", [])]
+            cached_assets = [LicensedImage(**row) for row in cached.get("assets", []) if matches_subject(query, str(row.get('title',''))) ]
             if (
                 cached.get("query") == query
                 and cached.get("policy_version") == MANIFEST_POLICY_VERSION

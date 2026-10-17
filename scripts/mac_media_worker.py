@@ -87,7 +87,7 @@ class CloudTransport:
             })
             self.upload(path, f"{folder}/manifest.upload.json")
         self.command(f"Move-Item -Force '{folder}/manifest.upload.json' '{folder}/manifest.json'")
-        self.command(f"Remove-Item -Force '{self.root}/requests/{key}.json' -ErrorAction SilentlyContinue")
+        self.command(f"if (Test-Path '{self.root}/requests/{key}.json') {{ Remove-Item -Force '{self.root}/requests/{key}.json' }}; Write-Output 'MEDIA_READY'")
 
 
 def process_request(request: dict, transport: CloudTransport) -> bool:
@@ -108,6 +108,7 @@ def process_request(request: dict, transport: CloudTransport) -> bool:
         max_videos=min(2, max(1, int(request.get("max_videos", 1)))),
         search_query=f"{artist} ao vivo entrevista oficial" if profile else f"{artist} ao vivo entrevista shorts",
         section_seconds=90 if profile else 30,
+        max_duration=7200,
         excluded_sources={str(s) for s in request.get("excluded_sources", [])[:25]},
         min_aspect_ratio=1.55 if profile else 0,
     )

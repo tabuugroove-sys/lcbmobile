@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .commons_video import LicensedVideo
 from ..config import settings
+from .subject import matches_subject
 
 try:  # yt-dlp is optional at import time so the pipeline can run without it.
     import yt_dlp
@@ -33,7 +34,7 @@ def _source_key(value: str) -> str:
         return (parse_qs(parsed.query).get("v") or [parsed.path.strip("/").split("/")[-1]])[0]
     return value
 
-MANIFEST_POLICY_VERSION = 1
+MANIFEST_POLICY_VERSION = 2
 
 # Honest rights metadata: never pretend a random upload is CC-licensed.
 YOUTUBE_LICENSE = "YouTube standard license (reuse rights not verified)"
@@ -218,7 +219,8 @@ def _download_candidate(
     info: dict | None = None
     partial = section_seconds is not None
     attempts = [section_seconds] if partial else []
-    attempts.append(None)  # final fallback: full download
+    if not partial or float(candidate.get('duration') or 0) <= MAX_DURATION_SECONDS:
+        attempts.append(None)
     for attempt_sections in attempts:
         opts = _download_opts(outtmpl, section_seconds=attempt_sections)
         try:
@@ -229,7 +231,7 @@ def _download_candidate(
         except Exception as exc:  # noqa: BLE001
             if "sign in to confirm" in str(exc).lower():
                 raise YouTubeAuthenticationRequired("YouTube requires session verification") from exc
-            if attempt_sections is not None:
+            if attempt_sections is not None and None in attempts:
                 log.warning(
                     "Partial YouTube download failed (%s), retrying full file: %s",
                     url,
@@ -315,7 +317,7 @@ def fetch_youtube_artist_videos(
     if manifest_path.exists():
         try:
             cached = json.loads(manifest_path.read_text(encoding="utf-8"))
-            assets = [LicensedVideo(**row) for row in cached.get("assets", [])]
+            assets = [LicensedVideo(**row) for row in cached.get("assets", []) if matches_subject(artist, str(row.get('title','')), str(row.get('creator','')))]
             if (
                 cached.get("query") == artist
                 and cached.get("policy_version") == MANIFEST_POLICY_VERSION
@@ -347,6 +349,7 @@ def fetch_youtube_artist_videos(
         entry
         for entry in entries
         if entry
+        and matches_subject(artist, str(entry.get('title','')), str(entry.get('uploader') or entry.get('channel') or ''))
         and _source_key(str(entry.get("id") or entry.get("webpage_url") or entry.get("url") or "")) not in excluded_keys
         and _candidate_ok(
             entry, min_duration=min_duration, max_duration=max_duration
@@ -370,7 +373,8 @@ def fetch_youtube_artist_videos(
             authentication_required = True
             log.warning("YouTube session verification required for %r; stopping retries", artist)
             break
-        if asset is not None and asset.width / max(1, asset.height) >= min_aspect_ratio:
+        if (asset is not None and matches_subject(artist, asset.title, asset.creator)
+                and asset.width / max(1, asset.height) >= min_aspect_ratio):
             assets.append(asset)
         if len(assets) >= max_videos:
             break

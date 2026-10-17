@@ -87,9 +87,10 @@ def _script(entries, **kwargs):
 
 
 def _entry(video_id, duration, **extra):
+    artist = extra.pop('artist','Some Artist')
     entry = {
         "id": video_id,
-        "title": f"Video {video_id}",
+        "title": f"{artist} video {video_id}",
         "url": f"https://www.youtube.com/watch?v={video_id}",
         "duration": duration,
     }
@@ -98,9 +99,10 @@ def _entry(video_id, duration, **extra):
 
 
 def _info(video_id, **extra):
+    artist = extra.pop('artist','Some Artist')
     info = {
         "id": video_id,
-        "title": f"Full title {video_id}",
+        "title": f"{artist} Full title {video_id}",
         "uploader": f"Channel {video_id}",
         "webpage_url": f"https://www.youtube.com/watch?v={video_id}",
         "duration": 240.0,
@@ -128,7 +130,7 @@ def test_fetch_returns_honestly_licensed_videos(monkeypatch, tmp_path):
         assert video.license_url == YOUTUBE_LICENSE_URL
         assert video.creator == f"Channel {entry['id']}"
         assert video.source_page == entry["url"]
-        assert video.title == f"Full title {entry['id']}"
+        assert video.title == f"Some Artist Full title {entry['id']}"
         assert video.seek_seconds == 0.0
         assert video.duration == min(240.0, 30.0)  # partial 0-30s download
         assert video.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
@@ -160,7 +162,7 @@ def test_fetch_filters_duration_live_and_availability(monkeypatch, tmp_path):
 
     videos = fetch_youtube_artist_videos("some artist", tmp_path, max_videos=2)
 
-    assert [v.title for v in videos] == ["Full title good1", "Full title good2"]
+    assert [v.title for v in videos] == ["Some Artist Full title good1", "Some Artist Full title good2"]
     assert script["downloaded_urls"] == [
         "https://www.youtube.com/watch?v=good1",
         "https://www.youtube.com/watch?v=good2",
@@ -207,7 +209,7 @@ def _fake_video(path: Path, name: str) -> LicensedVideo:
     return LicensedVideo(
         path=str(path),
         title=name,
-        creator="creator",
+        creator="Some Artist",
         license="CC BY 3.0",
         license_url="https://creativecommons.org/licenses/by/3.0/",
         source_page="https://example.com/page",
@@ -224,6 +226,8 @@ def _patch_common(monkeypatch, tmp_path, *, enabled, mode="fallback", curated=()
     calls = {"youtube": 0}
 
     monkeypatch.setattr(generator, "find_known_music_act", lambda title: "some artist")
+    monkeypatch.setattr(generator, "find_music_act_query", lambda title: "some artist")
+    monkeypatch.setattr(generator, "_video_frame_photos", lambda *args: [])
     monkeypatch.setattr(
         generator, "fetch_licensed_artist_images", lambda *a, **k: []
     )
@@ -329,9 +333,9 @@ def test_missing_cookies_file_is_ignored(monkeypatch, tmp_path):
 
 
 def test_failed_candidate_does_not_hide_later_video(monkeypatch, tmp_path):
-    entries = [_entry("bad", 120.0), _entry("good", 120.0)]
+    entries = [_entry("bad", 120.0,artist='Rihanna'), _entry("good", 120.0,artist='Rihanna')]
     script = _script(entries, fail_on_urls=[entries[0]["url"]],
-                     infos={entries[1]["url"]: _info("good")})
+                     infos={entries[1]["url"]: _info("good",artist='Rihanna')})
     monkeypatch.setattr(youtube_media, "yt_dlp", _fake_module(script))
     videos = fetch_youtube_artist_videos("rihanna", tmp_path, max_videos=1)
     assert len(videos) == 1
@@ -339,7 +343,7 @@ def test_failed_candidate_does_not_hide_later_video(monkeypatch, tmp_path):
 
 
 def test_authentication_failure_stops_repeated_downloads(monkeypatch, tmp_path):
-    script = _script([_entry("first", 120.0), _entry("second", 120.0)],
+    script = _script([_entry("first", 120.0,artist='Rihanna'), _entry("second", 120.0,artist='Rihanna')],
                      fail_on_download_auth=True)
     monkeypatch.setattr(youtube_media, "yt_dlp", _fake_module(script))
     assert fetch_youtube_artist_videos("rihanna", tmp_path) == []
@@ -347,6 +351,16 @@ def test_authentication_failure_stops_repeated_downloads(monkeypatch, tmp_path):
     assert len(download_opts) == 1
     manifest = json.loads((tmp_path / "rights_manifest.json").read_text())
     assert manifest["status"] == "authentication_required"
+
+
+def test_long_interview_is_allowed_as_bounded_section_not_full_fallback(monkeypatch,tmp_path):
+    entry=_entry('interview',1800)
+    script=_script([entry],fail_on_sections=True)
+    monkeypatch.setattr(youtube_media,'yt_dlp',_fake_module(script))
+    assert fetch_youtube_artist_videos('some artist',tmp_path,max_duration=7200)==[]
+    attempts=[o for o in script['ydl_opts_seen'] if o.get('outtmpl')]
+    assert len(attempts)==1
+    assert 'download_ranges' in attempts[0]
 
 
 def test_mac_worker_can_search_editorial_footage(monkeypatch, tmp_path):

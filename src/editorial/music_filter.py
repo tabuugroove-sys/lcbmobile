@@ -118,6 +118,8 @@ _KNOWN_MUSIC_ACTS = (
     "phil collins",
     "priscilla",
     "rihanna",
+    "renato russo",
+    "legiao urbana",
     "rick e renner",
     "roberto carlos",
     "sabrina carpenter",
@@ -179,6 +181,8 @@ def find_known_music_acts(text: str) -> list[str]:
     for name in _KNOWN_MUSIC_ACTS:
         match = re.search(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", plain)
         if match:
+            if name == "leonardo" and re.search(r'\bleonardo\s+(jardim|da vinci|dicaprio)\b', plain):
+                continue
             matches.append((match.start(), -len(name), name))
     return [name for _, _, name in sorted(matches)]
 

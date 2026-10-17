@@ -189,18 +189,8 @@ def _select_with_classic_fallback(
     if selected:
         return selected, True
 
-    selected = select_best_candidates(
-        candidates,
-        store,
-        limit=limit,
-        stage=f"{stage}:classic",
-    )
-    if selected:
-        log.warning(
-            "Strict media filter rejected every candidate; using classic render for %d item(s)",
-            len(selected),
-        )
-    return selected, bool(selected)
+    log.warning("No candidate has usable imagery; leaving candidates for a later media retry")
+    return [], False
 
 
 def _yesterday_fallback_items(

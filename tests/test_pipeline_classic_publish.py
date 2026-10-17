@@ -188,7 +188,7 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         self.assertEqual(selected, [multiple_photos])
         self.assertTrue(classic)
 
-    def test_publishes_when_no_photo_or_video_is_available(self) -> None:
+    def test_does_not_publish_a_blank_template_when_no_imagery_is_available(self) -> None:
         item = NewsItem(
             source_id="test-feed",
             source_name="Test Feed",
@@ -263,22 +263,11 @@ class ClassicPublishPipelineTests(unittest.TestCase):
                     dry_run=False,
                 )
 
-        self.assertEqual(report.processed, 1)
-        self.assertEqual(len(report.publish_results), 1)
-        self.assertTrue(report.publish_results[0].ok)
-        self.assertEqual(len(publisher.calls), 1)
-        build.assert_called_once()
-        self.assertFalse(build.call_args.kwargs["enforce_media_requirements"])
-        self.assertEqual(media_ready.call_args_list, [
-            mock.call(item, test_settings.output_dir, min_photos=2),
-            mock.call(item, test_settings.output_dir),
-        ])
-        urgent.assert_called_once()
-        alert = urgent.call_args.args[0]
-        self.assertIn("static visual", alert)
-        self.assertEqual(urgent.call_args.kwargs["kind"], "short_static_visual")
-        self.assertIn("classic-without-media", alert)
-        self.assertIn(item.url, alert)
+        self.assertEqual(report.processed, 0)
+        self.assertEqual(report.publish_results, [])
+        self.assertEqual(publisher.calls, [])
+        build.assert_not_called()
+        urgent.assert_not_called()
 
     def test_does_not_alert_for_photo_post_or_reused_upload(self) -> None:
         item = NewsItem(

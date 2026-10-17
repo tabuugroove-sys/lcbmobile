@@ -2,17 +2,21 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 import logging
 import math
 import os
 import re
 import subprocess
+import sqlite3
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from imageio_ffmpeg import get_ffmpeg_exe
 from moviepy.editor import (
     AudioFileClip,
     ColorClip,
@@ -35,6 +39,7 @@ from .source_media import (
 from .youtube_media import fetch_youtube_artist_videos
 from .mac_media import cached_mac_artist_videos, fetch_mac_artist_videos
 from .tts import get_tts_provider
+from .subject import matches_subject
 
 log = logging.getLogger(__name__)
 
@@ -382,6 +387,8 @@ def _asset_source_identity(asset: LicensedImage) -> str:
     raw = asset.source_url or asset.source_page or asset.path
     parsed = urlparse(raw)
     path = parsed.path.casefold()
+    if parsed.fragment.startswith('frame='):
+        return f'{parsed.netloc.casefold()}{path}?{parsed.query}#{parsed.fragment}'
     path = re.sub(r"-\d+x\d+(?=\.[a-z0-9]+$)", "", path)
     return f"{parsed.netloc.casefold()}{path}" if parsed.netloc else path
 
@@ -468,6 +475,8 @@ def _hook_pair_is_meaningful(
     second_title = re.sub(r"[_\-.]+", " ", second.title)
     first_person = find_known_music_act(first_title)
     second_person = find_known_music_act(second_title)
+    if {first_person,second_person} == {'renato russo','legiao urbana'}:
+        return False
     story_people = set(find_known_music_acts(f"{item.title} {item.summary}"))
     if (
         first_person
@@ -656,6 +665,9 @@ def _build_video_scene(
 ) -> tuple[CompositeVideoClip, VideoFileClip]:
     """Present archive footage as a square editorial crop inside the Short."""
     source = VideoFileClip(media.path, audio=False)
+    if duration > source.duration + .25:
+        source.close()
+        raise RuntimeError('Video scene would freeze beyond available footage')
     latest_start = max(0.0, source.duration - duration - 0.1)
     start = min(max(0.0, media.seek_seconds), latest_start)
     segment = source.subclip(start, min(source.duration, start + duration))
@@ -1049,6 +1061,18 @@ def _make_hook_scene(
     return output
 
 
+def _scene_layout(photo_count: int, video_count: int) -> list[tuple[str, int]]:
+    if photo_count < 1:
+        raise RuntimeError('Cannot render a Short without a real cover image')
+    layout = [('hook',0)]
+    for index in range(max(min(photo_count-1,4), min(video_count,2))):
+        if index < min(video_count,2):
+            layout.append(('video',index))
+        if index+1 < min(photo_count,5):
+            layout.append(('photo',index+1))
+    return layout
+
+
 def _build_scene_images(
     item: NewsItem,
     post: RewrittenPost,
@@ -1057,6 +1081,7 @@ def _build_scene_images(
     *,
     hook_media: list[LicensedImage] | None = None,
     static_single_photo: bool = False,
+    video_count: int = 0,
 ) -> list[Path]:
     if static_single_photo and len(media) == 1:
         return [
@@ -1066,10 +1091,8 @@ def _build_scene_images(
                 output=output_dir / "scene-01.jpg",
             )
         ]
-    # Mixed-media Shorts have exactly two video beats and three photo beats.
-    # Keeping five scenes prevents a third video slot from repeating one of the
-    # two curated source files merely because Commons returned six photographs.
-    scene_count = 5 if settings.require_video_media else min(7, max(5, len(media)))
+    layout = _scene_layout(len(media),video_count)
+    scene_count = len(layout)
     subtitles = _subtitle_chunks(post.script_voiceover, scene_count)
     headlines = _headline_chunks(post, scene_count)
     cutout = None
@@ -1089,7 +1112,7 @@ def _build_scene_images(
     hook_media = hook_media if hook_media is not None else media
     credits = _creator_credit(_unique_visual_assets([*media, *hook_media]))
     scenes = []
-    for index in range(scene_count):
+    for index,(kind,media_index) in enumerate(layout):
         if index == 0:
             scenes.append(
                 _make_hook_scene(
@@ -1100,8 +1123,7 @@ def _build_scene_images(
                 )
             )
             continue
-        media_index = index - 1
-        asset = media[media_index] if media_index < len(media) else None
+        asset = media[media_index] if kind == 'photo' else media[0]
         scenes.append(
             _make_scene(
                 index=index,
@@ -1127,6 +1149,7 @@ def _write_render_manifest(
     videos: list[LicensedVideo],
     scenes: list[Path],
     duration: float,
+    layout: list[tuple[str,int]] | None = None,
 ) -> None:
     uses_source_image = any(
         asset.license == SOURCE_ARTICLE_LICENSE for asset in photos
@@ -1137,7 +1160,7 @@ def _write_render_manifest(
                 "style": (
                     "static_single_photo"
                     if len(scenes) == 1
-                    else "cinematic_mixed_media_v4_semantic_hook"
+                    else "cinematic_mixed_media_v5_dynamic_assets"
                 ),
                 "language": settings.content_lang,
                 "source_url": item.url,
@@ -1147,9 +1170,13 @@ def _write_render_manifest(
                 "rights_status": (
                     "source_image_unverified"
                     if uses_source_image
+                    else "source_reuse_unverified" if any('not verified' in a.license.lower() for a in [*photos,*videos])
                     else "verified" if photos and videos else "incomplete"
                 ),
                 "scene_count": len(scenes),
+                "photo_assets": [a.as_manifest() for a in photos],
+                "video_sources": [a.source_page for a in videos],
+                "scene_layout": layout or [],
                 "duration_seconds": round(duration, 3),
                 "auto_publish_decision": "owned_by_pipeline_not_renderer",
             },
@@ -1158,6 +1185,32 @@ def _write_render_manifest(
         )
         + "\n"
     )
+
+
+def _review_render(video: Path, base: Path, layout: list[tuple[str,int]], duration: float, hook_duration: float) -> None:
+    checked = subprocess.run([get_ffmpeg_exe(),'-v','info','-i',str(video),
+        '-vf','blackdetect=d=0.5:pix_th=0.08:pic_th=0.98','-an','-f','null','-'],
+        capture_output=True,text=True,timeout=300)
+    black = re.findall(r'black_start:([0-9.]+) black_end:([0-9.]+)',checked.stderr)
+    report = {'full_decode_passed': checked.returncode == 0,'black_intervals':black,
+        'scene_count':len(layout),'layout':layout,'duration':duration}
+    (base/'visual_qa.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+    if checked.returncode or black:
+        raise RuntimeError('Visual QA rejected unreadable or black output')
+    source = VideoFileClip(str(video),audio=False)
+    sheet = Image.new('RGB',(1080,math.ceil(len(layout)/3)*660),'#111111')
+    draw = ImageDraw.Draw(sheet)
+    body = (duration-hook_duration)/max(1,len(layout)-1)
+    try:
+        for index,(kind,asset_index) in enumerate(layout):
+            second = (duration/2 if len(layout)==1 else hook_duration/2) if index==0 else hook_duration+(index-.5)*body
+            frame=Image.fromarray(source.get_frame(min(duration-.15,second))).resize((360,640))
+            x,y=index%3*360,index//3*660
+            sheet.paste(frame,(x,y))
+            draw.text((x+4,y+642),f'{second:.1f}s {kind} {asset_index}',fill='white')
+        sheet.save(base/'visual_review.jpg')
+    finally:
+        source.close()
 
 
 def _write_media_credits(
@@ -1196,6 +1249,84 @@ def _item_output_dir(item: NewsItem, output_dir: Path) -> Path:
     return base
 
 
+def _recent_visual_history(item: NewsItem, output_dir: Path) -> tuple[list[LicensedImage], set[str]]:
+    """Use successful publication receipts, never dry-run folders, as history."""
+    if not isinstance(settings.db_path, Path) or not settings.db_path.exists():
+        return [], set()
+    photos, videos = [], set()
+    try:
+        with sqlite3.connect(settings.db_path.as_uri() + '?mode=ro', uri=True) as conn:
+            cutoff = (datetime.now(timezone.utc)-timedelta(days=3)).replace(tzinfo=None).isoformat()
+            rows = conn.execute("SELECT fingerprint FROM publications WHERE platform='youtube' AND status='ok' AND fingerprint!=? AND posted_at>=? ORDER BY posted_at DESC LIMIT 12", (item.fingerprint(),cutoff)).fetchall()
+        for (fingerprint,) in rows:
+            folder = output_dir / fingerprint.replace('/', '_').replace(':', '_')[-80:]
+            manifest = folder/'render_manifest.json'
+            if not manifest.exists():
+                continue
+            data = json.loads(manifest.read_text(encoding='utf-8'))
+            videos.update(data.get('video_sources', []))
+            rows = data.get('photo_assets', [])
+            # Backfill old successful renders whose manifest counted assets but
+            # did not yet record which images supplied the film.
+            if not rows:
+                for sub in ('licensed_media/rights_manifest.json','source_media/source_images_manifest.json','hook_media/source_article/source_images_manifest.json'):
+                    p = folder/sub
+                    if p.exists():
+                        rows.extend(json.loads(p.read_text(encoding='utf-8')).get('assets', []))
+            for row in rows:
+                try:
+                    photos.append(LicensedImage(**row))
+                except TypeError:
+                    continue
+            if not data.get('video_sources') and (folder/'media_credits.txt').exists():
+                origins = re.findall(r'^Origem: (.+)$',(folder/'media_credits.txt').read_text(encoding='utf-8'),re.MULTILINE)
+                videos.update(origins[:int(data.get('licensed_video_count',0))])
+    except (sqlite3.Error, OSError, ValueError) as exc:
+        log.warning('Cannot read recent visual history: %s', type(exc).__name__)
+    return photos, videos
+
+
+def _fresh_photos(photos: list[LicensedImage], previous: list[LicensedImage]) -> list[LicensedImage]:
+    signatures = [_visual_signature(a) for a in previous]
+    fresh = []
+    for asset in _unique_visual_assets(photos):
+        signature = _visual_signature(asset)
+        if not any(_same_visual(asset,b,signature,previous_signature)
+            for b,previous_signature in zip(previous,signatures)):
+            fresh.append(asset)
+    return fresh
+
+
+def _video_frame_photos(videos: list[LicensedVideo], folder: Path) -> list[LicensedImage]:
+    """Use actual, face-visible frames of the selected artist, not placeholders."""
+    photos = []
+    folder.mkdir(parents=True,exist_ok=True)
+    for i, video in enumerate(videos):
+        source = None
+        try:
+            source = VideoFileClip(video.path, audio=False)
+            for j,fraction in enumerate((.22,.48,.72)):
+                path = folder/f'clip-{i+1}-frame-{j+1}.jpg'
+                start=min(max(0,video.seek_seconds),source.duration-.15)
+                second=min(source.duration-.15,start+(source.duration-start)*fraction)
+                image = Image.fromarray(source.get_frame(second)).convert('RGB')
+                image.save(path, quality=92)
+                if _thumbnail_has_detectable_face(path) is not True:
+                    continue
+                photos.append(LicensedImage(str(path), video.title+' (video frame)',video.creator,
+                    video.license,video.license_url,video.source_page,
+                    video.source_url+f'#frame={second/source.duration}',image.width,image.height))
+                # A second face later in an interview can be the presenter.
+                # Keep one still per source rather than filling the Short with it.
+                break
+        except Exception as exc:
+            log.warning('Cannot extract artist frames: %s',type(exc).__name__)
+        finally:
+            if source is not None:
+                source.close()
+    return _unique_visual_assets(photos)
+
+
 def resolve_visual_media(
     item: NewsItem,
     output_dir: Path,
@@ -1204,6 +1335,7 @@ def resolve_visual_media(
 ) -> tuple[str | None, list[LicensedImage], list[LicensedVideo]]:
     """Resolve reusable artist visuals into the item's persistent render cache."""
     base = _item_output_dir(item, output_dir)
+    previous_photos, previous_videos = _recent_visual_history(item, output_dir)
     # The artist must be the explicit subject of the headline. A name buried in
     # a festival roundup cannot safely determine the visuals for the whole story.
     artist_query = find_music_act_query(item.title)
@@ -1233,11 +1365,13 @@ def resolve_visual_media(
             photos = _unique_visual_assets([*photos, *related_photos])[
                 :photo_search_limit
             ]
+    photos = _fresh_photos(photos, previous_photos)
     videos = fetch_licensed_artist_videos(
         artist_query,
         base / "licensed_video",
         limit=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
     )
+    videos = [v for v in videos if matches_subject(artist_query,v.title,v.creator) and v.source_page not in previous_videos]
     if settings.youtube_video_enabled and settings.youtube_video_mode != "off":
         if videos:
             log.info(
@@ -1246,19 +1380,22 @@ def resolve_visual_media(
                 artist_query,
             )
         else:
-            youtube_videos = cached_mac_artist_videos(
+            youtube_videos = [v for v in cached_mac_artist_videos(
                 artist_query,
                 max_videos=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
-            ) or fetch_youtube_artist_videos(
+            ) if matches_subject(artist_query,v.title,v.creator) and v.source_page not in previous_videos] or fetch_youtube_artist_videos(
                 artist_query,
                 base / "youtube_video",
                 max_videos=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
                 search_query=f"{artist_query} ao vivo entrevista shorts",
+                excluded_sources=previous_videos,
+                max_duration=7200,
             )
             if not youtube_videos:
                 youtube_videos = fetch_mac_artist_videos(
                     artist_query,
                     max_videos=max(VIDEO_SEARCH_LIMIT, settings.min_video_media_assets),
+                    excluded_sources=previous_videos,
                 )
             if youtube_videos:
                 log.info(
@@ -1266,7 +1403,27 @@ def resolve_visual_media(
                     len(youtube_videos),
                     artist_query,
                 )
-                videos = youtube_videos
+                videos = [v for v in youtube_videos if matches_subject(artist_query,v.title,v.creator)]
+    if videos:
+        unique_videos = []
+        seen_videos = set()
+        for video in videos:
+            key = video.sha256 or video.source_page
+            if key not in seen_videos:
+                seen_videos.add(key)
+                unique_videos.append(video)
+        videos = unique_videos
+        frames = _video_frame_photos(videos, base/'video_frames')
+        if len(photos) < max(4, settings.min_visual_media_assets):
+            photos = _fresh_photos([*photos,*frames],previous_photos)[:photo_search_limit]
+        reviewed_videos = []
+        for video in videos:
+            first_frame = next((p for p in frames if p.source_page == video.source_page),None)
+            if first_frame is not None:
+                fraction = float(urlparse(first_frame.source_url).fragment.split('=',1)[1])
+                video = replace(video,seek_seconds=max(video.seek_seconds, video.duration*fraction-.5))
+            reviewed_videos.append(video)
+        videos = reviewed_videos
     return artist_query, photos, videos
 
 
@@ -1366,15 +1523,13 @@ def build_short(
         output_dir,
         related_items=related_items,
     )
+    if not photos:
+        raise RuntimeError('No real image available; choose a different story rather than a blank template')
     single_photo_fallback = len(photos) == 1 and not videos
-    text_only_fallback = not enforce_media_requirements and not photos
     if single_photo_fallback:
         log.warning(
             "Single-photo render: one static frame for the full voiceover"
         )
-        videos = []
-    elif text_only_fallback:
-        log.warning("Classic render: no usable photo; using the text-only fallback")
         videos = []
     if (
         enforce_media_requirements
@@ -1399,10 +1554,11 @@ def build_short(
 
     if single_photo_fallback:
         hook_media = photos
-    elif text_only_fallback:
-        hook_media = []
     else:
-        hook_media = resolve_hook_media(item, photos, base / "hook_media")
+        previous, _ = _recent_visual_history(item,output_dir)
+        hook_media = _fresh_photos(resolve_hook_media(item, photos, base / "hook_media"), previous) or photos[:1]
+    if hook_media:
+        photos = _unique_visual_assets([hook_media[0],*photos])
     credited_photos = _unique_visual_assets([*photos, *hook_media])
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -1423,6 +1579,7 @@ def build_short(
             base,
             hook_media=hook_media,
             static_single_photo=single_photo_fallback,
+            video_count=len(videos),
         )
         hook_duration = min(2.2, max(1.2, duration * 0.08))
         content_scene_duration = (duration - hook_duration) / max(
@@ -1432,13 +1589,14 @@ def build_short(
         source_clips: list[VideoFileClip] = []
         subtitles = _subtitle_chunks(post.script_voiceover, len(scene_paths))
         headlines = _headline_chunks(post, len(scene_paths))
+        layout = _scene_layout(len(photos), len(videos))
         for index, scene_path in enumerate(scene_paths):
             if single_photo_fallback:
                 clips.append(ImageClip(str(scene_path)).set_duration(duration))
                 continue
             scene_duration = hook_duration if index == 0 else content_scene_duration
-            if index % 2 == 1 and videos:
-                video_asset = videos[(index // 2) % len(videos)]
+            if layout[index][0] == 'video':
+                video_asset = videos[layout[index][1]]
                 overlay_path = _make_video_overlay(
                     index=index,
                     count=len(scene_paths),
@@ -1497,6 +1655,7 @@ def build_short(
             videos=videos,
             scenes=scene_paths,
             duration=duration,
+            layout=layout,
         )
         _write_media_credits(base, credited_photos, videos)
         composite.close()
@@ -1504,6 +1663,7 @@ def build_short(
             clip.close()
         for clip in source_clips:
             clip.close()
+        _review_render(video_path,base,layout,duration,hook_duration)
 
     return GeneratedAssets(
         video_path=str(video_path),
