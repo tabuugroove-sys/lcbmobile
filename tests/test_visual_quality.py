@@ -86,3 +86,16 @@ def test_insufficient_video_is_not_extended_as_frozen_frame(tmp_path,monkeypatch
     with pytest.raises(RuntimeError,match='freeze'):
         generator._build_video_scene(media=SimpleNamespace(path='video.mp4'),overlay_path=tmp_path/'overlay.png',duration=10)
     source.close.assert_called_once()
+
+
+def test_legacy_windows_credits_do_not_stop_history_scan(tmp_path,monkeypatch):
+    store=Store(tmp_path/'state.db')
+    monkeypatch.setattr(generator,'settings',replace(generator.settings,db_path=tmp_path/'state.db'))
+    first=NewsItem(source_id='test',source_name='G1',category='music',url='https://example.com/old',title='Ze Felipe')
+    current=first.model_copy(update={'url':'https://example.com/new'})
+    folder=generator._item_output_dir(first,tmp_path/'out')
+    (folder/'render_manifest.json').write_text(json.dumps({'licensed_video_count':1}))
+    (folder/'media_credits.txt').write_bytes('CRÉDITOS DE MÍDIA\nOrigem: https://youtube.com/watch?v=old\n'.encode('cp1252'))
+    store.record_publication(first.fingerprint(),'youtube','video-id','ok')
+    _,videos=generator._recent_visual_history(current,tmp_path/'out')
+    assert videos=={'https://youtube.com/watch?v=old'}

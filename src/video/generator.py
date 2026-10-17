@@ -1183,7 +1183,8 @@ def _write_render_manifest(
             ensure_ascii=False,
             indent=2,
         )
-        + "\n"
+        + "\n",
+        encoding="utf-8",
     )
 
 
@@ -1249,6 +1250,14 @@ def _item_output_dir(item: NewsItem, output_dir: Path) -> Path:
     return base
 
 
+def _read_legacy_render_text(path: Path) -> str:
+    data = path.read_bytes()
+    try:
+        return data.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return data.decode('cp1252')
+
+
 def _recent_visual_history(item: NewsItem, output_dir: Path) -> tuple[list[LicensedImage], set[str]]:
     """Use successful publication receipts, never dry-run folders, as history."""
     if not isinstance(settings.db_path, Path) or not settings.db_path.exists():
@@ -1263,7 +1272,7 @@ def _recent_visual_history(item: NewsItem, output_dir: Path) -> tuple[list[Licen
             manifest = folder/'render_manifest.json'
             if not manifest.exists():
                 continue
-            data = json.loads(manifest.read_text(encoding='utf-8'))
+            data = json.loads(_read_legacy_render_text(manifest))
             videos.update(data.get('video_sources', []))
             rows = data.get('photo_assets', [])
             # Backfill old successful renders whose manifest counted assets but
@@ -1272,14 +1281,14 @@ def _recent_visual_history(item: NewsItem, output_dir: Path) -> tuple[list[Licen
                 for sub in ('licensed_media/rights_manifest.json','source_media/source_images_manifest.json','hook_media/source_article/source_images_manifest.json'):
                     p = folder/sub
                     if p.exists():
-                        rows.extend(json.loads(p.read_text(encoding='utf-8')).get('assets', []))
+                        rows.extend(json.loads(_read_legacy_render_text(p)).get('assets', []))
             for row in rows:
                 try:
                     photos.append(LicensedImage(**row))
                 except TypeError:
                     continue
             if not data.get('video_sources') and (folder/'media_credits.txt').exists():
-                origins = re.findall(r'^Origem: (.+)$',(folder/'media_credits.txt').read_text(encoding='utf-8'),re.MULTILINE)
+                origins = re.findall(r'^Origem: (.+)$',_read_legacy_render_text(folder/'media_credits.txt'),re.MULTILINE)
                 videos.update(origins[:int(data.get('licensed_video_count',0))])
     except (sqlite3.Error, OSError, ValueError) as exc:
         log.warning('Cannot read recent visual history: %s', type(exc).__name__)
