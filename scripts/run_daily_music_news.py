@@ -23,7 +23,7 @@ from src.processor.ai_writer import rewrite
 from src.publisher.youtube import YouTubePublisher
 from src.scraper.music_daily import collect_daily_music_news
 from src.storage import Store
-from src.video.horizontal_news import prepare_voice, render, reviewed_ranges, save
+from src.video.horizontal_news import prepare_voice, render, render_cache_current, reviewed_ranges, save
 from src.video.mac_media import fetch_mac_artist_videos
 from src.video.youtube_media import YOUTUBE_LICENSE, fetch_youtube_artist_videos
 
@@ -134,8 +134,13 @@ def prepare_stories(candidates: list[NewsItem], store: Store, edition: str, fold
         try:
             post = rewrite(item)
             assets = fetch_youtube_artist_videos(
-                artist, output, max_videos=3, search_query=f"{artist} ao vivo entrevista oficial",
+                artist, output / "stage", max_videos=2, search_query=f"{artist} show ao vivo palco oficial",
                 max_duration=1800, section_seconds=90, min_aspect_ratio=1.55, excluded_sources=avoid,
+            )
+            assets += fetch_youtube_artist_videos(
+                artist, output / "events", max_videos=2, search_query=f"{artist} tapete vermelho premio entrevista",
+                max_duration=1800, section_seconds=90, min_aspect_ratio=1.55,
+                excluded_sources=avoid | {asset.source_page for asset in assets},
             )
             if len(assets) < 2:
                 assets += fetch_mac_artist_videos(artist, max_videos=2, profile=f"horizontal-{edition}", excluded_sources=avoid)
@@ -149,8 +154,8 @@ def prepare_stories(candidates: list[NewsItem], store: Store, edition: str, fold
                     usable.append(row)
                     seen_sources.add(asset.source_page)
             coverage = sum(b - a for row in usable for a, b in row["reviewed_ranges"])
-            # Generous budget at the relaxed voice speed; exact coverage is checked again after TTS.
-            required = max(40.0, len(post.script_voiceover.split()) / (2.0 * settings.elevenlabs_speed) + 4)
+            # Footage covers the estimated speech, never an unrelated music tail.
+            required = max(12.0, len(post.script_voiceover.split()) / (2.0 * settings.elevenlabs_speed) + 1)
             if len(usable) < 2 or coverage < required:
                 log.warning("Trying another story: %s has %d sources / %.1fs reviewed footage", artist, len(usable), coverage)
                 return False
@@ -300,15 +305,12 @@ def run_edition(store: Store, edition: str, folder: Path, publish: bool, preflig
     prepare_voice(stories, folder)
     video = folder / f"radar-musical-{edition}-16x9.mp4"
     qa_file = folder / "qa-report.json"
-    if video.exists() and qa_file.exists() and settings.background_music_volume > 0:
-        music = settings.background_music_path
+    if video.exists() and qa_file.exists():
         previous = json.loads(qa_file.read_text())
-        if (not music.exists() or not previous.get("background_music_complete_pass")
-                or previous.get("background_music_sha256") != hashlib.sha256(music.read_bytes()).hexdigest()
-                or previous.get("background_music_ratio") != settings.background_music_volume):
+        if not render_cache_current(previous, stories, folder):
             suffix = time.time_ns()
-            video.replace(folder / f"before-full-track-{suffix}.mp4")
-            qa_file.replace(folder / f"before-full-track-{suffix}.json")
+            video.replace(folder / f"before-edit-update-{suffix}.mp4")
+            qa_file.replace(folder / f"before-edit-update-{suffix}.json")
     if not video.exists() or not (folder / "qa-report.json").exists():
         try:
             video = render(stories, edition, folder)
@@ -330,6 +332,8 @@ def run_edition(store: Store, edition: str, folder: Path, publish: bool, preflig
     qa = json.loads((folder / "qa-report.json").read_text())
     if qa.get("black_intervals") or qa.get("silences_over_2s") or not qa.get("full_decode_passed"):
         raise RuntimeError("Daily video did not pass review")
+    if not render_cache_current(qa, stories, folder):
+        raise RuntimeError("Daily video does not match the narration-first edit policy")
     if qa.get("video_sha256") != hashlib.sha256(video.read_bytes()).hexdigest():
         raise RuntimeError("Rendered video differs from the reviewed artifact")
     snippet = metadata(stories, edition, json.loads((folder / "chapters.json").read_text()))

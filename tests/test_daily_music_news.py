@@ -16,7 +16,7 @@ from src.models import NewsItem
 from src.publisher.youtube import YouTubePublisher
 from src.scraper.music_daily import _article_schema, clean_title
 from src.storage import Store
-from src.video.horizontal_news import full_track_lengths, plan_shots, subtitle_cues
+from src.video.horizontal_news import narration_span, plan_shots, subtitle_cues
 from src.video.youtube_media import YOUTUBE_LICENSE
 from bs4 import BeautifulSoup
 
@@ -160,7 +160,8 @@ def test_wrong_channel_stops_before_render_or_upload():
 def test_shot_plan_has_two_sources_and_never_repeats_ranges():
     assets = [{"source_page": source, "reviewed_ranges": [[0, 20], [30, 50]]} for source in ("one", "two")]
     shots = plan_shots(assets, 70)
-    assert sum(s["duration"] for s in shots) == 70
+    assert sum(s["duration"] for s in shots) == pytest.approx(70)
+    assert max(s["duration"] for s in shots) <= 4
     assert {s["asset"]["source_page"] for s in shots} == {"one", "two"}
     for source in ("one", "two"):
         ranges = [(s["source_start"], s["source_start"] + s["duration"]) for s in shots if s["asset"]["source_page"] == source]
@@ -178,19 +179,15 @@ def test_subtitles_use_real_character_timestamps():
     assert cues[1][0] == 61.8
 
 
-def test_full_track_keeps_complete_music_without_looping_video():
-    lengths = full_track_lengths([40] * 5, [60] * 5, 221.05)
-    assert sum(lengths) == pytest.approx(221.05)
-    assert all(x == pytest.approx(44.21) for x in lengths)
-    assert full_track_lengths([50] * 5, [60] * 5, 221.05) == [50] * 5
+def test_narration_span_trims_encoder_silence_instead_of_extending_for_music():
+    data = {"characters": list(" Oi "), "character_start_times_seconds": [0, .5, .6, 2],
+            "character_end_times_seconds": [.5, .6, 1.8, 5]}
+    assert narration_span(data, 5) == pytest.approx((.47, 1.83))
 
 
-def test_full_track_redistributes_tail_when_one_story_has_no_spare_footage():
-    lengths = full_track_lengths([40] * 5, [40, 50, 50, 50, 50], 221.05)
-    assert lengths[0] == 40
-    assert sum(lengths) == pytest.approx(221.05)
-    with pytest.raises(RuntimeError, match="reviewed footage"):
-        full_track_lengths([40] * 5, [41] * 5, 221.05)
+def test_empty_narration_is_not_a_music_only_video():
+    with pytest.raises(RuntimeError, match="spoken text"):
+        narration_span({"characters": [" "]}, 221)
 
 
 def test_views_growth_history_excludes_long_and_preserves_format(tmp_path):

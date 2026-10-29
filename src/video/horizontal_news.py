@@ -12,6 +12,11 @@ from pathlib import Path
 from ..config import settings
 
 WIDTH, HEIGHT = 1920, 1080
+FPS = 30
+RENDER_POLICY_VERSION = 2
+FOOTAGE_REVIEW_VERSION = 4
+SHOT_SECONDS = (2.0, 2.8, 2.4, 3.2, 2.2, 3.6)
+MAX_SHOT_SECONDS = 4.0
 
 
 def save(path: Path, value) -> None:
@@ -45,19 +50,29 @@ def font_file(bold: bool = False) -> str:
 
 
 def reviewed_ranges(asset: dict, folder: Path) -> list[list[float]]:
-    """Sample every four seconds. Face detection is a quality check, not identity recognition."""
+    """Rank short usable shots; face detection is not identity recognition."""
     import cv2
 
     cache = folder / f"review-{asset['sha256'][:16]}.json"
+    identity_ranges = asset["reviewed_ranges"] if asset.get("identity_review") else None
     if cache.exists():
-        return json.loads(cache.read_text(encoding="utf-8"))["ranges"]
+        data = json.loads(cache.read_text(encoding="utf-8"))
+        if (data.get("policy_version") == FOOTAGE_REVIEW_VERSION
+                and data.get("identity_ranges") == identity_ranges):
+            asset["reviewed_segments"] = data["segments"]
+            asset["review_policy_version"] = FOOTAGE_REVIEW_VERSION
+            return data["ranges"]
     detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     capture = cv2.VideoCapture(asset["path"])
-    ranges, samples = [], []
+    ranges, samples, segments = [], [], []
     try:
-        for begin in range(0, int(float(asset["duration"]) - 4), 4):
-            acceptable = 0
-            for second in (begin + .8, begin + 2.8):
+        for begin in range(0, int(float(asset["duration"]) - 2), 2):
+            if asset.get("identity_review") and not any(
+                a <= begin and begin+2 <= b for a,b in asset["reviewed_ranges"]
+            ):
+                continue
+            scores, signatures, previous, visible_faces = [], [], None, 0
+            for second in (begin + .3, begin + 1.5):
                 capture.set(cv2.CAP_PROP_POS_MSEC, second * 1000)
                 ok, frame = capture.read()
                 if not ok:
@@ -65,38 +80,93 @@ def reviewed_ranges(asset: dict, folder: Path) -> list[list[float]]:
                 small = cv2.resize(frame, (640, 360))
                 gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
                 faces = detector.detectMultiScale(gray, 1.08, 4, minSize=(26, 26))
-                good = 0 < len(faces) <= 6 and gray.mean() > 12 and gray.std() > 12
-                acceptable += int(good)
-                samples.append({"second": second, "faces": len(faces), "brightness": float(gray.mean())})
-            if acceptable == 2:
+                sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+                face_area = max((w*h/(640*360) for x,y,w,h in faces), default=0)
+                motion = float(cv2.absdiff(gray, previous).mean()) if previous is not None else 0
+                previous = gray
+                visible_faces += int(0 < len(faces) <= 6)
+                good = gray.mean() > 18 and gray.std() > 16 and sharpness > 25
+                # Prominent, sharp faces and genuine movement beat static talking heads.
+                score = (.45 * min(1, face_area/.06) + .30 * min(1, sharpness/250)
+                         + .25 * min(1, motion/22)) if good else 0
+                scores.append(score)
+                signatures.append(cv2.resize(gray, (16, 9)).flatten().tolist())
+                samples.append({"second": second, "faces": len(faces), "brightness": float(gray.mean()),
+                                "sharpness": sharpness, "motion": motion, "score": score})
+            if len(scores) == 2 and min(scores) > 0 and (visible_faces or asset.get("identity_review")):
+                segments.append({"start": float(begin), "end": float(begin+2),
+                                 "score": sum(scores)/2, "signature": signatures[1]})
                 if ranges and ranges[-1][1] == begin:
-                    ranges[-1][1] = float(begin + 4)
+                    ranges[-1][1] = float(begin + 2)
                 else:
-                    ranges.append([float(begin), float(begin + 4)])
+                    ranges.append([float(begin), float(begin + 2)])
     finally:
         capture.release()
-    save(cache, {"ranges": ranges, "samples": samples, "identity_verified": False})
+    grouped = []
+    for segment in segments:
+        if grouped and grouped[-1]["end"] == segment["start"] and grouped[-1]["end"]-grouped[-1]["start"] < 6:
+            group = grouped[-1]
+            seconds = group["end"]-group["start"]
+            group["score"] = (group["score"]*seconds + segment["score"]*2)/(seconds+2)
+            group["end"] = segment["end"]
+        else:
+            grouped.append(dict(segment))
+    segments = grouped
+    asset["reviewed_segments"] = segments
+    asset["review_policy_version"] = FOOTAGE_REVIEW_VERSION
+    save(cache, {"policy_version": FOOTAGE_REVIEW_VERSION, "ranges": ranges,
+                 "segments": segments, "samples": samples, "identity_ranges": identity_ranges,
+                 "identity_verified": False})
     return ranges
 
 
-def plan_shots(assets: list[dict], length: float) -> list[dict]:
-    ranges = [[list(pair) for pair in a["reviewed_ranges"]] for a in assets]
-    shots, cursor, next_index = [], 0.0, 0
+def plan_shots(assets: list[dict], length: float, *, cut_points: list[float] | None = None) -> list[dict]:
+    ranges = []
+    for asset in assets:
+        if asset.get("reviewed_segments"):
+            rows = sorted(asset["reviewed_segments"], key=lambda row: row["score"], reverse=True)
+            ranges.append([[row["start"], row["end"], row["score"], row.get("signature")] for row in rows])
+        else:
+            ranges.append([[a, b, .5, None] for a, b in asset["reviewed_ranges"]])
+    shots, cursor, previous_source, previous_signature = [], 0.0, None, None
+    usage = [0] * len(assets)
     while cursor < length - .01:
-        for _ in assets:
-            index = next_index % len(assets)
-            next_index += 1
+        available = []
+        for index in range(len(assets)):
             while ranges[index] and ranges[index][0][1] - ranges[index][0][0] < .25:
                 ranges[index].pop(0)
             if ranges[index]:
-                break
-        else:
+                available.append(index)
+        if not available:
             raise RuntimeError("Not enough reviewed footage; no looping is allowed")
-        start, end = ranges[index][0]
-        shot = min(7.0, end - start, length - cursor)
-        shots.append({"asset": assets[index], "source_start": start, "duration": shot, "start": cursor})
+        alternatives = [i for i in available if assets[i]["source_page"] != previous_source]
+        def preference(i: int) -> float:
+            signature = ranges[i][0][3]
+            similarity = 0
+            if signature and previous_signature:
+                difference = sum(abs(a-b) for a,b in zip(signature,previous_signature))/len(signature)
+                similarity = max(0, 1-difference/25)
+            return ranges[i][0][2] - .04*usage[i] - .25*similarity
+        index = max(alternatives or available, key=preference)
+        start, end, quality, signature = ranges[index][0]
+        target = SHOT_SECONDS[len(shots) % len(SHOT_SECONDS)]
+        near = [point-cursor for point in (cut_points or [])
+                if 1.5 <= point-cursor <= MAX_SHOT_SECONDS and abs(point-cursor-target) <= .35]
+        if near:
+            target = min(near, key=lambda value: abs(value-target))
+        shot = min(target, end - start, length - cursor)
+        if 0 < length-cursor-shot < .5 and length-cursor <= MAX_SHOT_SECONDS:
+            shot = min(end-start, length-cursor)
+        shot = math.floor((shot+1e-7)*FPS)/FPS
+        if shot < 1/FPS:
+            raise RuntimeError("Reviewed shot is shorter than one frame")
+        shots.append({"asset": assets[index], "source_start": start, "duration": shot,
+                      "start": cursor, "quality_score": quality})
         ranges[index][0][0] += shot
-        cursor += shot
+        cursor = round(cursor + shot, 8)
+        previous_source = assets[index]["source_page"]
+        previous_signature = signature
+        usage[index] += 1
     if len({s["asset"]["source_page"] for s in shots}) < 2:
         raise RuntimeError("A chapter needs at least two different video sources")
     return shots
@@ -161,7 +231,7 @@ def _ass_escape(text: str) -> str:
     return text.replace("\\", " ").replace("{", "(").replace("}", ")").replace("\n", " ")
 
 
-def overlay(story: dict, index: int, edition: str, folder: Path) -> Path:
+def overlay(story: dict, index: int, edition: str, folder: Path, *, compact: bool = False) -> Path:
     from PIL import Image, ImageDraw, ImageFont
 
     image = Image.new("RGBA", (WIDTH, HEIGHT))
@@ -171,6 +241,18 @@ def overlay(story: dict, index: int, edition: str, folder: Path) -> Path:
     draw.rectangle((0, 0, 10, 68), fill="#ef4564")
     draw.text((36, 19), f"RADAR MUSICAL  /  {edition}  /  {index + 1:02d}", font=small, fill="white")
     draw.text((WIDTH - 318, 19), "IMAGENS DE ARQUIVO", font=small, fill="#dddddd")
+    if compact:
+        name = story["artist"].upper()
+        name_font = ImageFont.truetype(font_file(True), 30)
+        while draw.textlength(name, font=name_font) > 800:
+            name_font = ImageFont.truetype(font_file(True), name_font.size-1)
+        width = int(draw.textlength(name, font=name_font))+44
+        draw.rectangle((32, 88, 32+width, 140), fill=(8,8,10,190))
+        draw.rectangle((32, 88, 38, 140), fill="#ef4564")
+        draw.text((54,97),name,font=name_font,fill="white")
+        path = folder / f"overlay-{story['id']}-compact.png"
+        image.save(path)
+        return path
     draw.rectangle((32, 784, 1280, 934), fill=(8, 8, 10, 210))
     draw.rectangle((32, 784, 40, 934), fill="#ef4564")
     artist_font = bold
@@ -193,20 +275,33 @@ def overlay(story: dict, index: int, edition: str, folder: Path) -> Path:
     return path
 
 
-def full_track_lengths(lengths: list[float], capacities: list[float], minimum: float) -> list[float]:
-    """Extend cuts only with unused reviewed footage, sharing the music tail."""
-    result = list(lengths)
-    remaining = max(0.0, minimum - sum(result))
-    while remaining > .001:
-        available = [i for i in range(len(result)) if capacities[i] - result[i] > .001]
-        if not available:
-            raise RuntimeError("Not enough reviewed footage for the complete music track")
-        share = remaining / len(available)
-        for i in available:
-            addition = min(share, capacities[i] - result[i])
-            result[i] += addition
-            remaining -= addition
-    return result
+def narration_span(data: dict, audio_duration: float) -> tuple[float, float]:
+    """Trim encoder silence using spoken-character timestamps, not music length."""
+    spoken = [i for i, char in enumerate(data["characters"]) if char.strip()]
+    if not spoken:
+        raise RuntimeError("Narration contains no spoken text")
+    start = float(data["character_start_times_seconds"][spoken[0]])
+    end = float(data["character_end_times_seconds"][spoken[-1]])
+    if not all(math.isfinite(value) for value in (start,end,audio_duration)):
+        raise RuntimeError("Invalid narration timing")
+    start, end = max(0,start-.03), min(audio_duration,end+.03)
+    if end <= start:
+        raise RuntimeError("Invalid narration timing")
+    return start, end
+
+
+def render_cache_current(report: dict, stories: list[dict], folder: Path) -> bool:
+    if (report.get("render_policy_version") != RENDER_POLICY_VERSION
+            or report.get("footage_review_version") != FOOTAGE_REVIEW_VERSION
+            or not report.get("narration_timing_passed")):
+        return False
+    if report.get("voice_sha256") != {s["id"]: hashlib.sha256((folder/f"voice-{s['id']}.mp3").read_bytes()).hexdigest() for s in stories}:
+        return False
+    if report.get("background_music_ratio") != settings.background_music_volume:
+        return False
+    music = settings.background_music_path
+    return settings.background_music_volume <= 0 or (
+        music.exists() and report.get("background_music_sha256") == hashlib.sha256(music.read_bytes()).hexdigest())
 
 
 def render(stories: list[dict], edition: str, folder: Path) -> Path:
@@ -218,28 +313,31 @@ def render(stories: list[dict], edition: str, folder: Path) -> Path:
     music_enabled = settings.background_music_volume > 0
     if music_enabled and not music.exists():
         raise RuntimeError("Daily music track is missing")
-    lengths = [duration(folder / f"voice-{s['id']}.mp3") + .35 for s in stories]
-    if music_enabled:
-        capacities = [sum(b-a for asset in s["assets"] for a,b in asset["reviewed_ranges"]) for s in stories]
-        try:
-            lengths = full_track_lengths(lengths, capacities, duration(music) + .05)
-        except RuntimeError as exc:
-            raise RuntimeError(f"{', '.join(s['artist'] for s in stories)}: {exc}") from exc
     cursor = 0.0
+    review_dir = folder / "footage_review"
+    review_dir.mkdir(exist_ok=True)
     for index, story in enumerate(stories):
+        for asset in story["assets"]:
+            if asset.get("review_policy_version") != FOOTAGE_REVIEW_VERSION:
+                asset["reviewed_ranges"] = reviewed_ranges(asset, review_dir)
         audio = folder / f"voice-{story['id']}.mp3"
-        length = lengths[index]
+        alignment = json.loads((folder/f"alignment-{story['id']}.json").read_text(encoding="utf-8"))
+        voice_start, voice_end = narration_span(alignment, duration(audio))
+        length = math.ceil((voice_end-voice_start)*FPS)/FPS
+        local_cues = subtitle_cues(alignment, -voice_start)
         try:
-            shots = plan_shots(story["assets"], length)
+            shots = plan_shots(story["assets"], length, cut_points=[b for a,b,text in local_cues])
         except RuntimeError as exc:
             raise RuntimeError(f"{story['artist']}: {exc}") from exc
-        cover = overlay(story, index, edition, folder)
-        cover_hash = hashlib.sha256(cover.read_bytes()).hexdigest()
+        covers = {False: overlay(story,index,edition,folder),
+                  True: overlay(story,index,edition,folder,compact=True)}
         chapter_parts = []
         for n, shot in enumerate(shots):
             asset = shot["asset"]
+            cover = covers[n >= 2]
+            cover_hash = hashlib.sha256(cover.read_bytes()).hexdigest()
             key = hashlib.sha256(json.dumps([
-                asset["sha256"], shot["source_start"], shot["duration"], cover_hash,
+                RENDER_POLICY_VERSION, asset["sha256"], shot["source_start"], shot["duration"], cover_hash,
             ]).encode()).hexdigest()[:12]
             path = folder / f"shot-{story['id']}-{n}-{key}.mp4"
             if not path.exists():
@@ -252,17 +350,20 @@ def render(stories: list[dict], edition: str, folder: Path) -> Path:
             chapter_parts.append(path)
             timeline.append({"start": cursor + shot["start"], "duration": shot["duration"],
                              "source_start": shot["source_start"], "source": asset["source_page"],
-                             "artist": story["artist"]})
+                             "artist": story["artist"], "quality_score": shot["quality_score"]})
         concat = folder / f"shots-{story['id']}.txt"
         concat.write_text("\n".join(f"file '{p.name}'" for p in chapter_parts), encoding="utf-8")
         part = folder / f"part-{story['id']}.mp4"
         run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
              "-i", str(audio), "-t", str(length), "-map", "0:v", "-map", "1:a", "-c:v", "copy",
-             "-af", "apad", "-c:a", "aac", "-b:a", "192k", str(part)], folder)
-        chapters.append({"start": cursor, "artist": story["artist"], "headline": story["headline"]})
-        cues.extend(subtitle_cues(json.loads((folder / f"alignment-{story['id']}.json").read_text()), cursor))
+             "-af", f"atrim=start={voice_start}:end={voice_end},asetpts=PTS-STARTPTS",
+             "-c:a", "aac", "-b:a", "192k", str(part)], folder)
+        actual_length = duration(part)
+        chapters.append({"start": cursor, "duration": actual_length, "narration_duration": voice_end-voice_start,
+                         "artist": story["artist"], "headline": story["headline"]})
+        cues.extend((a+cursor,b+cursor,text) for a,b,text in local_cues)
         parts.append(part)
-        cursor += duration(part)
+        cursor += actual_length
     save(folder / "timeline.json", timeline)
     save(folder / "chapters.json", chapters)
     ass = folder / "subtitles.ass"
@@ -285,8 +386,8 @@ def render(stories: list[dict], edition: str, folder: Path) -> Path:
             return float(re.search(r"mean_volume: (-?[0-9.]+) dB", result.stderr).group(1))
         gain = 10 ** ((mean_db(joined) - mean_db(music) + settings.background_music_db_under_voice) / 20) * settings.background_music_volume
         music_args = ["-stream_loop", "-1", "-i", str(music)]
-        fade_start = max(duration(music), cursor - 2)
-        fade_length = max(.01, cursor - fade_start)
+        fade_length = min(.4, cursor)
+        fade_start = max(0, cursor - fade_length)
         audio_filter = ["-filter_complex", f"[1:a]volume={gain:.6f},afade=t=out:st={fade_start:.6f}:d={fade_length:.6f}[music];"
                         "[0:a][music]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=false[a]"]
         audio_map = "[a]"
@@ -304,8 +405,16 @@ def review(video: Path, stories: list[dict], timeline: list[dict], folder: Path)
 
     info = probe(video)
     stream = next(s for s in info["streams"] if s["codec_type"] == "video")
-    if (stream["width"], stream["height"]) != (WIDTH, HEIGHT) or duration(video) < 150:
-        raise RuntimeError("Daily bulletin has incorrect dimensions or is too short")
+    if (stream["width"], stream["height"]) != (WIDTH, HEIGHT):
+        raise RuntimeError("Daily bulletin has incorrect dimensions")
+    chapters = json.loads((folder/"chapters.json").read_text(encoding="utf-8"))
+    voice_duration = sum(chapter["narration_duration"] for chapter in chapters)
+    tails = [chapter["duration"] - chapter["narration_duration"] for chapter in chapters]
+    if (not chapters or min(tails) < -.1 or max(tails) > .15
+            or abs(duration(video)-sum(c["duration"] for c in chapters)) > .15):
+        raise RuntimeError("Video extends beyond narration or truncates speech")
+    if any(shot["duration"] > MAX_SHOT_SECONDS+.01 for shot in timeline):
+        raise RuntimeError("Daily montage contains an overlong shot")
     intervals = {}
     for shot in timeline:
         used = intervals.setdefault(shot["source"], [])
@@ -319,7 +428,13 @@ def review(video: Path, stories: list[dict], timeline: list[dict], folder: Path)
     (folder / "decode-check.log").write_text(result.stderr, encoding="utf-8")
     black = [[float(a), float(b)] for a, b in re.findall(r"black_start:([0-9.]+) black_end:([0-9.]+)", result.stderr)]
     silences = re.findall(r"silence_duration: ([0-9.]+)", result.stderr)
-    report = {"full_decode_passed": True, "video_sha256": hashlib.sha256(video.read_bytes()).hexdigest(),
+    report = {"render_policy_version": RENDER_POLICY_VERSION, "footage_review_version": FOOTAGE_REVIEW_VERSION,
+              "edit_style": "narration_first_dynamic",
+              "narration_timing_passed": True, "narration_duration": voice_duration,
+              "max_narration_tail_seconds": max(tails),
+              "max_shot_seconds": max(s["duration"] for s in timeline),
+              "voice_sha256": {s["id"]: hashlib.sha256((folder/f"voice-{s['id']}.mp3").read_bytes()).hexdigest() for s in stories},
+              "full_decode_passed": True, "video_sha256": hashlib.sha256(video.read_bytes()).hexdigest(),
               "duration": duration(video), "stories": len(stories),
               "unique_sources": len(intervals), "shots": len(timeline), "width": WIDTH, "height": HEIGHT,
               "black_intervals": black, "silences_over_2s": silences, "source_intervals_do_not_repeat": True,
@@ -332,15 +447,13 @@ def review(video: Path, stories: list[dict], timeline: list[dict], folder: Path)
         report["background_music_sha256"] = hashlib.sha256(music.read_bytes()).hexdigest()
         report["background_music_duration"] = duration(music)
         report["background_music_complete_pass"] = duration(video) + .02 >= duration(music)
-        if not report["background_music_complete_pass"]:
-            raise RuntimeError("Daily video truncates the full music track")
     save(folder / "qa-report.json", report)
     sheet = Image.new("RGB", (1440, math.ceil(len(timeline) / 3) * 298), "#171717")
     draw, font = ImageDraw.Draw(sheet), ImageFont.truetype(font_file(), 18)
     for index, shot in enumerate(timeline):
         frame = folder / f"review-final-{index:03d}.jpg"
         run(["ffmpeg", "-v", "error", "-y", "-ss", str(shot["start"] + shot["duration"] / 2),
-             "-i", str(video), "-frames:v", "1", "-vf", "scale=480:270", str(frame)], folder)
+             "-i", str(video), "-frames:v", "1", "-vf", "scale=480:270,format=yuvj420p", str(frame)], folder)
         x, y = (index % 3) * 480, (index // 3) * 298
         with Image.open(frame) as image:
             sheet.paste(image, (x, y))
