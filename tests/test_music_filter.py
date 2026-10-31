@@ -98,6 +98,24 @@ class MusicFilterTests(unittest.TestCase):
         )
         self.assertIsNone(find_music_act_query("Cantora anuncia novo disco"))
 
+    def test_current_feed_artists_start_media_search(self) -> None:
+        headlines = {
+            "Chris Brown evita prisão após incidente": "chris brown",
+            "VÍDEO: estádio tomado por fãs no show do BTS": "bts",
+            "J-Hope, do BTS, dança ao som do funk": "j-hope",
+            "Seu Jorge é homenageado pelo Prêmio Potências": "seu jorge",
+            "Mumuzinho completa o álbum ao vivo": "mumuzinho",
+            "MC Paiva e Soso Careca anunciam gravidez": "mc paiva",
+            "Morre Oswaldinho do Acordeon": "oswaldinho do acordeon",
+            "Ferrugem grava álbum com repertório de Alcione": "ferrugem",
+            "U2 anuncia data extra em São Paulo": "u2",
+            "Ruban Barra, coautor de Dancin days": "ruban barra",
+        }
+        for headline, expected in headlines.items():
+            with self.subTest(headline=headline):
+                self.assertEqual(find_music_act_query(headline), expected)
+        self.assertIsNone(find_music_act_query("Luto: famoso cantor causa comoção"))
+
 
 if __name__ == "__main__":
     unittest.main()

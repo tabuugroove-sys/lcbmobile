@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import signal
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from http.cookiejar import Cookie
 from pathlib import Path
@@ -139,6 +142,41 @@ def test_transport_allows_slow_server_without_unbounded_wait(monkeypatch):
     assert mac_media_worker.CloudTransport().command("Write-Output ready") == "ready"
     assert command.call_args.kwargs["timeout"] == 90
     assert "ServerAliveInterval=15" in command.call_args.args[0]
+
+
+def test_supervisor_preserves_normal_exit_status():
+    assert mac_media_worker.supervise_worker(
+        command=[sys.executable, "-c", "raise SystemExit(7)"], timeout=5,
+    ) == 7
+
+
+def test_supervisor_kills_downloader_group_after_timeout(monkeypatch):
+    process = mock.Mock(pid=123456)
+    process.wait.side_effect = [subprocess.TimeoutExpired("worker", 1), -9]
+    popen = mock.Mock(return_value=process)
+    killpg = mock.Mock()
+    monkeypatch.setattr(mac_media_worker.subprocess, "Popen", popen)
+    monkeypatch.setattr(mac_media_worker.os, "killpg", killpg)
+    assert mac_media_worker.supervise_worker(timeout=1) == 124
+    assert popen.call_args.kwargs["start_new_session"] is True
+    killpg.assert_called_once_with(process.pid, signal.SIGKILL)
+    assert process.wait.call_count == 2
+
+
+def test_supervisor_deadline_stops_real_worker():
+    assert mac_media_worker.supervise_worker(
+        command=[sys.executable, "-c", "import time; time.sleep(60)"], timeout=0.1,
+    ) == 124
+
+
+def test_heartbeat_uses_one_bounded_ssh_round_trip(monkeypatch):
+    transport = mac_media_worker.CloudTransport()
+    command = mock.Mock()
+    monkeypatch.setattr(transport, "command", command)
+    monkeypatch.setattr(transport, "upload", mock.Mock(side_effect=AssertionError("extra SSH round trip")))
+    transport.heartbeat()
+    command.assert_called_once()
+    assert "Move-Item -Force" in command.call_args.args[0]
 
 
 def test_cookie_export_excludes_every_other_site(monkeypatch, tmp_path):

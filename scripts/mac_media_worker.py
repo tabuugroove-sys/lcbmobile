@@ -6,7 +6,9 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
+import sys
 import tempfile
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -18,6 +20,28 @@ from src.video.youtube_media import fetch_youtube_artist_videos
 
 log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def supervise_worker(*, command: list[str] | None = None, timeout: float | None = None) -> int:
+    """Bound the entire worker, including yt-dlp's external ffmpeg children."""
+    if timeout is None:
+        timeout = max(60, min(900, float(os.getenv("MAC_MEDIA_WORKER_TIMEOUT_SECONDS", "600"))))
+    process = subprocess.Popen(
+        command or [sys.executable, "-m", "scripts.mac_media_worker"],
+        cwd=ROOT,
+        start_new_session=True,
+    )
+    try:
+        return process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Killing Python alone leaves ffmpeg alive and can retain the flock.
+        log.error("Mac media worker exceeded %.0fs; stopping its download process group", timeout)
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+        return 124
 
 
 class CloudTransport:
@@ -47,12 +71,16 @@ class CloudTransport:
         )
 
     def heartbeat(self, status: str = "ready") -> None:
-        self.command(f"New-Item -ItemType Directory -Force '{self.root}/requests' | Out-Null")
-        with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "heartbeat.json"
-            write_json(path, {"updated_at": datetime.now(timezone.utc).isoformat(), "status": status})
-            self.upload(path, f"{self.root}/heartbeat.upload.json")
-        self.command(f"Move-Item -Force '{self.root}/heartbeat.upload.json' '{self.root}/heartbeat.json'")
+        payload = base64.b64encode(json.dumps({
+            "updated_at": datetime.now(timezone.utc).isoformat(), "status": status,
+        }).encode()).decode()
+        temporary = f"{self.root}/heartbeat.{os.getpid()}.tmp"
+        self.command(
+            f"New-Item -ItemType Directory -Force '{self.root}/requests' | Out-Null; "
+            f"[IO.File]::WriteAllText('{temporary}', "
+            f"[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{payload}'))); "
+            f"Move-Item -Force '{temporary}' '{self.root}/heartbeat.json'"
+        )
 
     def requests(self) -> list[dict]:
         raw = self.command(
@@ -147,4 +175,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    raise SystemExit(supervise_worker() if sys.argv[1:] == ["--supervise"] else main())
