@@ -149,6 +149,9 @@ _TOPIC_TERMS = {
         "exposto",
         "exposta",
         "polemica",
+        "polemico",
+        "denunciado",
+        "denunciada",
         "processo",
         "revoltado",
         "revoltada",
@@ -178,6 +181,7 @@ _TOPIC_TERMS = {
         "luto",
         "morre",
         "morreu",
+        "morrer",
         "morte",
     },
     "health_crisis": {
@@ -198,6 +202,8 @@ _TOPIC_TERMS = {
         "traicao",
     },
     "family_reveal": {"filho", "filha", "gravidez", "bebe", "paternidade", "maternidade"},
+    "rare_access": {"raro", "rara", "inedito", "inedita", "bastidores"},
+    "transformation": {"cresceu", "transformacao", "irreconhecivel"},
 }
 
 _TOPIC_PHRASES = {
@@ -205,7 +211,8 @@ _TOPIC_PHRASES = {
     "shock_reveal": ("antes e depois", "ninguem esperava", "perdeu tudo"),
     "loss_mourning": ("morre aos", "morreu aos"),
     "health_crisis": ("estado grave", "passa mal", "passou mal"),
-    "relationship_drama": ("fim do casamento",),
+    "relationship_drama": ("fim do casamento", "ex affair", "ex-affair", "reconciliacao", "relacao com", "estao voltando"),
+    "transformation": ("antes e depois",),
 }
 
 # Cold-start priors mirror the channel evidence supplied by the owner: direct
@@ -348,7 +355,7 @@ def select_best_candidates(
                 break
         return selected
 
-    examples = store.analytics_examples(settings.analytics_history_limit)
+    examples = store.analytics_examples(None)
     if len(examples) < 3:
         log.info(
             "Analytics has only %d examples; using cold-start drama scoring",
@@ -370,11 +377,12 @@ def select_best_candidates(
 
     scores = [_performance(row) for row in examples]
     baseline = mean(scores)
+    from .winner_insights import build_insights, topic_bonus
+    audience_profile = build_insights(examples if stage != 'daily_multinews' else [])
 
     source_scores: dict[str, list[float]] = defaultdict(list)
     category_scores: dict[str, list[float]] = defaultdict(list)
     token_scores: dict[str, list[float]] = defaultdict(list)
-    topic_scores: dict[str, list[float]] = defaultdict(list)
 
     for row, perf in zip(examples, scores):
         source = str(row.get("source_id") or "")
@@ -385,9 +393,6 @@ def select_best_candidates(
             category_scores[category].append(perf)
         for token in set(_tokens(str(row.get("title") or ""))):
             token_scores[token].append(perf)
-        history_text = f"{row.get('title') or ''} {row.get('summary') or ''}"
-        for topic in _topic_labels(history_text):
-            topic_scores[topic].append(perf)
 
     scored: list[tuple[NewsItem, float, str]] = []
     for item in pool:
@@ -403,16 +408,7 @@ def select_best_candidates(
         freshness = _freshness_score(item)
         drama = _drama_score(item)
         topic_prior, topic_labels = _topic_prior(item)
-        topic_lifts = []
-        for topic in topic_labels:
-            values = topic_scores[topic]
-            if not values:
-                continue
-            # Shrink sparse buckets toward the channel baseline so one lucky
-            # upload cannot permanently dominate selection.
-            shrinkage = len(values) / (len(values) + 2.0)
-            topic_lifts.append((_avg(values, baseline) - baseline) * shrinkage)
-        topic_lift = max(-1.5, min(1.5, _avg(topic_lifts, 0.0)))
+        topic_lift = topic_bonus(audience_profile, topic_labels)
         star = 1.0 if find_known_music_act(f"{item.title} {item.summary}") else 0.0
 
         score = (
@@ -430,6 +426,7 @@ def select_best_candidates(
             f"tokens={token_part:.2f} fresh={freshness:.2f} "
             f"drama={drama:.2f} topic={topic_prior:.2f} "
             f"topic_lift={topic_lift:.2f} "
+            f"audience_n={audience_profile['training_count']} "
             f"topics={','.join(sorted(topic_labels)) or '-'} star={star:.2f}"
         )
         scored.append((item, score, reason))

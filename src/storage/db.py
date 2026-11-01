@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,6 +12,14 @@ from ..models import NewsItem
 
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS analytics_refresh_state (
+    scope TEXT PRIMARY KEY,
+    completed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS youtube_content_context (
+    video_id TEXT PRIMARY KEY,
+    context_json TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS seen_items (
     fingerprint TEXT PRIMARY KEY,
     source_id   TEXT NOT NULL,
@@ -459,31 +468,49 @@ class Store:
                 ),
             )
 
-    def analytics_examples(self, limit: int) -> list[dict[str, object]]:
+    def analytics_refresh_due(self, scope: str, hours: int) -> bool:
+        with self._conn() as conn:
+            row = conn.execute('SELECT completed_at FROM analytics_refresh_state WHERE scope=?', (scope,)).fetchone()
+        return row is None or row[0] < (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+
+    def mark_analytics_refreshed(self, scope: str) -> None:
+        with self._conn() as conn:
+            conn.execute('INSERT OR REPLACE INTO analytics_refresh_state VALUES (?, ?)',
+                         (scope, datetime.utcnow().isoformat()))
+
+    def record_youtube_context(self, video_id: str, context: dict) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO youtube_content_context VALUES (?, ?) "
+                "ON CONFLICT(video_id) DO UPDATE SET context_json=excluded.context_json",
+                (video_id, json.dumps(context, ensure_ascii=True)),
+            )
+
+    def analytics_examples(self, limit: int | None) -> list[dict[str, object]]:
         with self._conn() as conn:
             rows = conn.execute(
                 """SELECT
                        m.fingerprint,
                        COALESCE(f.source_id, s.source_id, '') AS source_id,
                        COALESCE(f.category, '') AS category,
-                       COALESCE(f.title, s.title, m.title, '') AS title,
+                       COALESCE(m.title, f.title, s.title, '') AS title,
                        COALESCE(f.summary, '') AS summary,
                        COALESCE(m.analytics_view_count, m.view_count),
                        m.like_count,
                        m.comment_count,
-                       m.subscribers_gained
+                       m.subscribers_gained,
+                       m.video_id, m.content_format, m.analytics_collected_at,
+                       c.context_json
                    FROM youtube_metrics m
-                   LEFT JOIN publications p
-                     ON p.platform = 'youtube' AND p.remote_id = m.video_id
+                   LEFT JOIN youtube_content_context c ON c.video_id = m.video_id
                    LEFT JOIN item_features f ON f.fingerprint = m.fingerprint
                    LEFT JOIN seen_items s ON s.fingerprint = m.fingerprint
-                   WHERE (p.status = 'ok' OR m.title IS NOT NULL)
+                   WHERE (EXISTS (SELECT 1 FROM publications p WHERE p.platform = 'youtube'
+                           AND p.remote_id = m.video_id AND p.status = 'ok') OR m.title IS NOT NULL)
                      AND COALESCE(m.content_format, 'short') != 'long'
-                   ORDER BY COALESCE(
-                       p.posted_at, m.analytics_collected_at, m.collected_at
-                   ) DESC
+                   ORDER BY COALESCE(m.analytics_view_count, m.view_count) DESC, m.video_id
                    LIMIT ?""",
-                (limit,),
+                (limit if limit is not None else -1,),
             ).fetchall()
         return [
             {
@@ -496,6 +523,10 @@ class Store:
                 "like_count": row[6],
                 "comment_count": row[7],
                 "subscribers_gained": row[8],
+                "video_id": row[9],
+                "content_format": row[10],
+                "analytics_collected_at": row[11],
+                "context": json.loads(row[12]) if row[12] else {},
             }
             for row in rows
         ]

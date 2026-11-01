@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +48,8 @@ def _oauth_credentials() -> Credentials | None:
 
 
 def _data_service(credentials: Credentials | None):
+    if credentials is not None:
+        return build("youtube", "v3", credentials=credentials, cache_discovery=False)
     if settings.youtube_api_key:
         return build(
             "youtube",
@@ -53,10 +57,8 @@ def _data_service(credentials: Credentials | None):
             developerKey=settings.youtube_api_key,
             cache_discovery=False,
         )
-    if credentials is None:
-        log.info("YouTube metrics skipped: no YOUTUBE_API_KEY or token file")
-        return None
-    return build("youtube", "v3", credentials=credentials, cache_discovery=False)
+    log.info("YouTube metrics skipped: no YOUTUBE_API_KEY or token file")
+    return None
 
 
 def _analytics_service(credentials: Credentials | None):
@@ -146,8 +148,8 @@ def _refresh_growth_metrics(
     return refreshed
 
 
-def _video_metadata(service: Any, video_ids: list[str]) -> dict[str, dict[str, str | None]]:
-    metadata: dict[str, dict[str, str | None]] = {}
+def _video_metadata(service: Any, video_ids: list[str]) -> dict[str, dict]:
+    metadata: dict[str, dict] = {}
     if service is None:
         return metadata
     for start in range(0, len(video_ids), 50):
@@ -165,29 +167,49 @@ def _video_metadata(service: Any, video_ids: list[str]) -> dict[str, dict[str, s
                 match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", raw)
                 seconds = sum(int(v or 0) * multiplier for v, multiplier in zip(match.groups(), (3600, 60, 1))) if match else 0
                 kind = "long" if seconds > 180 or "radar musical" in title.lower() else "short" if "#shorts" in title.lower() else None
-                metadata[video_id] = {"title": title, "content_format": kind}
+                snippet = video.get('snippet') or {}
+                thumbnails = snippet.get('thumbnails') or {}
+                thumbnail = thumbnails.get('high') or thumbnails.get('medium') or thumbnails.get('default') or {}
+                metadata[video_id] = {"title": title, "content_format": kind,
+                    'published_at': snippet.get('publishedAt'), 'duration_seconds': seconds,
+                    'thumbnail_url': thumbnail.get('url')}
     return metadata
 
 
 def _refresh_channel_history(store: Store, analytics_service: Any, data_service: Any) -> int:
-    response = (
-        analytics_service.reports()
-        .query(
-            ids="channel==MINE",
-            startDate="2020-01-01",
-            endDate=date.today().isoformat(),
-            metrics="views,subscribersGained",
-            dimensions="video",
-            sort="-views",
-            maxResults=min(settings.analytics_history_limit, 200),
-        )
-        .execute()
-    )
-    rows = _analytics_rows(response)
-    metadata = _video_metadata(
-        data_service,
-        [str(row["video_id"]) for row in rows],
-    )
+    # Enumerate all uploads: top-200 alone excludes the control population.
+    if data_service is None:
+        raise RuntimeError('Channel history requires authenticated YouTube Data API')
+    channels = data_service.channels().list(part='id,contentDetails', mine=True).execute().get('items', [])
+    expected = os.getenv('YOUTUBE_EXPECTED_CHANNEL_ID', 'UC-TFUUc4YHleNoIFXBVaj7A')
+    if len(channels) != 1 or channels[0]['id'] != expected:
+        raise RuntimeError('Analytics OAuth belongs to a different channel')
+    playlist = channels[0]['contentDetails']['relatedPlaylists']['uploads']
+    ids, tokens, token = [], set(), None
+    while True:
+        args = dict(part='contentDetails', playlistId=playlist, maxResults=50)
+        if token:
+            args['pageToken'] = token
+        response = data_service.playlistItems().list(**args).execute()
+        ids.extend(r['contentDetails']['videoId'] for r in response.get('items', []))
+        token = response.get('nextPageToken')
+        if not token:
+            break
+        if token in tokens:
+            raise RuntimeError('Repeated uploads pagination token')
+        tokens.add(token)
+    ids = list(dict.fromkeys(ids))
+    rows = []
+    end = datetime.now(ZoneInfo('America/Sao_Paulo')).date().isoformat()
+    for start in range(0, len(ids), 50):
+        chunk = ids[start:start+50]
+        response = analytics_service.reports().query(
+            ids='channel==MINE', startDate='2005-01-01', endDate=end,
+            metrics='views,subscribersGained', dimensions='video',
+            filters='video=='+','.join(chunk), maxResults=50,
+        ).execute()
+        rows.extend(row for row in _analytics_rows(response) if row['video_id'] in chunk)
+    metadata = _video_metadata(data_service, ids)
     for row in rows:
         video_id = str(row["video_id"])
         store.record_youtube_growth_metrics(
@@ -198,6 +220,11 @@ def _refresh_channel_history(store: Store, analytics_service: Any, data_service:
             title=metadata.get(video_id, {}).get("title"),
             content_format=metadata.get(video_id, {}).get("content_format"),
         )
+        if video_id in metadata:
+            store.record_youtube_context(video_id, metadata[video_id])
+    from .winner_insights import write_insights
+    write_insights(store, settings.output_dir)
+    store.mark_analytics_refreshed('channel_history_v2')
     return len(rows)
 
 
@@ -247,14 +274,8 @@ def refresh_youtube_metrics(store: Store) -> None:
                     "Refreshed YouTube views/subscriber growth for %d video(s)",
                     refreshed,
                 )
-            history_count = _refresh_channel_history(
-                store,
-                analytics_service,
-                service,
-            )
-            log.info(
-                "Refreshed channel-wide growth history for %d video(s)",
-                history_count,
-            )
+            if store.analytics_refresh_due('channel_history_v2', settings.youtube_metrics_refresh_hours):
+                history_count = _refresh_channel_history(store, analytics_service, service)
+                log.info("Refreshed channel-wide growth history for %d video(s)", history_count)
     except Exception as exc:  # noqa: BLE001
         log.warning("YouTube metrics refresh failed: %s", exc)
