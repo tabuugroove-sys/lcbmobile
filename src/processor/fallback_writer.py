@@ -26,7 +26,9 @@ def is_configured() -> bool:
     return bool(os.getenv("GEMINI_API_KEY", "").strip())
 
 
-def rewrite_via_gemini(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
+def rewrite_via_gemini(
+    item: NewsItem, *, max_tokens: int = 1024, short_form: bool = False
+) -> RewrittenPost:
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not configured.")
@@ -37,7 +39,7 @@ def rewrite_via_gemini(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPo
     )
     body: dict[str, Any] = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": [{"role": "user", "parts": [{"text": _user_prompt(item)}]}],
+        "contents": [{"role": "user", "parts": [{"text": _user_prompt(item, short_form=short_form)}]}],
         "generationConfig": {
             "temperature": 0.8,
             "maxOutputTokens": max_tokens,

@@ -15,6 +15,8 @@ class Source:
     url: str
     category: str
     weight: float = 1.0
+    summary_chars: int = 600
+    max_entries: int | None = None
 
 
 def load_sources(path: Path) -> list[Source]:

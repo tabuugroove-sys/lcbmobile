@@ -19,8 +19,12 @@ from ..config import settings
 from ..editorial import find_known_music_act, is_music_news
 from ..models import NewsItem
 from ..storage import Store
+from .momentum import Heat, MomentumProfile
 
 log = logging.getLogger(__name__)
+
+# Hit follow-ups were validated on Shorts only; the long-form bulletins have no such evidence.
+_MOMENTUM_STAGES = {"fresh", "fallback"}
 
 _TOKEN_RE = re.compile(r"[0-9A-Za-zÀ-ÖØ-öø-ÿ]+")
 _STOPWORDS = {
@@ -329,6 +333,28 @@ def _cold_start_scores(pool: list[NewsItem]) -> list[tuple[NewsItem, float, str]
     return scored
 
 
+def _momentum_profile(examples: list[dict[str, object]], stage: str) -> MomentumProfile | None:
+    if stage.split(":")[0] not in _MOMENTUM_STAGES:
+        return None
+    try:
+        profile = MomentumProfile(examples)
+        log.info("Hot subjects right now: %s", profile.hot_subjects() or "none")
+        return profile
+    except Exception as exc:  # noqa: BLE001 - a ranking signal must never stop publishing
+        log.warning("Momentum signal unavailable: %s", exc)
+        return None
+
+
+def _heat_of(momentum: MomentumProfile | None, item: NewsItem) -> Heat:
+    if momentum is None:
+        return Heat()
+    try:
+        return momentum.heat(item.title)
+    except Exception as exc:  # noqa: BLE001 - a ranking signal must never stop publishing
+        log.warning("Momentum failed for %s: %s", item.url, exc)
+        return Heat()
+
+
 def select_best_candidates(
     candidates: list[NewsItem],
     store: Store,
@@ -379,6 +405,7 @@ def select_best_candidates(
     baseline = mean(scores)
     from .winner_insights import build_insights, topic_bonus
     audience_profile = build_insights(examples if stage != 'daily_multinews' else [])
+    momentum = _momentum_profile(examples, stage)
 
     source_scores: dict[str, list[float]] = defaultdict(list)
     category_scores: dict[str, list[float]] = defaultdict(list)
@@ -410,6 +437,7 @@ def select_best_candidates(
         topic_prior, topic_labels = _topic_prior(item)
         topic_lift = topic_bonus(audience_profile, topic_labels)
         star = 1.0 if find_known_music_act(f"{item.title} {item.summary}") else 0.0
+        heat = _heat_of(momentum, item)
 
         score = (
             0.45 * source_part
@@ -420,6 +448,7 @@ def select_best_candidates(
             + 0.90 * topic_prior
             + 0.80 * topic_lift
             + 0.35 * star
+            + heat.bonus
         )
         reason = (
             f"source={source_part:.2f} category={category_part:.2f} "
@@ -427,7 +456,9 @@ def select_best_candidates(
             f"drama={drama:.2f} topic={topic_prior:.2f} "
             f"topic_lift={topic_lift:.2f} "
             f"audience_n={audience_profile['training_count']} "
-            f"topics={','.join(sorted(topic_labels)) or '-'} star={star:.2f}"
+            f"topics={','.join(sorted(topic_labels)) or '-'} star={star:.2f} "
+            f"heat={heat.value:.2f} momentum={heat.bonus:.2f} "
+            f"subjects={','.join(s.replace(' ', '_') for s in heat.subjects) or '-'}"
         )
         scored.append((item, score, reason))
 

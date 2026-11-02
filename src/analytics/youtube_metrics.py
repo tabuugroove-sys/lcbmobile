@@ -96,13 +96,15 @@ def _analytics_rows(response: dict[str, Any]) -> list[dict[str, object]]:
         video_id = str(row.get("video") or "")
         if not video_id:
             continue
-        rows.append(
-            {
-                "video_id": video_id,
-                "view_count": _int_stat(row.get("views")),
-                "subscribers_gained": _int_stat(row.get("subscribersGained")),
-            }
-        )
+        parsed = {
+            "video_id": video_id,
+            "view_count": _int_stat(row.get("views")),
+            "subscribers_gained": _int_stat(row.get("subscribersGained")),
+        }
+        if "averageViewPercentage" in row:
+            parsed["avg_view_pct"] = float(row["averageViewPercentage"] or 0)
+            parsed["avg_view_seconds"] = float(row.get("averageViewDuration") or 0)
+        rows.append(parsed)
     return rows
 
 
@@ -180,11 +182,7 @@ def _refresh_channel_history(store: Store, analytics_service: Any, data_service:
     # Enumerate all uploads: top-200 alone excludes the control population.
     if data_service is None:
         raise RuntimeError('Channel history requires authenticated YouTube Data API')
-    channels = data_service.channels().list(part='id,contentDetails', mine=True).execute().get('items', [])
-    expected = os.getenv('YOUTUBE_EXPECTED_CHANNEL_ID', 'UC-TFUUc4YHleNoIFXBVaj7A')
-    if len(channels) != 1 or channels[0]['id'] != expected:
-        raise RuntimeError('Analytics OAuth belongs to a different channel')
-    playlist = channels[0]['contentDetails']['relatedPlaylists']['uploads']
+    playlist = _uploads_playlist(data_service)
     ids, tokens, token = [], set(), None
     while True:
         args = dict(part='contentDetails', playlistId=playlist, maxResults=50)
@@ -205,7 +203,7 @@ def _refresh_channel_history(store: Store, analytics_service: Any, data_service:
         chunk = ids[start:start+50]
         response = analytics_service.reports().query(
             ids='channel==MINE', startDate='2005-01-01', endDate=end,
-            metrics='views,subscribersGained', dimensions='video',
+            metrics='views,subscribersGained,averageViewPercentage,averageViewDuration', dimensions='video',
             filters='video=='+','.join(chunk), maxResults=50,
         ).execute()
         rows.extend(row for row in _analytics_rows(response) if row['video_id'] in chunk)
@@ -221,11 +219,56 @@ def _refresh_channel_history(store: Store, analytics_service: Any, data_service:
             content_format=metadata.get(video_id, {}).get("content_format"),
         )
         if video_id in metadata:
-            store.record_youtube_context(video_id, metadata[video_id])
+            retention = {k: row[k] for k in ('avg_view_pct', 'avg_view_seconds') if k in row}
+            store.record_youtube_context(video_id, {**metadata[video_id], **retention})
     from .winner_insights import write_insights
     write_insights(store, settings.output_dir)
     store.mark_analytics_refreshed('channel_history_v2')
     return len(rows)
+
+
+def _uploads_playlist(data_service: Any) -> str:
+    channels = data_service.channels().list(part='id,contentDetails', mine=True).execute().get('items', [])
+    expected = os.getenv('YOUTUBE_EXPECTED_CHANNEL_ID', 'UC-TFUUc4YHleNoIFXBVaj7A')
+    if len(channels) != 1 or channels[0]['id'] != expected:
+        raise RuntimeError('Analytics OAuth belongs to a different channel')
+    return channels[0]['contentDetails']['relatedPlaylists']['uploads']
+
+
+def _refresh_recent_uploads(store: Store, data_service: Any) -> int:
+    """Read live counts for the newest uploads.
+
+    Analytics lags about two days, while a Short gets most of its views in the first
+    one, so a hit must be seen through the public counter while it still matters.
+    """
+    response = data_service.playlistItems().list(
+        part='contentDetails', playlistId=_uploads_playlist(data_service), maxResults=50,
+    ).execute()
+    ids = list(dict.fromkeys(r['contentDetails']['videoId'] for r in response.get('items', [])))
+    if not ids:
+        return 0
+    metadata = _video_metadata(data_service, ids)
+    videos = data_service.videos().list(part='statistics', id=','.join(ids)).execute().get('items', [])
+    snapshots = []
+    for video in videos:
+        video_id = str(video.get('id') or '')
+        statistics = video.get('statistics') or {}
+        # A hidden counter is unknown, not zero views.
+        if not video_id or 'viewCount' not in statistics:
+            continue
+        info = metadata.get(video_id, {})
+        snapshots.append({
+            'video_id': video_id,
+            'view_count': _int_stat(statistics.get('viewCount')),
+            'like_count': _int_stat(statistics.get('likeCount')),
+            'comment_count': _int_stat(statistics.get('commentCount')),
+            'title': info.get('title'),
+            'content_format': info.get('content_format'),
+        })
+        if info:
+            store.record_youtube_context(video_id, info)
+    store.record_view_snapshots(snapshots)
+    return len(snapshots)
 
 
 def refresh_youtube_metrics(store: Store) -> None:
@@ -279,3 +322,18 @@ def refresh_youtube_metrics(store: Store) -> None:
                 log.info("Refreshed channel-wide growth history for %d video(s)", history_count)
     except Exception as exc:  # noqa: BLE001
         log.warning("YouTube metrics refresh failed: %s", exc)
+
+    # Separate from the block above: a failed Analytics call must not hide a hit.
+    try:
+        credentials = _oauth_credentials()
+        if credentials is not None:
+            log.info("Live counts read for %d recent upload(s)",
+                     _refresh_recent_uploads(store, _data_service(credentials)))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Recent upload refresh failed: %s", exc)
+
+    try:
+        from .scorecard import update_scorecard
+        update_scorecard(store, settings.output_dir)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Growth scorecard failed: %s", exc)

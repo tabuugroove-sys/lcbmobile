@@ -1,0 +1,60 @@
+# Feeds for the Shorts pipeline. The daily bulletin keeps using sources.yaml.
+# Every URL here returned fresh entries when checked on 2026-11-01; six of the eight
+# feeds in sources.yaml no longer deliver anything, which left G1 reviews as 97% of
+# the candidates. Gossip about musicians is what this channel's hits are made of.
+# Hugo Gloss is left out on purpose: 13 of 33 sampled titles carried photo captions or
+# their own text a second time, and the other outlets here cover the same stories.
+sources:
+  - id: ego
+    name: G1
+    type: rss
+    url: https://g1.globo.com/rss/g1/pop-arte/
+    category: celebridades
+    weight: 0.9
+
+  - id: otvfoco
+    name: TV Foco
+    type: rss
+    url: https://www.otvfoco.com.br/feed/
+    category: televisao
+    weight: 0.8
+
+  - id: leodias
+    name: Leo Dias
+    type: rss
+    url: https://portalleodias.com/feed/
+    category: fofoca
+    weight: 1.0
+
+  - id: metropoles
+    name: Metrópoles
+    type: rss
+    url: https://www.metropoles.com/celebridades/feed
+    category: fofoca
+    weight: 1.0
+
+  - id: popline
+    name: POPline
+    type: rss
+    url: https://portalpopline.com.br/feed/
+    category: celebridades
+    weight: 1.0
+
+  - id: papelpop
+    name: Papelpop
+    type: rss
+    url: https://www.papelpop.com/feed/
+    category: celebridades
+    weight: 1.0
+
+  - id: quem
+    name: Quem
+    type: rss
+    url: https://revistaquem.globo.com/rss/quem/
+    category: celebridades
+    weight: 1.0
+    # This feed carries whole articles; a passing mention of a song must not make
+    # a story about a shopping trip count as music news.
+    summary_chars: 220
+    # A hundred entries a day would crowd a strong story from a smaller feed out of the pool.
+    max_entries: 30

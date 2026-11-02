@@ -9,8 +9,9 @@ import time
 from zoneinfo import ZoneInfo
 
 from .analytics import refresh_youtube_metrics, select_best_candidates
+from .analytics.experiment import ARM_SHORT, script_arm
 from .config import ROOT, settings
-from .editorial import find_music_act_query, is_music_news
+from .editorial import find_music_act_query, is_music_news, same_story
 from .models import GeneratedAssets, NewsItem, RewrittenPost
 from .notify import notify, notify_error, notify_summary, notify_urgent
 from .processor import rewrite
@@ -21,6 +22,10 @@ from .storage import Store
 from .video import build_short, photo_media_ready, video_media_ready
 
 log = logging.getLogger(__name__)
+
+# Long enough to catch one event told by another outlet, short enough that a real
+# new development about the same person is not held back.
+SAME_STORY_WINDOW_HOURS = 36
 
 
 @dataclass
@@ -148,6 +153,38 @@ def _alert_youtube_post_without_face(
     return True
 
 
+def _recent_titles(store: Store) -> list[str]:
+    try:
+        return store.recent_short_titles(SAME_STORY_WINDOW_HOURS)
+    except Exception as exc:  # noqa: BLE001 - a duplicate is better than a missed slot
+        log.warning("Could not read recent headlines: %s", exc)
+        return []
+
+
+def _script_arm(store: Store) -> str:
+    try:
+        return script_arm(store)
+    except Exception as exc:  # noqa: BLE001 - measurement must never stop publishing
+        log.warning("Script experiment unavailable: %s", exc)
+        return ARM_SHORT
+
+
+def _record_growth_assignment(
+    store: Store, item: NewsItem, post: RewrittenPost, result: PublishResult, arm: str
+) -> None:
+    if result.platform != "youtube" or not result.ok or not result.remote_id or result.reused_existing:
+        return
+    try:
+        store.record_growth_assignment(
+            video_id=result.remote_id,
+            fingerprint=item.fingerprint(),
+            script_arm=arm,
+            script_words=len(post.script_voiceover.split()),
+        )
+    except Exception as exc:  # noqa: BLE001 - the upload already happened; do not retry it
+        log.warning("Could not record script experiment for %s: %s", result.remote_id, exc)
+
+
 def _select_with_classic_fallback(
     candidates: list[NewsItem],
     store: Store,
@@ -203,6 +240,7 @@ def _yesterday_fallback_items(
     today = datetime.now(tz).date()
     yesterday = today - timedelta(days=1)
     fallback: list[NewsItem] = []
+    recent_titles = _recent_titles(store)
 
     for item in items:
         if not item.published_at:
@@ -217,6 +255,8 @@ def _yesterday_fallback_items(
 
         dedupe_key = f"replay:{today.isoformat()}:{item.fingerprint()}"
         if store.is_seen(dedupe_key):
+            continue
+        if any(same_story(item.title, title) for title in recent_titles):
             continue
         fallback.append(item.model_copy(update={"dedupe_key": dedupe_key}))
         if len(fallback) >= settings.analytics_candidate_pool:
@@ -237,7 +277,7 @@ def run(
     limit: int | None = None,
     dry_run: bool | None = None,
 ) -> RunReport:
-    sources_path = sources_path or (ROOT / "config" / "sources.yaml")
+    sources_path = sources_path or (ROOT / "config" / "shorts_sources.yaml")
     limit = limit if limit is not None else settings.max_items_per_run
     dry_run = settings.dry_run if dry_run is None else dry_run
 
@@ -292,6 +332,7 @@ def run(
     # Track content hashes added to candidates in THIS run, so two RSS items
     # with the same headline (mirror sites, dupe feeds) collapse to one.
     seen_hashes_this_run: set[str] = set()
+    recent_titles = _recent_titles(store)
     for item in items:
         if not is_music_news(item):
             log.info("Skipping non-music item: %s", item.title)
@@ -307,6 +348,9 @@ def run(
             continue
         if ch and ch in seen_hashes_this_run:
             log.info("Skipping %s — duplicate in this run (hash %s)", item.url, ch)
+            continue
+        if any(same_story(item.title, title) for title in recent_titles):
+            log.info("Skipping %s — same event was just published: %s", item.url, item.title)
             continue
         seen_hashes_this_run.add(ch)
         candidates.append(item)
@@ -361,6 +405,7 @@ def run(
 
     for item in fresh:
         store.record_item_features(item)
+        arm = _script_arm(store)
         related_items = _related_media_items(item, items)
         if related_items:
             log.info(
@@ -376,7 +421,7 @@ def run(
                 settings.max_attempts_per_item,
             )
             try:
-                post: RewrittenPost = rewrite(item)
+                post: RewrittenPost = rewrite(item, short_form=arm == ARM_SHORT)
             except Exception as exc:  # noqa: BLE001
                 log.exception("Rewrite failed for %s", item.url)
                 notify_error("rewrite", exc, context=item.url)
@@ -432,6 +477,7 @@ def run(
                 )
                 if result.ok:
                     any_ok = True
+                    _record_growth_assignment(store, item, post, result, arm)
                     _alert_youtube_post_without_photos(item, post, assets, result)
                 else:
                     if optional:

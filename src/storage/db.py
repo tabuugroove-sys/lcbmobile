@@ -102,6 +102,23 @@ CREATE TABLE IF NOT EXISTS traffic_experiments (
     assigned_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS youtube_view_snapshots (
+    video_id      TEXT NOT NULL,
+    captured_at   TEXT NOT NULL,
+    view_count    INTEGER NOT NULL,
+    like_count    INTEGER NOT NULL DEFAULT 0,
+    comment_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(video_id, captured_at)
+);
+
+CREATE TABLE IF NOT EXISTS growth_assignments (
+    video_id     TEXT PRIMARY KEY,
+    fingerprint  TEXT NOT NULL,
+    script_arm   TEXT NOT NULL,
+    script_words INTEGER NOT NULL,
+    assigned_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS daily_video_assets (
     run_fingerprint TEXT NOT NULL,
     asset_id        TEXT NOT NULL,
@@ -480,11 +497,118 @@ class Store:
 
     def record_youtube_context(self, video_id: str, context: dict) -> None:
         with self._conn() as conn:
+            # Metadata and retention arrive from different refreshes; neither erases the other.
+            row = conn.execute(
+                "SELECT context_json FROM youtube_content_context WHERE video_id=?", (video_id,)
+            ).fetchone()
+            merged = {**(json.loads(row[0]) if row else {}), **context}
             conn.execute(
                 "INSERT INTO youtube_content_context VALUES (?, ?) "
                 "ON CONFLICT(video_id) DO UPDATE SET context_json=excluded.context_json",
-                (video_id, json.dumps(context, ensure_ascii=True)),
+                (video_id, json.dumps(merged, ensure_ascii=True)),
             )
+
+    def record_view_snapshots(self, snapshots: list[dict[str, object]]) -> None:
+        """Keep what was public at this moment; lifetime totals cannot be rewound later."""
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            for row in snapshots:
+                video_id = str(row["video_id"])
+                views = int(row.get("view_count") or 0)
+                likes = int(row.get("like_count") or 0)
+                comments = int(row.get("comment_count") or 0)
+                conn.execute(
+                    """INSERT OR REPLACE INTO youtube_view_snapshots
+                       (video_id, captured_at, view_count, like_count, comment_count)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (video_id, now, views, likes, comments),
+                )
+                conn.execute(
+                    """INSERT INTO youtube_metrics
+                       (video_id, fingerprint, view_count, like_count, comment_count,
+                        title, content_format, collected_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(video_id) DO UPDATE SET
+                           view_count = excluded.view_count,
+                           like_count = excluded.like_count,
+                           comment_count = excluded.comment_count,
+                           title = COALESCE(excluded.title, youtube_metrics.title),
+                           content_format = COALESCE(excluded.content_format, youtube_metrics.content_format),
+                           collected_at = excluded.collected_at""",
+                    (video_id, f"youtube:{video_id}", views, likes, comments,
+                     row.get("title"), row.get("content_format"), now),
+                )
+
+    def recent_short_titles(self, hours: int) -> list[str]:
+        """Headlines of Shorts out in the last hours, from this runner or any other."""
+        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        with self._conn() as conn:
+            local = conn.execute(
+                """SELECT f.title, m.title FROM publications p
+                   LEFT JOIN item_features f ON f.fingerprint = p.fingerprint
+                   LEFT JOIN youtube_metrics m ON m.video_id = p.remote_id
+                   WHERE p.platform = 'youtube' AND p.status = 'ok' AND p.posted_at >= ?""",
+                (cutoff,),
+            ).fetchall()
+            channel = conn.execute(
+                """SELECT m.title FROM youtube_metrics m
+                   JOIN youtube_content_context c ON c.video_id = m.video_id
+                   WHERE m.content_format = 'short'
+                     AND json_extract(c.context_json, '$.published_at') >= ?""",
+                (cutoff,),
+            ).fetchall()
+        titles = {title for row in [*local, *channel] for title in row if title}
+        return sorted(titles)
+
+    def record_growth_assignment(
+        self, *, video_id: str, fingerprint: str, script_arm: str, script_words: int
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO growth_assignments
+                   (video_id, fingerprint, script_arm, script_words, assigned_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (video_id, fingerprint, script_arm, script_words, datetime.utcnow().isoformat()),
+            )
+
+    def growth_assignment_rows(self) -> list[dict[str, object]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT g.video_id, g.script_arm, g.script_words, g.assigned_at,
+                          (SELECT s.view_count FROM youtube_view_snapshots s
+                           WHERE s.video_id = g.video_id
+                             AND s.captured_at >= strftime('%Y-%m-%dT%H:%M:%S', g.assigned_at, '+7 days')
+                           ORDER BY s.captured_at LIMIT 1),
+                          MAX(COALESCE(m.analytics_view_count, 0), COALESCE(m.view_count, 0)),
+                          COALESCE(m.subscribers_gained, 0),
+                          c.context_json
+                   FROM growth_assignments g
+                   LEFT JOIN youtube_metrics m ON m.video_id = g.video_id
+                   LEFT JOIN youtube_content_context c ON c.video_id = g.video_id"""
+            ).fetchall()
+        return [
+            {
+                "video_id": row[0],
+                "script_arm": row[1],
+                "script_words": row[2],
+                "assigned_at": row[3],
+                "views_7d": row[4],
+                "views": row[5],
+                "subscribers_gained": row[6],
+                "context": json.loads(row[7]) if row[7] else {},
+            }
+            for row in rows
+        ]
+
+    def growth_factor_disabled(self, factor: str) -> bool:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM analytics_refresh_state WHERE scope=?", (f"growth_disabled:{factor}",)
+            ).fetchone()
+        return row is not None
+
+    def disable_growth_factor(self, factor: str) -> None:
+        self.mark_analytics_refreshed(f"growth_disabled:{factor}")
 
     def analytics_examples(self, limit: int | None) -> list[dict[str, object]]:
         with self._conn() as conn:
@@ -500,7 +624,9 @@ class Store:
                        m.comment_count,
                        m.subscribers_gained,
                        m.video_id, m.content_format, m.analytics_collected_at,
-                       c.context_json
+                       c.context_json,
+                       COALESCE(f.title, s.title, ''),
+                       m.view_count
                    FROM youtube_metrics m
                    LEFT JOIN youtube_content_context c ON c.video_id = m.video_id
                    LEFT JOIN item_features f ON f.fingerprint = m.fingerprint
@@ -527,6 +653,8 @@ class Store:
                 "content_format": row[10],
                 "analytics_collected_at": row[11],
                 "context": json.loads(row[12]) if row[12] else {},
+                "rss_title": row[13],
+                "public_view_count": row[14],
             }
             for row in rows
         ]

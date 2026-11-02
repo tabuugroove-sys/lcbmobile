@@ -22,6 +22,24 @@ _SITE_CTA_RE = re.compile(
     r"\b(?:veja|assista)(?:\s+o)?\s+v[ií]deo(?:\s+do\s+momento)?[.!;:]?",
     re.IGNORECASE,
 )
+_CLAUSE_RE = re.compile(r"[,;:–—](?=\s)")
+
+# Viewers stay about 20 seconds whatever the length, so a 30-second Short is watched
+# to about 70% and a 42-second one to about 45%, and the shorter one reaches far more
+# people. At the channel's voice speed 60 words take about 30 seconds.
+SHORT_HEADLINE_CHARS = 90
+SHORT_MAX_WORDS = 60
+SHORT_STRETCH_WORDS = 72
+SHORT_MIN_WORDS = 28
+SHORT_FLOOR_WORDS = 22
+_MIN_CLAUSE_WORDS = 5
+# A cut headline must not end on a word that needs the next one to make sense.
+_DANGLING_WORDS = {
+    "a", "o", "as", "os", "um", "uma", "uns", "umas", "de", "do", "da", "dos", "das",
+    "em", "no", "na", "nos", "nas", "com", "por", "para", "pra", "pelo", "pela", "que",
+    "e", "ou", "ao", "aos", "à", "às", "se", "sem", "sob", "sobre", "entre", "após",
+    "como", "mas", "seu", "sua", "seus", "suas", "é", "foi", "são",
+}
 
 
 def _plain(value: str) -> str:
@@ -46,6 +64,84 @@ def _clip_chars(value: str, limit: int) -> str:
     if " " in candidate:
         candidate = candidate.rsplit(" ", 1)[0]
     return candidate.rstrip(".,;:") + "..."
+
+
+def _clip_headline(title: str, limit: int) -> str:
+    """Cut a headline on a whole word that can end a phrase.
+
+    Never at the first comma: Portuguese often puts the news after an apposition
+    ("Cassandra Wilson, cantora de jazz, morre aos 70 anos").
+    """
+    if len(title) <= limit:
+        return title
+    clipped = title[: limit + 1].rsplit(" ", 1)[0]
+    for opening, closing in (("“", "”"), ("‘", "’")):
+        # A quotation cut in half reads as a mistake; the sentence before it stands on its own.
+        if clipped.count(opening) > clipped.count(closing) and clipped.rfind(opening) >= limit // 2:
+            clipped = clipped[: clipped.rfind(opening)]
+    words = clipped.split()
+    while len(words) > 1 and words[-1].casefold() in _DANGLING_WORDS:
+        words.pop()
+    # An unbroken run of characters has no word to cut on, and a title must never be empty.
+    return " ".join(words).rstrip(".,;:–—") or title[:limit]
+
+
+def _close(text: str) -> str:
+    """End narration on a word that can end a sentence, with a period."""
+    if not text or text[-1] in ".!?":
+        return text
+    words = text.split()
+    while len(words) > 1 and words[-1].casefold() in _DANGLING_WORDS:
+        words.pop()
+    return " ".join(words).rstrip(",;:–—") + "."
+
+
+def fit_voiceover(text: str, limit: int = SHORT_MAX_WORDS) -> str:
+    """Keep whole sentences up to the limit; a cut sentence reads as a broken last line."""
+    sentences = [part for part in _SENTENCE_RE.split(_SPACE_RE.sub(" ", text or "").strip()) if part]
+    kept: list[str] = []
+    used = 0
+    for sentence in sentences:
+        count = len(sentence.split())
+        if used + count > limit:
+            break
+        kept.append(sentence)
+        used += count
+    if kept:
+        return _close(" ".join(kept))
+    if not sentences:
+        return ""
+    first = sentences[0]
+    ends = [
+        match.start()
+        for match in _CLAUSE_RE.finditer(first)
+        if _MIN_CLAUSE_WORDS <= len(first[: match.start()].split()) <= limit
+    ]
+    return _close(first[: ends[-1]] if ends else " ".join(first.split()[:limit]))
+
+
+def _short_voiceover(title: str, sentences: list[str], source_name: str) -> str | None:
+    """Open on the news itself: the first seconds decide whether a Short is watched.
+
+    Returns None when the story is too thin for this form. Below about 8 seconds of
+    speech the render fails, so such a story keeps the longer previous script.
+    """
+    lead = title if title[-1:] in {".", "!", "?"} else f"{title}."
+    same = title.casefold()
+    facts = [
+        sentence
+        for sentence in sentences
+        if sentence.casefold().rstrip(" .!?") not in same and same not in sentence.casefold()
+    ]
+    script = fit_voiceover(" ".join([lead, *facts]))
+    if len(script.split()) >= SHORT_MIN_WORDS:
+        return script
+    # One long sentence after the headline: slightly over the limit beats a bare headline.
+    longer = fit_voiceover(" ".join([lead, *facts]), SHORT_STRETCH_WORDS)
+    if len(longer.split()) >= SHORT_MIN_WORDS:
+        return longer
+    script = f"{script} A informação foi publicada por {source_name}."
+    return script if len(script.split()) >= SHORT_FLOOR_WORDS else None
 
 
 def _screen_beats(title: str, summary_sentences: list[str]) -> list[str]:
@@ -77,7 +173,7 @@ def _screen_beats(title: str, summary_sentences: list[str]) -> list[str]:
     return beats[:5] or ["Notícia da música"]
 
 
-def rewrite_via_template(item: NewsItem) -> RewrittenPost:
+def rewrite_via_template(item: NewsItem, *, short_form: bool = False) -> RewrittenPost:
     """Build a factual post strictly from title, summary and source metadata."""
     title = _plain(item.title).strip(" .") or "Noticia da musica"
     summary = _plain(item.summary)
@@ -99,8 +195,11 @@ def rewrite_via_template(item: NewsItem) -> RewrittenPost:
         "Acompanhe as proximas atualizacoes deste caso."
     )
     script = _clip_words(f"{script} {outro}", 88)
-
     headline = _clip_chars(_clip_words(title, 11), 70)
+    if short_form:
+        script = _short_voiceover(title, sentences, item.source_name) or script
+        headline = _clip_headline(title, SHORT_HEADLINE_CHARS)
+
     category = item.category if item.category in _CATEGORIES else "geral"
     hashtags = ["Musica", "Noticias", "Famosos", "Brasil", "Shorts"]
     short_caption = _clip_words(f"{headline} 🎵 Saiba o que aconteceu. #Musica #Noticias #Shorts", 30)

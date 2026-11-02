@@ -77,9 +77,15 @@ _RESPONSE_FORMAT_HINT = (
 )
 
 
-def _user_prompt(item: NewsItem) -> str:
+_SHORT_FORM_RULE = (
+    "\n\nLIMITE DESTE VIDEO: o script_voiceover deve ter entre 45 e 58 palavras e abrir "
+    "direto no fato principal. Esta regra substitui a faixa de 60-90 palavras."
+)
+
+
+def _user_prompt(item: NewsItem, *, short_form: bool = False) -> str:
     published = item.published_at.isoformat() if item.published_at else "desconhecido"
-    return (
+    prompt = (
         f"{_RESPONSE_FORMAT_HINT}\n\n"
         f"FONTE: {item.source_name} ({item.source_id})\n"
         f"CATEGORIA SUGERIDA: {item.category}\n"
@@ -88,6 +94,7 @@ def _user_prompt(item: NewsItem) -> str:
         f"TITULO ORIGINAL: {item.title}\n"
         f"RESUMO ORIGINAL:\n{item.summary or '(sem resumo)'}"
     )
+    return prompt + _SHORT_FORM_RULE if short_form else prompt
 
 
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
@@ -113,16 +120,26 @@ def _is_credit_or_auth_error(exc: BaseException) -> bool:
     return False
 
 
-def rewrite(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
+def rewrite(item: NewsItem, *, max_tokens: int = 1024, short_form: bool = False) -> RewrittenPost:
+    post = _rewrite(item, max_tokens=max_tokens, short_form=short_form)
+    if not short_form or os.getenv("REWRITE_PROVIDER", "").strip().lower() == "template":
+        return post
+    from .template_writer import fit_voiceover
+
+    # Models overshoot a word limit; the length is what the viewer actually feels.
+    return post.model_copy(update={"script_voiceover": fit_voiceover(post.script_voiceover)})
+
+
+def _rewrite(item: NewsItem, *, max_tokens: int, short_form: bool) -> RewrittenPost:
     if os.getenv("REWRITE_PROVIDER", "").strip().lower() == "template":
         from .template_writer import rewrite_via_template
 
         log.info("Using deterministic template writer for %s", item.url)
-        return rewrite_via_template(item)
+        return rewrite_via_template(item, short_form=short_form)
     if _local_claude_enabled():
-        return _rewrite_via_local_claude(item)
+        return _rewrite_via_local_claude(item, short_form=short_form)
     try:
-        return _rewrite_via_anthropic(item, max_tokens=max_tokens)
+        return _rewrite_via_anthropic(item, max_tokens=max_tokens, short_form=short_form)
     except Exception as exc:  # noqa: BLE001
         if not _is_credit_or_auth_error(exc):
             raise
@@ -135,16 +152,16 @@ def rewrite(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
                 "— using deterministic template writer",
                 exc,
             )
-            return rewrite_via_template(item)
+            return rewrite_via_template(item, short_form=short_form)
         log.warning("Anthropic unavailable (%s) — falling back to Gemini", exc)
         try:
-            return rewrite_via_gemini(item, max_tokens=max_tokens)
+            return rewrite_via_gemini(item, max_tokens=max_tokens, short_form=short_form)
         except Exception as gemini_exc:  # noqa: BLE001
             log.warning(
                 "Gemini fallback failed (%s) — using deterministic template writer",
                 gemini_exc,
             )
-            return rewrite_via_template(item)
+            return rewrite_via_template(item, short_form=short_form)
 
 
 def _local_claude_enabled() -> bool:
@@ -156,7 +173,7 @@ def _local_claude_enabled() -> bool:
     }
 
 
-def _rewrite_via_local_claude(item: NewsItem) -> RewrittenPost:
+def _rewrite_via_local_claude(item: NewsItem, *, short_form: bool = False) -> RewrittenPost:
     """Use the signed-in Claude CLI for the Mac-only emergency runner."""
     binary = os.getenv("CLAUDE_CLI_PATH", "claude").strip() or "claude"
     resolved = shutil.which(binary) if "/" not in binary else binary
@@ -164,7 +181,7 @@ def _rewrite_via_local_claude(item: NewsItem) -> RewrittenPost:
         raise RuntimeError(f"Claude CLI not found: {binary}")
 
     model = os.getenv("LOCAL_CLAUDE_MODEL", "sonnet").strip() or "sonnet"
-    prompt = f"{SYSTEM_PROMPT}\n\n{_user_prompt(item)}"
+    prompt = f"{SYSTEM_PROMPT}\n\n{_user_prompt(item, short_form=short_form)}"
     completed = subprocess.run(
         [resolved, "-p", "--model", model, "--output-format", "text"],
         input=prompt,
@@ -182,7 +199,9 @@ def _rewrite_via_local_claude(item: NewsItem) -> RewrittenPost:
     return RewrittenPost(source_url=item.url, **payload)
 
 
-def _rewrite_via_anthropic(item: NewsItem, *, max_tokens: int = 1024) -> RewrittenPost:
+def _rewrite_via_anthropic(
+    item: NewsItem, *, max_tokens: int = 1024, short_form: bool = False
+) -> RewrittenPost:
     client = _get_client()
     response = client.messages.create(
         model=settings.anthropic_model,
@@ -194,7 +213,7 @@ def _rewrite_via_anthropic(item: NewsItem, *, max_tokens: int = 1024) -> Rewritt
                 "cache_control": {"type": "ephemeral"},
             }
         ],
-        messages=[{"role": "user", "content": _user_prompt(item)}],
+        messages=[{"role": "user", "content": _user_prompt(item, short_form=short_form)}],
     )
 
     text = "".join(
