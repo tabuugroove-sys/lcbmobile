@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.pipeline import run  # noqa: E402
 from src.config import settings  # noqa: E402
+from src.shorts_quota import SLOT_FILLED_EXIT_CODE  # noqa: E402
 
 
 @click.command()
@@ -40,6 +41,9 @@ def main(limit: int | None, only_publishers: tuple[str, ...], dry_run: bool, ver
     click.echo(
         f"fetched={report.fetched} new={report.new} processed={report.processed}"
     )
+    if report.slot_filled:
+        click.echo("slot already filled by another runner; nothing uploaded")
+        sys.exit(SLOT_FILLED_EXIT_CODE)
     any_failure = False
     for result in report.publish_results:
         marker = "OK" if result.ok else "FAIL"

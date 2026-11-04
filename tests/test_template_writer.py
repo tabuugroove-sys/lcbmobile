@@ -1,14 +1,67 @@
 from __future__ import annotations
 
+import subprocess
 import unittest
 from unittest import mock
 
 from src.models import NewsItem
 from src.processor.ai_writer import rewrite
-from src.processor.template_writer import rewrite_via_template
+from src.processor.template_writer import SHORT_MAX_WORDS, rewrite_via_template
 
 
 class TemplateWriterTests(unittest.TestCase):
+    def test_backup_uses_template_when_the_claude_cli_fails(self) -> None:
+        # 2026-11-01 19:33: an expired CLI login failed all five backup attempts.
+        item = NewsItem(
+            source_id="rss",
+            source_name="Portal Teste",
+            category="musica",
+            url="https://example.com/turne",
+            title="Cantora brasileira anuncia turne nacional com novas datas em capitais",
+            summary=(
+                "A cantora confirmou nesta segunda-feira que vai percorrer dezoito cidades do pais "
+                "entre marco e junho com um espetaculo novo que inclui musicas ineditas do proximo "
+                "album, participacoes especiais de convidados que ainda serao anunciados pela "
+                "producao e um repertorio dedicado aos sucessos que marcaram os primeiros anos "
+                "da sua carreira."
+            ),
+        )
+        expected = rewrite_via_template(item, short_form=True)
+        failures = (
+            RuntimeError(
+                "Claude CLI failed (1): Failed to authenticate: "
+                "OAuth session expired and could not be refreshed"
+            ),
+            subprocess.TimeoutExpired(["claude"], 180),
+        )
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__), mock.patch.dict(
+                "os.environ", {"REWRITE_PROVIDER": "", "LOCAL_CLAUDE_FALLBACK": "true"}
+            ), mock.patch(
+                "src.processor.ai_writer._rewrite_via_local_claude", side_effect=failure
+            ):
+                self.assertEqual(rewrite(item, short_form=True), expected)
+        # One long sentence stretches the template past the model limit; fitting it a
+        # second time would leave only the headline, too short to render.
+        self.assertGreater(len(expected.script_voiceover.split()), SHORT_MAX_WORDS)
+
+    def test_writer_errors_still_raise_outside_the_cli_backup(self) -> None:
+        item = NewsItem(
+            source_id="rss",
+            source_name="Portal Teste",
+            category="dj",
+            url="https://example.com/erro",
+            title="DJ anuncia novo show em Sao Paulo",
+        )
+        with mock.patch.dict(
+            "os.environ", {"REWRITE_PROVIDER": "", "LOCAL_CLAUDE_FALLBACK": ""}
+        ), mock.patch(
+            "src.processor.ai_writer._rewrite_via_anthropic",
+            side_effect=ValueError("No JSON object in model response"),
+        ):
+            with self.assertRaises(ValueError):
+                rewrite(item)
+
     def test_rewrite_uses_template_when_anthropic_and_gemini_fail(self) -> None:
         item = NewsItem(
             source_id="rss",

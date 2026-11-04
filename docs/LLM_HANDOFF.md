@@ -287,10 +287,11 @@ are under `C:\lcbmobile-news\logs`.
 - LaunchAgent: `com.tabuugroove.lcbmobile.local-backup`.
 - Installed runtime: `~/.local/share/lcbmobile-backup`.
 - Poll interval: every five minutes.
-- Backup slots: 09:28, 14:28 and 19:28 BRT, 15 minutes after primary.
+- Backup slots: 10:05, 15:05 and 20:05 BRT, 52 minutes after primary, when the
+  server's first attempt has either uploaded or hit its 45-minute timeout.
 - It uses the same real YouTube count gate and posts only when the server missed
-  the required count.
-- Rewrite provider: signed-in local Claude CLI.
+  the required count. The publisher repeats the count right before upload.
+- Rewrite provider: signed-in local Claude CLI; the template writer when it fails.
 - ElevenLabs key comes from macOS Keychain service
   `lcbmobile-elevenlabs-api`; never print it.
 - Publisher is YouTube only. Telegram and Instagram are optional elsewhere.

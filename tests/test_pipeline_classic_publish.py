@@ -385,6 +385,73 @@ class ClassicPublishPipelineTests(unittest.TestCase):
         self.assertFalse(reused)
         urgent.assert_not_called()
 
+    def test_slot_filled_during_render_ends_the_run_and_keeps_the_story(self) -> None:
+        item = NewsItem(
+            source_id="test-feed",
+            source_name="Test Feed",
+            category="music",
+            url="https://example.com/rendered-too-late",
+            title="Shakira anuncia nova musica",
+        )
+        post = RewrittenPost(
+            source_url=item.url,
+            headline="Shakira confirma novidade",
+            short_caption="Novidade.",
+            long_caption="Novidade.",
+            script_voiceover="Shakira confirmou uma novidade para os fas.",
+        )
+        assets = GeneratedAssets(video_path="/tmp/rendered-too-late.mp4", photo_count=4, video_count=1)
+        publisher = mock.Mock()
+        publisher.name = "youtube"
+        publisher.publish.return_value = PublishResult(
+            platform="youtube", ok=False, error="slot already filled (3/3)", slot_filled=True
+        )
+
+        def choose(candidates, _store, *, limit, stage, eligibility=None):
+            del stage, eligibility
+            return candidates[:limit]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            test_settings = replace(
+                pipeline.settings,
+                db_path=root / "state.db",
+                output_dir=root / "out",
+                max_attempts_per_item=3,
+                retry_delay_seconds=0,
+            )
+            with (
+                mock.patch("src.pipeline.settings", test_settings),
+                mock.patch("src.pipeline.refresh_youtube_metrics"),
+                mock.patch("src.pipeline.hours_since_latest_short", return_value=None),
+                mock.patch("src.pipeline.load_sources", return_value=[]),
+                mock.patch("src.pipeline.collect_news", return_value=[item]),
+                mock.patch("src.pipeline.is_music_news", return_value=True),
+                mock.patch("src.pipeline.select_best_candidates", side_effect=choose),
+                mock.patch("src.pipeline.video_media_ready", return_value=True),
+                mock.patch("src.pipeline.rewrite", return_value=post),
+                mock.patch("src.pipeline.build_short", return_value=assets) as build,
+                mock.patch("src.pipeline.build_publishers", return_value=[publisher]),
+                mock.patch("src.pipeline.notify"),
+                mock.patch("src.pipeline.notify_error") as notify_error,
+                mock.patch("src.pipeline.notify_urgent") as urgent,
+                mock.patch("src.pipeline.notify_summary") as summary,
+            ):
+                report = pipeline.run(only_publishers=["youtube"], limit=1, dry_run=False)
+                store = pipeline.Store(test_settings.db_path)
+                seen = store.is_seen(item.fingerprint())
+                published = store.already_published(item.fingerprint(), "youtube")
+
+        self.assertTrue(report.slot_filled)
+        self.assertEqual(report.publish_results, [])
+        build.assert_called_once()
+        publisher.publish.assert_called_once()
+        self.assertFalse(seen)
+        self.assertFalse(published)
+        notify_error.assert_not_called()
+        urgent.assert_not_called()
+        summary.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,6 +34,7 @@ class RunReport:
     new: int = 0
     processed: int = 0
     publish_results: list[PublishResult] = None  # type: ignore[assignment]
+    slot_filled: bool = False
 
     def __post_init__(self) -> None:
         if self.publish_results is None:
@@ -466,6 +467,10 @@ def run(
                     )
                     continue
                 result = pub.publish(post, assets)
+                if result.slot_filled:
+                    # Nothing was published, so the story stays unseen for a later slot.
+                    report.slot_filled = True
+                    return report
                 report.publish_results.append(result)
                 store.record_publication(
                     fp,

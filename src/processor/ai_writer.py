@@ -121,7 +121,17 @@ def _is_credit_or_auth_error(exc: BaseException) -> bool:
 
 
 def rewrite(item: NewsItem, *, max_tokens: int = 1024, short_form: bool = False) -> RewrittenPost:
-    post = _rewrite(item, max_tokens=max_tokens, short_form=short_form)
+    try:
+        post = _rewrite(item, max_tokens=max_tokens, short_form=short_form)
+    except Exception as exc:  # noqa: BLE001
+        if not _local_claude_enabled():
+            raise
+        from .template_writer import rewrite_via_template
+
+        # A backup that needs the CLI login cannot cover a day the server is down. The
+        # template is the server's own writer and already fits its length.
+        log.warning("Local Claude rewrite unavailable (%s) — using deterministic template writer for %s", exc, item.url)
+        return rewrite_via_template(item, short_form=short_form)
     if not short_form or os.getenv("REWRITE_PROVIDER", "").strip().lower() == "template":
         return post
     from .template_writer import fit_voiceover

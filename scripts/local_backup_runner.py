@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import platform
-import re
 import subprocess
 import sys
 import time
@@ -21,6 +20,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.models import _normalize_url  # noqa: E402
 from src.notify import notify_urgent  # noqa: E402
+from src.shorts_quota import (  # noqa: E402
+    SLOT_FILLED_EXIT_CODE,
+    TARGET_ENV,
+    extract_source_url,
+    recent_uploads,
+    shorts_today,
+)
 from src.storage import Store  # noqa: E402
 
 
@@ -33,13 +39,15 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
-SOURCE_RE = re.compile(r"^Fonte:\s*(https?://\S+)", re.IGNORECASE | re.MULTILINE)
 
-# Default Mac backup slots are 15 minutes after the primary server slots.
+# Default Mac backup slots are 52 minutes after the primary server slots. The
+# server polls every 5 minutes and its pipeline may run for PIPELINE_TIMEOUT_SECONDS
+# (45 minutes; normal runs take about 25), so by then its first attempt has either
+# uploaded or been stopped. The GitHub fallback checks at 60 minutes.
 DEFAULT_SLOTS = (
-    (clock_time(9, 28), 1),
-    (clock_time(14, 28), 2),
-    (clock_time(19, 28), 3),
+    (clock_time(10, 5), 1),
+    (clock_time(15, 5), 2),
+    (clock_time(20, 5), 3),
 )
 
 
@@ -98,13 +106,6 @@ def _lock_nonblocking(handle) -> bool:
     except BlockingIOError:
         return False
     return True
-
-
-def extract_source_url(description: str) -> str | None:
-    match = SOURCE_RE.search(description or "")
-    if not match:
-        return None
-    return match.group(1).rstrip(".,;)")
 
 
 def _load_state() -> dict[str, object]:
@@ -187,44 +188,6 @@ def _youtube_service():
     return build("youtube", "v3", credentials=credentials, cache_discovery=False)
 
 
-def _recent_uploads(service) -> list[dict[str, str]]:
-    channel_response = service.channels().list(
-        part="id,contentDetails", mine=True
-    ).execute()
-    channels = channel_response.get("items") or []
-    expected = os.getenv("YOUTUBE_EXPECTED_CHANNEL_ID", "UC-TFUUc4YHleNoIFXBVaj7A")
-    if len(channels) != 1 or channels[0].get("id") != expected:
-        raise RuntimeError("OAuth is connected to the wrong YouTube channel")
-    playlist_id = channels[0]["contentDetails"]["relatedPlaylists"]["uploads"]
-    response = service.playlistItems().list(
-        part="snippet", playlistId=playlist_id, maxResults=50
-    ).execute()
-    uploads: list[dict[str, str]] = []
-    for row in response.get("items") or []:
-        snippet = row.get("snippet") or {}
-        uploads.append(
-            {
-                "video_id": str((snippet.get("resourceId") or {}).get("videoId") or ""),
-                "title": str(snippet.get("title") or ""),
-                "description": str(snippet.get("description") or ""),
-                "published_at": str(snippet.get("publishedAt") or ""),
-            }
-        )
-    ids = [row["video_id"] for row in uploads if row["video_id"]]
-    if not ids:
-        return []
-    videos = service.videos().list(part="snippet,status,processingDetails", id=",".join(ids)).execute().get("items", [])
-    return [
-        {"video_id": row["id"], "title": row["snippet"].get("title", ""),
-         "description": row["snippet"].get("description", ""),
-         "published_at": row["snippet"].get("publishedAt", "")}
-        for row in videos
-        if row.get("status", {}).get("privacyStatus") == "public"
-        and (row.get("status", {}).get("uploadStatus") == "processed"
-             or row.get("processingDetails", {}).get("processingStatus") == "succeeded")
-    ]
-
-
 def _sync_remote_sources(uploads: list[dict[str, str]], store: Store) -> None:
     for upload in uploads:
         source_url = extract_source_url(upload["description"])
@@ -238,27 +201,7 @@ def _sync_remote_sources(uploads: list[dict[str, str]], store: Store) -> None:
         )
 
 
-def _shorts_today(uploads: list[dict[str, str]], tz: ZoneInfo, today) -> int:
-    unique_shorts: set[str] = set()
-    for upload in uploads:
-        text = f"{upload['title']} {upload['description']}".lower()
-        if "#shorts" not in text:
-            continue
-        try:
-            published = datetime.fromisoformat(upload["published_at"].replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        if published.astimezone(tz).date() == today:
-            source_url = extract_source_url(upload["description"])
-            if source_url:
-                key = f"source:{_normalize_url(source_url)}"
-            else:
-                key = f"video:{upload['video_id']}"
-            unique_shorts.add(key)
-    return len(unique_shorts)
-
-
-def _run_pipeline() -> int:
+def _run_pipeline(target: int) -> int:
     python = os.getenv("LOCAL_BACKUP_PYTHON", sys.executable)
     command = [
         python,
@@ -272,6 +215,9 @@ def _run_pipeline() -> int:
     ]
     env = os.environ.copy()
     env["MIN_HOURS_BETWEEN_POSTS"] = "0"
+    # The publisher counts again right before upload: the other runner may fill
+    # the slot while this one renders.
+    env[TARGET_ENV] = str(target)
     timeout = int(os.getenv("PIPELINE_TIMEOUT_SECONDS", "2700"))
     try:
         completed = subprocess.run(
@@ -302,11 +248,11 @@ def main() -> int:
     now = datetime.now(tz)
     if now.hour in (0, 1):
         try:
-            uploads = _recent_uploads(_youtube_service())
+            uploads = recent_uploads(_youtube_service())
             yesterday = now.date() - timedelta(days=1)
             _alert_posting_gap(
                 datetime.combine(yesterday, clock_time(23, 59), tzinfo=tz),
-                current=_shorts_today(uploads, tz, yesterday), target=0, return_code=0,
+                current=shorts_today(uploads, tz, yesterday), target=0, return_code=0,
             )
         except Exception:
             LOG.exception("Could not verify yesterday's Shorts; no absence alert sent")
@@ -320,7 +266,7 @@ def main() -> int:
 
     try:
         service = _youtube_service()
-        uploads = _recent_uploads(service)
+        uploads = recent_uploads(service)
     except Exception as exc:  # noqa: BLE001
         LOG.exception("Cannot inspect the YouTube channel: %s", exc)
         _save_state(last_check_at=now.isoformat(), last_error=str(exc))
@@ -328,7 +274,7 @@ def main() -> int:
 
     store = Store(Path(os.getenv("DB_PATH", str(DATA_DIR / "state.db"))))
     _sync_remote_sources(uploads, store)
-    current = _shorts_today(uploads, tz, now.date())
+    current = shorts_today(uploads, tz, now.date())
     if current >= target:
         LOG.info("YouTube already has %d/%d expected Shorts today", current, target)
         _save_state(
@@ -346,7 +292,16 @@ def main() -> int:
         youtube_shorts_today=current,
         target=target,
     )
-    return_code = _run_pipeline()
+    return_code = _run_pipeline(target)
+    if return_code == SLOT_FILLED_EXIT_CODE:
+        LOG.info("Another runner filled the slot during this render; nothing was uploaded")
+        _save_state(
+            last_finished_at=datetime.now(tz).isoformat(),
+            last_result="filled_elsewhere",
+            last_exit_code=return_code,
+            target=target,
+        )
+        return 0
 
     # The uploads playlist can lag briefly after a successful API upload.
     verified = current
@@ -354,7 +309,7 @@ def main() -> int:
         for _ in range(6):
             time.sleep(5)
             try:
-                verified = _shorts_today(_recent_uploads(service), tz, now.date())
+                verified = shorts_today(recent_uploads(service), tz, now.date())
             except Exception:  # noqa: BLE001
                 continue
             if verified > current:

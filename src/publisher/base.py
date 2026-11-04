@@ -15,6 +15,8 @@ class PublishResult:
     error: str | None = None
     url: str | None = None
     reused_existing: bool = False
+    # Nothing was uploaded because another runner filled the slot during the render.
+    slot_filled: bool = False
 
 
 class Publisher(Protocol):

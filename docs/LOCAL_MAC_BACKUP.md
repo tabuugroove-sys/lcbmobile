@@ -7,11 +7,17 @@ This is the emergency path when the Windows primary publisher misses a slot.
 - macOS `launchd` starts `scripts/run_local_backup.sh` every five minutes.
 - `scripts/local_backup_runner.py` reads the authenticated channel's uploads
   playlist through YouTube Data API.
-- The runner expects 1/2/3 Shorts after 09:28, 14:28 and 19:28 BRT. These are
-  15 minutes after the primary server slots.
+- The runner expects 1/2/3 Shorts after 10:05, 15:05 and 20:05 BRT. These are
+  52 minutes after the primary server slots: the server polls every 5 minutes and
+  its pipeline may run for 45 minutes, so its first attempt has either uploaded or
+  been stopped by then. Normal server runs upload about 25 minutes after the slot;
+  the old check at 15 minutes started a second render during almost every one.
 - If the channel already has the expected count, it exits without rendering.
 - If a Short is missing, it syncs recent source URLs into local SQLite, runs one
   pipeline item and verifies that a new Short actually appears on YouTube.
+- Right before upload the publisher counts today's Shorts again with the same
+  rules. If another runner filled the slot during the render, nothing is uploaded,
+  the story stays unseen and the state file records `filled_elsewhere`.
 - A file lock prevents concurrent runs. Failed attempts have a 15-minute
   cooldown. The normal pipeline still performs up to five item attempts.
 - If a publication still cannot be verified, the runner sends one audible
@@ -19,7 +25,9 @@ This is the emergency path when the Windows primary publisher misses a slot.
   enabled, while duplicate alerts for the same milestone are suppressed.
 
 The local route uses the signed-in Claude CLI (`LOCAL_CLAUDE_FALLBACK=true`), so
-it does not depend on Anthropic API credits or Gemini free-tier quota. Voiceover
+it does not depend on Anthropic API credits or Gemini free-tier quota. If the CLI
+fails, for example with an expired login, the script comes from the deterministic
+template writer that the server uses. Voiceover
 uses the same ElevenLabs pt-BR profile as the cloud workflow; the API key is read
 from macOS Keychain service `lcbmobile-elevenlabs-api`. It posts to YouTube only.
 Telegram and Instagram remain optional cloud publishers.

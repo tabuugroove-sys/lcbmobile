@@ -11,7 +11,8 @@ Windows publishing host. It is isolated from the LCBand services on that host.
 - Pipeline timeout: 45 minutes
 - Due slots in `America/Sao_Paulo`: 09:13, 14:13 and 19:13
 - Expected daily count after each slot: 1, 2 and 3 Shorts
-- Mac backup checks the same channel 15 minutes later at 09:28, 14:28 and 19:28
+- Mac backup checks the same channel 52 minutes later at 10:05, 15:05 and 20:05,
+  after the server's first attempt has either uploaded or hit the timeout
 - GitHub Actions independently checks the live YouTube quota one hour later at
   10:13, 15:13 and 20:13 BRT. It uses the reliable pre-cinematic renderer only
   when the Windows server still has not delivered the expected Short.
@@ -19,8 +20,10 @@ Windows publishing host. It is isolated from the LCBand services on that host.
   quota milestone. Retries continue on schedule after the alert.
 
 The server checks the real YouTube uploads playlist before rendering. If the
-expected count is already present, it exits successfully. This prevents races
-with a manual run or the Mac backup.
+expected count is already present, it exits successfully. A render takes many
+minutes, so the publisher counts again right before upload and uploads nothing
+when another runner filled the slot meanwhile. This prevents races with a manual
+run or the Mac backup.
 
 The opening curiosity frame must contain two different visual roles: the main
 subject on the left and a named opponent, colleague, audience or event context

@@ -15,6 +15,7 @@ from googleapiclient.http import MediaFileUpload
 
 from ..config import settings
 from ..models import GeneratedAssets, RewrittenPost, _normalize_url
+from ..shorts_quota import slot_filled
 from .base import PublishResult
 
 log = logging.getLogger(__name__)
@@ -107,6 +108,22 @@ class YouTubePublisher:
                     remote_id=video_id,
                     url=f"https://youtube.com/shorts/{video_id}",
                     reused_existing=True,
+                )
+            # Same reason as the source check: the slot was counted before the render.
+            filled = slot_filled(yt)
+            if filled:
+                current, target = filled
+                log.warning(
+                    "Slot already filled (%d/%d Shorts today); not uploading %s",
+                    current,
+                    target,
+                    post.source_url,
+                )
+                return PublishResult(
+                    platform=self.name,
+                    ok=False,
+                    error=f"slot already filled ({current}/{target})",
+                    slot_filled=True,
                 )
             tags = post.hashtags + ["Shorts", "fofoca", "celebridades", "Brasil"]
             credits_path = Path(assets.video_path).parent / "media_credits.txt"
