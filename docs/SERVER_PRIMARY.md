@@ -16,6 +16,10 @@ Windows publishing host. It is isolated from the LCBand services on that host.
 - GitHub Actions independently checks the live YouTube quota one hour later at
   10:13, 15:13 and 20:13 BRT. It uses the reliable pre-cinematic renderer only
   when the Windows server still has not delivered the expected Short.
+  GitHub usually starts these runs hours late, so the 20:13 run often begins
+  after midnight. Such a run counts its own day and never uploads: the upload
+  would count for the new day and the server would skip its 09:13 slot. It pages
+  the urgent bot only when that day really is short.
 - A failed verified publication sends one audible urgent-bot alert per missed
   quota milestone. Retries continue on schedule after the alert.
 

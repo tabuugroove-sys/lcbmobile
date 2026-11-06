@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -28,6 +28,20 @@ def target_for_schedule(schedule: str) -> int:
     return SCHEDULE_TARGETS.get(schedule.strip(), 0)
 
 
+def slot_day(schedule: str, now: datetime, tz: ZoneInfo) -> date:
+    """Local date of the slot behind this run.
+
+    GitHub starts scheduled runs hours late, so the 20:13 BRT run usually begins
+    after midnight. It still belongs to the day before.
+    """
+    minute, hour = (int(field) for field in schedule.split()[:2])
+    utc_now = now.astimezone(timezone.utc)
+    scheduled = utc_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if scheduled > utc_now:
+        scheduled -= timedelta(days=1)
+    return scheduled.astimezone(tz).date()
+
+
 def shorts_today(rows: list[dict], tz: ZoneInfo, today) -> int:
     count = 0
     for row in rows:
@@ -45,7 +59,7 @@ def shorts_today(rows: list[dict], tz: ZoneInfo, today) -> int:
     return count
 
 
-def current_short_count(token_file: Path, tz: ZoneInfo) -> int:
+def current_short_count(token_file: Path, tz: ZoneInfo, day: date) -> int:
     credentials = Credentials.from_authorized_user_file(str(token_file))
     if not credentials.valid:
         if not credentials.refresh_token:
@@ -63,8 +77,7 @@ def current_short_count(token_file: Path, tz: ZoneInfo) -> int:
         playlistId=playlist_id,
         maxResults=50,
     ).execute()
-    now = datetime.now(tz)
-    return shorts_today(uploads.get("items") or [], tz, now.date())
+    return shorts_today(uploads.get("items") or [], tz, day)
 
 
 def write_github_output(path: str, **values: object) -> None:
@@ -100,13 +113,15 @@ def main() -> int:
         return 0
 
     tz = ZoneInfo(os.getenv("TIMEZONE", "America/Sao_Paulo"))
+    now = datetime.now(tz)
+    day = slot_day(args.schedule, now, tz)
     token_file = Path(os.getenv("YOUTUBE_TOKEN_FILE", "youtube_token.json"))
     attempts = max(1, args.attempts)
     current = -1
     error = ""
     for attempt in range(1, attempts + 1):
         try:
-            current = current_short_count(token_file, tz)
+            current = current_short_count(token_file, tz, day)
             error = ""
         except Exception as exc:  # noqa: BLE001
             error = str(exc)
@@ -117,13 +132,22 @@ def main() -> int:
             time.sleep(args.delay_seconds)
 
     if args.mode == "gate":
-        should_run = current < target
+        # After midnight an upload would count for the new day and the server would
+        # skip its 09:13 slot. A late run only checks its own day and fails, which
+        # pages the urgent bot, when that day really is short.
+        late = day != now.date()
+        should_run = current < target and not late
         reason = (
             f"cloud fallback needed: youtube_shorts_today={current} target={target}"
             if should_run
             else f"cloud fallback skipped: youtube_shorts_today={current} target={target}"
         )
-        if error and current < 0:
+        if late:
+            reason = (
+                f"cloud fallback skipped: run started on {now.date()}, after its slot day "
+                f"{day} (youtube_shorts={current} target={target})"
+            )
+        elif error and current < 0:
             reason = f"live quota unavailable; failover will attempt publication: {error}"
         write_github_output(
             args.github_output,
@@ -133,7 +157,7 @@ def main() -> int:
             reason=reason,
         )
         print(reason)
-        return 0
+        return 1 if late and current < target else 0
 
     if current >= target:
         print(f"Verified YouTube quota: {current}/{target}")

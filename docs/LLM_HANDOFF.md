@@ -303,11 +303,14 @@ system approval and verify `last exit code = 0`.
 ### 3. GitHub Actions is the third-tier fallback
 
 `.github/workflows/pipeline.yml` starts at 10:13, 15:13 and 20:13 BRT, one hour
-after the Windows primary slots and 45 minutes after the Mac backup slots.
+after the Windows primary slots and eight minutes after the Mac backup checks.
 Before rendering it reads the authenticated YouTube uploads playlist and
-compares today's real Short count with the expected 1/2/3 quota. A met quota is
-a no-op. A missing quota uses YouTube only, disables the strict
-`3 photos + 2 videos` gate and renders the reliable graphic/photo mode. The
+compares the real Short count of the slot's day with the expected 1/2/3 quota.
+A met quota is a no-op. GitHub often starts runs hours late: a run that begins
+after midnight belongs to the day before, never uploads, and pages the urgent
+bot only when that day is short. A missing quota uses YouTube only, disables
+the strict `3 photos + 2 videos` gate and renders the reliable graphic/photo
+mode. The
 workflow verifies the channel again after upload and pages the urgent bot if
 the quota is still missing. Manual `workflow_dispatch` remains available.
 

@@ -197,10 +197,11 @@ ganha crédito só porque caiu em uma pauta naturalmente mais forte.
 ## Executando 24/7
 
 O publisher primário roda no Windows Server nos horários 09:13, 14:13 e 19:13
-BRT. O Mac verifica o canal 15 minutos depois. GitHub Actions faz uma última
+BRT. O Mac verifica o canal 52 minutos depois. GitHub Actions faz uma última
 verificação independente uma hora depois, consulta a contagem real de Shorts e
 só usa o renderizador cloud confiável quando o servidor ainda não atingiu a
-meta diária. Veja
+meta diária. Uma execução que o GitHub inicia depois da meia-noite conta o dia
+do seu horário e não publica. Veja
 [`docs/SERVER_PRIMARY.md`](docs/SERVER_PRIMARY.md) e
 [`docs/LOCAL_MAC_BACKUP.md`](docs/LOCAL_MAC_BACKUP.md).
 
