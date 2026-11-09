@@ -50,3 +50,12 @@ Rollback the daily wrapper to its before-copy first. Leaving the new renderer
 modules installed is safe with `LONGFORM_PLANNER=legacy`; this does not revert
 unrelated Shorts or analytics changes. No SSH, RDP or Scheduled Task settings
 need to be modified.
+
+## Review findings
+
+The November 8 production fixture exposed a pre-existing identity mismatch:
+the story about Priscilla Monroy carries `artist=priscilla` and footage of the
+singer Priscilla. The graphics rollout does not fix artist entity resolution.
+The fixture is an unpublished re-edit for technical verification, not a new
+editorial approval or a candidate for republication. Automated decode, timing
+and layout checks must not be presented as a semantic footage review.
