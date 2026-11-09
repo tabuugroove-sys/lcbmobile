@@ -18,6 +18,7 @@ $env:ANALYTICS_ENABLED = 'true'
 $env:ANALYTICS_HISTORY_LIMIT = '250'
 $env:ANALYTICS_CANDIDATE_POOL = '60'
 $env:FALLBACK_TO_YESTERDAY = 'true'
+$env:LONGFORM_PLANNER = 'beats'
 $env:TTS_PROVIDER = 'elevenlabs'
 $env:ELEVENLABS_API_KEY = (Get-Content "$root\secrets\elevenlabs_api_key.txt" -Raw).Trim()
 $env:ELEVENLABS_VOICE_ID = 'pNInz6obpgDQGcFmaJgB'

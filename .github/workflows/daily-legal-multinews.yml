@@ -83,6 +83,7 @@ jobs:
           DRAMA_SIGNAL_WEIGHT: ${{ vars.DRAMA_SIGNAL_WEIGHT || '0.9' }}
           REWRITE_PROVIDER: template
           FALLBACK_TO_YESTERDAY: 'true'
+          LONGFORM_PLANNER: beats
           YOUTUBE_EXPECTED_CHANNEL_ID: UC-TFUUc4YHleNoIFXBVaj7A
           YOUTUBE_COOKIES_FILE: youtube_cookies.txt
           LCBAND_URGENT_BOT_TOKEN: ${{ secrets.LCBAND_URGENT_BOT_TOKEN }}

@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from ..config import settings
+from .longform_beats import planner_mode
 
 WIDTH, HEIGHT = 1920, 1080
 FPS = 30
@@ -291,6 +292,12 @@ def narration_span(data: dict, audio_duration: float) -> tuple[float, float]:
 
 
 def render_cache_current(report: dict, stories: list[dict], folder: Path) -> bool:
+    if report.get("planner", "legacy") != planner_mode():
+        return False
+    if planner_mode() == "beats":
+        from .longform_beats import input_digest
+        if report.get("editorial_input_digest") != input_digest(stories, folder):
+            return False
     if (report.get("render_policy_version") != RENDER_POLICY_VERSION
             or report.get("footage_review_version") != FOOTAGE_REVIEW_VERSION
             or not report.get("narration_timing_passed")):
@@ -304,6 +311,16 @@ def render_cache_current(report: dict, stories: list[dict], folder: Path) -> boo
         music.exists() and report.get("background_music_sha256") == hashlib.sha256(music.read_bytes()).hexdigest())
 
 
+def narration_frames(elapsed: float, span: float) -> int:
+    """Quantize chapter boundaries on one clock, without per-chapter drift."""
+    if not all(math.isfinite(n) for n in (elapsed, span)) or elapsed < 0 or span <= 0:
+        raise ValueError("Invalid narration frame interval")
+    frames = round((elapsed + span) * FPS) - round(elapsed * FPS)
+    if frames < 1:
+        raise ValueError("Narration is shorter than one frame")
+    return frames
+
+
 def render(stories: list[dict], edition: str, folder: Path) -> Path:
     from imageio_ffmpeg import get_ffmpeg_exe
 
@@ -314,8 +331,16 @@ def render(stories: list[dict], edition: str, folder: Path) -> Path:
     if music_enabled and not music.exists():
         raise RuntimeError("Daily music track is missing")
     cursor = 0.0
+    narration_cursor = 0.0
     review_dir = folder / "footage_review"
     review_dir.mkdir(exist_ok=True)
+    editorial = []
+    if planner_mode() == "beats":
+        from .longform_beats import POLICY_VERSION, collect_news_images, plan_story, still_frame
+        from .editorial_motion import SKIN_VERSION, render_card
+        from .infographics import apply_infographics
+        if settings.allow_source_article_image:
+            collect_news_images(stories, folder)
     for index, story in enumerate(stories):
         for asset in story["assets"]:
             if asset.get("review_policy_version") != FOOTAGE_REVIEW_VERSION:
@@ -323,27 +348,62 @@ def render(stories: list[dict], edition: str, folder: Path) -> Path:
         audio = folder / f"voice-{story['id']}.mp3"
         alignment = json.loads((folder/f"alignment-{story['id']}.json").read_text(encoding="utf-8"))
         voice_start, voice_end = narration_span(alignment, duration(audio))
-        length = math.ceil((voice_end-voice_start)*FPS)/FPS
+        span = voice_end - voice_start
+        length = (narration_frames(narration_cursor, span) / FPS if planner_mode() == "beats"
+                  else math.ceil(span * FPS) / FPS)
+        narration_cursor += span
         local_cues = subtitle_cues(alignment, -voice_start)
-        try:
-            shots = plan_shots(story["assets"], length, cut_points=[b for a,b,text in local_cues])
-        except RuntimeError as exc:
-            raise RuntimeError(f"{story['artist']}: {exc}") from exc
+        if planner_mode() == "beats":
+            plan = plan_story(story, length, local_cues)
+            apply_infographics(story, plan, alignment, voice_start)
+            shots = plan["shots"]
+            editorial.append({"story_id": story["id"], "source_article": story.get("item", {}),
+                              "news_images": story.get("news_images", []),
+                              "image_filter": story.get("image_filter", {}), **plan})
+        else:
+            try:
+                shots = plan_shots(story["assets"], length, cut_points=[b for a,b,text in local_cues])
+            except RuntimeError as exc:
+                raise RuntimeError(f"{story['artist']}: {exc}") from exc
         covers = {False: overlay(story,index,edition,folder),
                   True: overlay(story,index,edition,folder,compact=True)}
         chapter_parts = []
         for n, shot in enumerate(shots):
             asset = shot["asset"]
+            if shot.get("role") in {"news_image", "narrative_card", "infographic"}:
+                if shot["role"] in {"narrative_card", "infographic"}:
+                    path = render_card(story, shot, folder)
+                else:
+                    frame = still_frame(story, shot, folder)
+                    key = hashlib.sha256(frame.read_bytes() + str(shot["duration"]).encode()).hexdigest()[:16]
+                    path = folder / f"still-{key}.mp4"
+                    if not path.exists():
+                        run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-i", str(frame),
+                             "-frames:v", str(round(shot["duration"]*FPS)), "-r", str(FPS), "-an", "-c:v", "libx264",
+                             "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "20", "-threads", "4", str(path)], folder)
+                chapter_parts.append(path)
+                timeline.append({**{k: v for k, v in shot.items() if k != "asset"},
+                                 "start": cursor + shot["start"], "artist": story["artist"],
+                                 "provenance": asset or {"source_page": shot["source"]}})
+                if shot["role"] in {"narrative_card", "infographic"}:
+                    timeline[-1]["text_skin"] = SKIN_VERSION
+                continue
             cover = covers[n >= 2]
             cover_hash = hashlib.sha256(cover.read_bytes()).hexdigest()
-            key = hashlib.sha256(json.dumps([
+            cache_inputs = [
                 RENDER_POLICY_VERSION, asset["sha256"], shot["source_start"], shot["duration"], cover_hash,
-            ]).encode()).hexdigest()[:12]
+            ]
+            if planner_mode() == "beats":
+                cache_inputs += ["beats", POLICY_VERSION]
+            key = hashlib.sha256(json.dumps(cache_inputs).encode()).hexdigest()[:12]
             path = folder / f"shot-{story['id']}-{n}-{key}.mp4"
             if not path.exists():
+                timing = (["-frames:v", str(round(shot["duration"]*FPS))] if planner_mode() == "beats"
+                          else ["-t", str(shot["duration"])])
+                reset = "setpts=PTS-STARTPTS," if planner_mode() == "beats" else ""
                 run(["ffmpeg", "-v", "error", "-y", "-ss", str(shot["source_start"]), "-i", asset["path"],
-                     "-loop", "1", "-i", str(cover), "-t", str(shot["duration"]),
-                     "-filter_complex", "[0:v]fps=30,scale=1920:1080:force_original_aspect_ratio=increase,"
+                     "-loop", "1", "-i", str(cover), *timing,
+                     "-filter_complex", f"[0:v]{reset}fps=30,scale=1920:1080:force_original_aspect_ratio=increase,"
                      "crop=1920:1080,setsar=1[base];[base][1:v]overlay=0:0:shortest=1,format=yuv420p[v]",
                      "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                      "-threads", "4", str(path)], folder)
@@ -351,6 +411,10 @@ def render(stories: list[dict], edition: str, folder: Path) -> Path:
             timeline.append({"start": cursor + shot["start"], "duration": shot["duration"],
                              "source_start": shot["source_start"], "source": asset["source_page"],
                              "artist": story["artist"], "quality_score": shot["quality_score"]})
+            if planner_mode() == "beats":
+                timeline[-1].update({key: shot[key] for key in ("role", "match_basis", "text", "beat_index")})
+                timeline[-1]["provenance"] = {key: asset.get(key) for key in
+                    ("source_page", "source_url", "title", "creator", "license", "license_url", "sha256")}
         concat = folder / f"shots-{story['id']}.txt"
         concat.write_text("\n".join(f"file '{p.name}'" for p in chapter_parts), encoding="utf-8")
         part = folder / f"part-{story['id']}.mp4"
@@ -361,11 +425,21 @@ def render(stories: list[dict], edition: str, folder: Path) -> Path:
         actual_length = duration(part)
         chapters.append({"start": cursor, "duration": actual_length, "narration_duration": voice_end-voice_start,
                          "artist": story["artist"], "headline": story["headline"]})
-        cues.extend((a+cursor,b+cursor,text) for a,b,text in local_cues)
+        if planner_mode() == "beats":
+            # Cards already carry the narration. Do not duplicate subtitles over them.
+            for a, b, text in local_cues:
+                for shot in shots:
+                    begin, end = max(a, shot["start"]), min(b, shot["start"]+shot["duration"])
+                    if shot["role"] != "narrative_card" and end-begin >= 1/FPS:
+                        cues.append((begin+cursor, end+cursor, text))
+        else:
+            cues.extend((a+cursor,b+cursor,text) for a,b,text in local_cues)
         parts.append(part)
         cursor += actual_length
     save(folder / "timeline.json", timeline)
     save(folder / "chapters.json", chapters)
+    if editorial:
+        save(folder / "editorial-plan.json", {"planner": "beats", "semantic_validation": "not_performed", "stories": editorial})
     ass = folder / "subtitles.ass"
     events = "\n".join(f"Dialogue: 0,{_ass_time(a)},{_ass_time(b)},Default,,0,0,0,,{_ass_escape(t)}" for a, b, t in cues)
     ass.write_text(
@@ -409,6 +483,8 @@ def review(video: Path, stories: list[dict], timeline: list[dict], folder: Path)
         raise RuntimeError("Daily bulletin has incorrect dimensions")
     chapters = json.loads((folder/"chapters.json").read_text(encoding="utf-8"))
     voice_duration = sum(chapter["narration_duration"] for chapter in chapters)
+    if planner_mode() == "beats" and abs(float(stream.get("duration", 0))-voice_duration) > 1/FPS+.01:
+        raise RuntimeError("Beat montage video track does not match narration within one frame")
     tails = [chapter["duration"] - chapter["narration_duration"] for chapter in chapters]
     if (not chapters or min(tails) < -.1 or max(tails) > .15
             or abs(duration(video)-sum(c["duration"] for c in chapters)) > .15):
@@ -417,6 +493,8 @@ def review(video: Path, stories: list[dict], timeline: list[dict], folder: Path)
         raise RuntimeError("Daily montage contains an overlong shot")
     intervals = {}
     for shot in timeline:
+        if shot.get("role") in {"news_image", "narrative_card", "infographic"}:
+            continue
         used = intervals.setdefault(shot["source"], [])
         a, b = shot["source_start"], shot["source_start"] + shot["duration"]
         if any(not (b <= x + .02 or a >= y - .02) for x, y in used):
@@ -430,6 +508,7 @@ def review(video: Path, stories: list[dict], timeline: list[dict], folder: Path)
     silences = re.findall(r"silence_duration: ([0-9.]+)", result.stderr)
     report = {"render_policy_version": RENDER_POLICY_VERSION, "footage_review_version": FOOTAGE_REVIEW_VERSION,
               "edit_style": "narration_first_dynamic",
+              "planner": planner_mode(),
               "narration_timing_passed": True, "narration_duration": voice_duration,
               "max_narration_tail_seconds": max(tails),
               "max_shot_seconds": max(s["duration"] for s in timeline),
@@ -442,12 +521,15 @@ def review(video: Path, stories: list[dict], timeline: list[dict], folder: Path)
                   json.loads((folder / f"alignment-{s['id']}.json").read_text()).get("voice_id", "cached_fixture")
                   for s in stories}), "language": "pt-BR",
               "background_music_ratio": settings.background_music_volume, "background_music_loops": settings.background_music_volume > 0}
+    if planner_mode() == "beats":
+        from .longform_beats import input_digest
+        report.update({"edit_style": "source_aware_beats_preview", "semantic_validation": "not_performed",
+                       "editorial_input_digest": input_digest(stories, folder)})
     if settings.background_music_volume > 0 and settings.background_music_path.exists():
         music = settings.background_music_path
         report["background_music_sha256"] = hashlib.sha256(music.read_bytes()).hexdigest()
         report["background_music_duration"] = duration(music)
         report["background_music_complete_pass"] = duration(video) + .02 >= duration(music)
-    save(folder / "qa-report.json", report)
     sheet = Image.new("RGB", (1440, math.ceil(len(timeline) / 3) * 298), "#171717")
     draw, font = ImageDraw.Draw(sheet), ImageFont.truetype(font_file(), 18)
     for index, shot in enumerate(timeline):
@@ -455,10 +537,13 @@ def review(video: Path, stories: list[dict], timeline: list[dict], folder: Path)
         run(["ffmpeg", "-v", "error", "-y", "-ss", str(shot["start"] + shot["duration"] / 2),
              "-i", str(video), "-frames:v", "1", "-vf", "scale=480:270,format=yuvj420p", str(frame)], folder)
         x, y = (index % 3) * 480, (index // 3) * 298
+        if not frame.exists():
+            raise RuntimeError("Cannot inspect a planned frame in the rendered video")
         with Image.open(frame) as image:
             sheet.paste(image, (x, y))
         draw.text((x + 6, y + 273), f"{shot['start']:.1f}s | {shot['artist']}", font=font, fill="white")
     sheet.save(folder / "final-review.jpg")
+    save(folder / "qa-report.json", report)
     if black or silences:
         raise RuntimeError("Video review found a black frame or a prolonged audio gap")
     return report
